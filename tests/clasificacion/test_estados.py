@@ -1,4 +1,11 @@
-from detection_worker.clasificacion.estados import ClasificadorCinematico, Fase, TipoEvento
+import pytest
+
+from detection_worker.clasificacion.estados import (
+    ClasificadorCinematico,
+    Fase,
+    TipoEvento,
+    UmbralSinCalibrarError,
+)
 from detection_worker.clasificacion.umbrales import Umbrales
 from detection_worker.pose.schemas import Pose
 from tests import fabricas
@@ -104,3 +111,8 @@ def test_aviso_no_confiable_se_reinicia_al_volver_a_ver_a_la_persona(umbrales: U
         (300.0, TipoEvento.DETECCION_NO_CONFIABLE),
         (601.0, TipoEvento.DETECCION_NO_CONFIABLE),
     ]
+
+
+def test_clasificador_exige_el_umbral_de_velocidad() -> None:
+    with pytest.raises(UmbralSinCalibrarError):
+        ClasificadorCinematico(Umbrales())

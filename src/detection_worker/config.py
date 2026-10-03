@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from detection_worker.clasificacion.umbrales import Umbrales
@@ -14,6 +14,7 @@ class Settings(BaseSettings):
         env_prefix="TT_",
         env_file=".env",
         env_nested_delimiter="__",
+        env_ignore_empty=True,  # una variable vacía en .env cuenta como «sin definir»
         extra="ignore",
     )
 
@@ -35,4 +36,23 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     s3_endpoint_url: str | None = None
 
-    clasificacion: Umbrales
+    clasificacion: Umbrales = Umbrales()
+
+
+class ConfiguracionInvalidaError(RuntimeError):
+    """La configuración del entorno está incompleta o tiene valores inválidos."""
+
+
+def cargar_settings() -> Settings:
+    """Lee la configuración y, si falla, explica qué variable revisar."""
+    try:
+        return Settings()  # los valores vienen del entorno
+    except ValidationError as error:
+        problemas = []
+        for detalle in error.errors():
+            ruta = "__".join(str(parte) for parte in detalle["loc"]).upper()
+            problemas.append(f"  - TT_{ruta}: {detalle['msg']}")
+        raise ConfiguracionInvalidaError(
+            "Configuración incompleta. Revisa tu .env (puedes generarlo con `make env`):\n"
+            + "\n".join(problemas)
+        ) from None

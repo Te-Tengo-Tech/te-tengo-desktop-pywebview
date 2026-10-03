@@ -40,7 +40,7 @@ La organización interna se explica en [docs/arquitectura.md](docs/arquitectura.
 ```bash
 make instalar      # crea .venv con uv e instala los hooks de pre-commit
 make modelo        # descarga pose_landmarker_lite.task en models/
-cp .env.example .env   # y completa los valores
+make env          # crea .env con tokens locales (no sobrescribe uno existente)
 make ejecutar      # http://localhost:8001/docs
 ```
 
@@ -49,6 +49,7 @@ make ejecutar      # http://localhost:8001/docs
 | Comando | Qué hace |
 |---|---|
 | `make instalar` | Instala las dependencias (`uv sync`) y los hooks de pre-commit |
+| `make env` | Crea `.env` desde `.env.example` con tokens locales aleatorios |
 | `make modelo` | Descarga el modelo de MediaPipe |
 | `make ejecutar` | Levanta el servicio con recarga automática |
 | `make formatear` | Formatea el código con Ruff |
@@ -69,7 +70,7 @@ make ejecutar      # http://localhost:8001/docs
 
 Todas las variables llevan el prefijo `TT_`. La lista completa está en [.env.example](.env.example).
 
-`TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN` **no tiene valor por defecto**: debe calibrarse con pruebas (ver la especificación).
+`TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN` **no tiene valor por defecto**: debe calibrarse con pruebas (regla R1 de la especificación). Mientras esté vacío, el servicio arranca (`/health`, `/docs`), pero la ingesta cierra el WebSocket con el código 1011.
 
 ## Estado
 

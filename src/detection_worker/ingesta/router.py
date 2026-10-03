@@ -29,6 +29,12 @@ async def recibir_video(websocket: WebSocket, camara_id: str) -> None:
         return
 
     await websocket.accept()
+    if not settings.clasificacion.calibrado:
+        logger.error("Video rechazado de %s: el umbral de velocidad no está calibrado", camara_id)
+        await websocket.close(
+            code=status.WS_1011_INTERNAL_ERROR, reason="Umbral de velocidad sin calibrar"
+        )
+        return
     logger.info("Cámara conectada: %s", camara_id)
     procesador = ProcesadorCamara(
         camara_id=camara_id,

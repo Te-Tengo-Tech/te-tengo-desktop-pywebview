@@ -9,11 +9,13 @@ from fastapi import FastAPI
 
 from detection_worker import __version__
 from detection_worker.clips.service import AlmacenClips, S3AlmacenClips
-from detection_worker.config import Settings
+from detection_worker.config import Settings, cargar_settings
 from detection_worker.eventos.client import BackendPublicador, PublicadorEventos
 from detection_worker.ingesta.router import router as ingesta_router
 from detection_worker.pose.service import EstimadorPose, MediaPipeEstimador
 from detection_worker.salud.router import router as salud_router
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -40,7 +42,7 @@ def construir_componentes(settings: Settings) -> Componentes:
 
 
 def create_app(settings: Settings | None = None, componentes: Componentes | None = None) -> FastAPI:
-    settings = settings or Settings()  # valores desde el entorno
+    settings = settings or cargar_settings()
     logging.basicConfig(
         level=settings.nivel_log,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -49,6 +51,11 @@ def create_app(settings: Settings | None = None, componentes: Componentes | None
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = settings
+        if not settings.clasificacion.calibrado:
+            logger.warning(
+                "Servicio sin calibrar: falta TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN. "
+                "/health funciona, pero la ingesta rechazará el video hasta definirlo."
+            )
         app.state.componentes = componentes or construir_componentes(settings)
         try:
             yield

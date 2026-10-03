@@ -31,6 +31,16 @@ from detection_worker.clasificacion.umbrales import Umbrales
 from detection_worker.pose.schemas import Pose
 
 
+class UmbralSinCalibrarError(ValueError):
+    """Falta el umbral de velocidad (R1), que se obtiene calibrando con datasets."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Falta TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN: el umbral de velocidad aún no está "
+            "calibrado (ver docs/especificacion-clasificacion.md, regla R1)."
+        )
+
+
 class TipoEvento(StrEnum):
     CAIDA = "caida"
     CAIDA_CONFIRMADA = "caida_confirmada"
@@ -63,7 +73,10 @@ class ClasificadorCinematico:
     """Clasifica la secuencia de poses de UNA cámara. ``instante`` está en segundos."""
 
     def __init__(self, umbrales: Umbrales) -> None:
+        if umbrales.velocidad_descenso_min is None:
+            raise UmbralSinCalibrarError
         self._u = umbrales
+        self._velocidad_min = umbrales.velocidad_descenso_min
         self._fase = Fase.NORMAL
         self._historial: deque[_Muestra] = deque()
         self._inicio_caida = 0.0
@@ -90,7 +103,7 @@ class ClasificadorCinematico:
         velocidad = self._velocidad(instante, p)
         self._registrar(instante, p)
 
-        m1 = velocidad is not None and velocidad >= self._u.velocidad_descenso_min
+        m1 = velocidad is not None and velocidad >= self._velocidad_min
         m2 = p.angulo_grados < self._u.angulo_linea_central_max_grados
         m3 = p.razon_ancho_alto >= self._u.razon_ancho_alto_min
         erguido = (

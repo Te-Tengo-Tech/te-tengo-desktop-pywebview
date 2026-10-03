@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := ayuda
-.PHONY: ayuda instalar modelo ejecutar formatear revisar probar imagen
+.PHONY: ayuda instalar env modelo ejecutar formatear revisar probar imagen
 
 PUERTO ?= 8001
 IMAGEN ?= te-tengo-service-detection-worker
@@ -10,6 +10,9 @@ ayuda: ## Lista los comandos disponibles
 instalar: ## Instala dependencias y hooks de pre-commit
 	uv sync
 	uv run pre-commit install --hook-type pre-commit --hook-type commit-msg
+
+env: ## Crea .env desde .env.example con tokens locales
+	uv run python scripts/crear_env.py
 
 modelo: ## Descarga el modelo de MediaPipe en models/
 	./scripts/descargar_modelo.sh

@@ -10,13 +10,16 @@ from pydantic import BaseModel, Field
 class Umbrales(BaseModel):
     model_config = {"frozen": True}
 
-    velocidad_descenso_min: float = Field(
+    velocidad_descenso_min: float | None = Field(
+        default=None,
         gt=0,
         description=(
             "R1. Velocidad mínima de bajada del centro de la cadera, en cuerpos por segundo. "
-            "No tiene valor por defecto: se calibra con pruebas."
+            "Sin valor por defecto: se calibra con pruebas. Mientras falte, el servicio arranca "
+            "pero no acepta video."
         ),
     )
+
     angulo_linea_central_max_grados: float = Field(
         default=45.0,
         gt=0,
@@ -57,3 +60,7 @@ class Umbrales(BaseModel):
         le=1,
         description="A5. Visibilidad mínima para usar un landmark en el rectángulo del cuerpo.",
     )
+
+    @property
+    def calibrado(self) -> bool:
+        return self.velocidad_descenso_min is not None
