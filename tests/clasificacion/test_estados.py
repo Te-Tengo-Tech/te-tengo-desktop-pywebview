@@ -168,3 +168,11 @@ def test_caida_hacia_la_camara_con_cabeza_bajo_los_pies(umbrales: Umbrales) -> N
     hacia_camara = fabricas.pose(cabeza=(320, 420), cadera=(320, 360), tobillos=(320, 300))
     eventos = reproducir(c, [*de_pie(0, 1.0), (1.2, hacia_camara)])
     assert eventos == [(1.2, TipoEvento.CAIDA)]
+
+
+def test_tiempos_para_mostrar_el_avance(umbrales: Umbrales) -> None:
+    c = ClasificadorCinematico(umbrales)
+    reproducir(c, [*de_pie(0, 1.0), (1.1, fabricas.CAYENDO), (5.0, fabricas.TENDIDA)])
+    tiempos = c.tiempos(6.1)
+    assert tiempos.en_el_suelo == pytest.approx(5.0)
+    assert tiempos.desde_inicio_caida is None

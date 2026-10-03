@@ -65,11 +65,17 @@ make ejecutar      # http://localhost:8001/docs
 
 Hay dos herramientas en `scripts/`. Ninguna necesita el backend ni el agente real.
 
-**1. Prueba local del clasificador** (`make camara`). Abre la webcam o un video y usa el mismo código del worker. Dibuja el esqueleto, la línea central (cian), el rectángulo del cuerpo (amarillo), el ángulo, la razón, la velocidad, la fase y los eventos.
+**1. Prueba local del clasificador** (`make camara`). Abre la webcam o un video y usa el mismo código del worker. La ventana muestra el video con el esqueleto (color según la fase), la línea central y el centro de la cadera (cian) y el rectángulo del cuerpo. Al lado hay un panel con:
+- el estado: normal, posible caída o en el suelo, con la cuenta hasta los 30 s;
+- si se detecta a la persona y si sus puntos clave son visibles;
+- las tres condiciones de caída, con su valor, una barra y el umbral;
+- el avance hacia «se levantó» y la lista de eventos.
+
+Cuando ocurre un evento aparece un aviso grande sobre el video. Teclas: `q` salir, `r` reiniciar, `c` guardar captura.
 
 ```bash
-make camara                                          # webcam: solo mide (sin umbral no clasifica)
-make camara ARGS="--velocidad-min 0.01"              # clasifica con el umbral calibrado
+make camara ARGS="--camara 0"                        # webcam, con el umbral calibrado
+make camara ARGS="--solo-medir"                      # solo muestra los valores, sin clasificar
 make camara ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240 --csv mediciones.csv"
 ```
 

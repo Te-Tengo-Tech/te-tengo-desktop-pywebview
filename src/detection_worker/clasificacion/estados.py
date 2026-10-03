@@ -61,6 +61,15 @@ class Evento:
     parametros: dict[str, float] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class Tiempos:
+    """Segundos transcurridos en cada fase (``None`` si no aplica). Sirve para mostrar avance."""
+
+    desde_inicio_caida: float | None
+    en_el_suelo: float | None
+    erguido: float | None
+
+
 class ClasificadorCinematico:
     """Clasifica la secuencia de poses de UNA cámara. ``instante`` está en segundos."""
 
@@ -85,6 +94,19 @@ class ClasificadorCinematico:
     @property
     def fase(self) -> Fase:
         return self._fase
+
+    @property
+    def umbrales(self) -> Umbrales:
+        return self._u
+
+    def tiempos(self, instante: float) -> Tiempos:
+        return Tiempos(
+            desde_inicio_caida=(
+                instante - self._inicio_caida if self._fase is Fase.INICIO_CAIDA else None
+            ),
+            en_el_suelo=instante - self._instante_caida if self._fase is Fase.EN_EL_SUELO else None,
+            erguido=None if self._erguido_desde is None else instante - self._erguido_desde,
+        )
 
     @property
     def ultima_medicion(self) -> Medicion | None:
