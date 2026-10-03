@@ -73,7 +73,7 @@ def main() -> int:
                     imagen = imagen[y : y + h, x : x + w]
                 alto, ancho = imagen.shape[:2]
                 if alto > ALTO_MAX:
-                    imagen = cv2.resize(imagen, (round(ancho * ALTO_MAX / alto), ALTO_MAX))
+                    imagen = cv2.resize(imagen, (round(ancho * ALTO_MAX / alto / 2) * 2, ALTO_MAX))
                 ok, jpeg = cv2.imencode(".jpg", imagen, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if ok:
                     ws.send(protocolo.codificar(int(time.time() * 1000), jpeg.tobytes()))

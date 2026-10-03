@@ -22,3 +22,13 @@ def test_codifica_jpeg_a_mp4() -> None:
 def test_rechaza_clip_de_un_solo_fotograma() -> None:
     with pytest.raises(ValueError, match="dos fotogramas"):
         codificar_mp4([(0.0, b"\xff\xd8")])
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg no está instalado")
+def test_codifica_ancho_impar_de_webcam_16_9() -> None:
+    fotogramas = []
+    for i in range(6):
+        ok, jpeg = cv2.imencode(".jpg", np.full((480, 853, 3), i * 30, dtype=np.uint8))
+        assert ok
+        fotogramas.append((i * 0.125, jpeg.tobytes()))
+    assert codificar_mp4(fotogramas)[4:8] == b"ftyp"

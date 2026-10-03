@@ -95,8 +95,8 @@ class ProcesadorCamara:
         try:
             clave = await self._almacen.guardar(self._camara_id, clip)
             await self._publicador.asociar_clip(clip.evento_id, clave)
-        except Exception:
-            logger.exception("No se pudo guardar el clip del evento %s", clip.evento_id)
+        except Exception as error:
+            logger.error("No se pudo guardar el clip del evento %s: %s", clip.evento_id, error)
 
     def _en_segundo_plano(self, corrutina: Coroutine[Any, Any, None]) -> None:
         tarea = asyncio.create_task(corrutina)

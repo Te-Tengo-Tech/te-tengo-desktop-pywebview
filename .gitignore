@@ -24,3 +24,7 @@ models/*.task
 .DS_Store
 .idea/
 .vscode/
+
+# Datasets de validación (se descargan con scripts/descargar_datasets.py)
+datos/
+resultados/

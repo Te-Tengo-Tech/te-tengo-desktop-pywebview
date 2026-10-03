@@ -7,6 +7,10 @@ from typing import Any, Protocol
 from detection_worker.ingesta.buffer import Clip
 
 
+class ErrorCodificacionError(RuntimeError):
+    """FFmpeg no pudo armar el MP4 del clip."""
+
+
 class AlmacenClips(Protocol):
     async def guardar(self, camara_id: str, clip: Clip) -> str:
         """Guarda el clip y devuelve su clave en el almacenamiento."""
@@ -22,12 +26,17 @@ def codificar_mp4(fotogramas: list[tuple[float, bytes]]) -> bytes:
     comando = [
         "ffmpeg", "-loglevel", "error",
         "-f", "image2pipe", "-framerate", f"{fps:.2f}", "-c:v", "mjpeg", "-i", "pipe:0",
+        # H.264 con yuv420p exige ancho y alto pares (una webcam 16:9 a 480p da 853 px).
+        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         "-movflags", "frag_keyframe+empty_moov",
         "-f", "mp4", "pipe:1",
     ]  # fmt: skip
     entrada = b"".join(jpeg for _, jpeg in fotogramas)
-    resultado = subprocess.run(comando, input=entrada, capture_output=True, check=True)
+    resultado = subprocess.run(comando, input=entrada, capture_output=True, check=False)
+    if resultado.returncode != 0:
+        detalle = resultado.stderr.decode(errors="replace").strip().splitlines()[-1:]
+        raise ErrorCodificacionError(f"FFmpeg terminó con código {resultado.returncode}: {detalle}")
     return resultado.stdout
 
 

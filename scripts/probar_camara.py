@@ -75,7 +75,7 @@ def preparar(imagen: Any, recorte: tuple[int, int, int, int] | None) -> Any:
         imagen = imagen[y : y + h, x : x + w]
     alto, ancho = imagen.shape[:2]
     if alto > ALTO_MAX:
-        imagen = cv2.resize(imagen, (round(ancho * ALTO_MAX / alto), ALTO_MAX))
+        imagen = cv2.resize(imagen, (round(ancho * ALTO_MAX / alto / 2) * 2, ALTO_MAX))
     return imagen
 
 
