@@ -66,6 +66,9 @@ def argumentos() -> argparse.Namespace:
     a.add_argument("--modelo", type=Path, default=Path("models/pose_landmarker_lite.task"))
     a.add_argument("--csv", type=Path, help="Guarda las mediciones de cada fotograma en un CSV")
     a.add_argument("--sin-ventana", action="store_true", help="No abre ventana; solo imprime")
+    a.add_argument(
+        "--listar-camaras", action="store_true", help="Muestra qué índice tiene cada cámara y sale"
+    )
     return a.parse_args()
 
 
@@ -147,8 +150,23 @@ def leer_recorte(texto: str | None) -> tuple[int, int, int, int] | None:
     return x, y, ancho, alto
 
 
+def listar_camaras(maximo: int = 8) -> None:
+    """Abre cada índice y muestra su resolución (el iPhone suele dar 1920 × 1080)."""
+    for indice in range(maximo):
+        captura = cv2.VideoCapture(indice)
+        ok, imagen = captura.read() if captura.isOpened() else (False, None)
+        if ok and imagen is not None:
+            alto, ancho = imagen.shape[:2]
+            print(f"  --camara {indice}: {ancho} × {alto}")
+        captura.release()
+
+
 def main() -> int:
     args = argumentos()
+    if args.listar_camaras:
+        print("Cámaras disponibles (prueba cada índice para ver cuál es cuál):")
+        listar_camaras()
+        return 0
     if not args.modelo.is_file():
         print(f"Falta el modelo {args.modelo}. Ejecuta: make modelo", file=sys.stderr)
         return 1

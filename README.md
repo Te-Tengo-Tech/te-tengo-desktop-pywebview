@@ -77,6 +77,7 @@ make camara ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240 --csv medicio
 - **`--csv`:** guarda el ángulo, la razón y la velocidad de cada fotograma; sirve para calibrar.
 - **`--sin-ventana`:** solo imprime los eventos, sin abrir ventana.
 - **En macOS:** la primera vez hay que dar permiso de cámara a la terminal o al IDE (Ajustes del Sistema → Privacidad y seguridad → Cámara).
+- **iPhone como cámara (Cámara de Continuidad):** con iOS 16 o superior, macOS Ventura o superior y la misma cuenta de Apple, el iPhone aparece como una cámara más. Para ver su índice: `make camara ARGS="--listar-camaras"`; después úsalo con `--camara N`. Evita la «Desk View», que muestra el escritorio desde arriba.
 
 **2. Agente simulado** (`make agente`). Envía la webcam o un video al worker por WebSocket, igual que lo hará Te Tengo Captura (480p, 8 fps y JPEG). Prueba el servicio completo:
 
