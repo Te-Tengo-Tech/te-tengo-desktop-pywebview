@@ -23,8 +23,8 @@ class EstimadorPose(Protocol):
     def cerrar(self) -> None: ...
 
 
-def _inicializar(ruta_modelo: str, confianza_min: float) -> None:
-    global _landmarker
+def crear_landmarker(ruta_modelo: str, confianza_min: float = 0.5) -> Any:
+    """Crea el Pose Landmarker de MediaPipe (modelo en ``ruta_modelo``)."""
     from mediapipe.tasks.python import vision
     from mediapipe.tasks.python.core.base_options import BaseOptions
 
@@ -37,24 +37,36 @@ def _inicializar(ruta_modelo: str, confianza_min: float) -> None:
         min_pose_detection_confidence=confianza_min,
         min_pose_presence_confidence=confianza_min,
     )
-    _landmarker = vision.PoseLandmarker.create_from_options(opciones)
+    return vision.PoseLandmarker.create_from_options(opciones)
 
 
-def _estimar(jpeg: bytes) -> tuple[list[tuple[float, float, float]], int, int] | None:
+def detectar(landmarker: Any, imagen_bgr: Any) -> Pose | None:
+    """Estima la pose en una imagen BGR de OpenCV; ``None`` si no hay nadie visible."""
     import cv2
     import mediapipe as mp
+
+    alto, ancho = imagen_bgr.shape[:2]
+    rgb = cv2.cvtColor(imagen_bgr, cv2.COLOR_BGR2RGB)
+    resultado = landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
+    if not resultado.pose_landmarks:
+        return None
+    landmarks = tuple(
+        Landmark(lm.x, lm.y, lm.visibility or 0.0) for lm in resultado.pose_landmarks[0]
+    )
+    return Pose(landmarks, ancho, alto)
+
+
+def _inicializar(ruta_modelo: str, confianza_min: float) -> None:
+    global _landmarker
+    _landmarker = crear_landmarker(ruta_modelo, confianza_min)
+
+
+def _estimar(jpeg: bytes) -> Pose | None:
+    import cv2
     import numpy as np
 
     imagen = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
-    if imagen is None:
-        return None
-    alto, ancho = imagen.shape[:2]
-    rgb = cv2.cvtColor(imagen, cv2.COLOR_BGR2RGB)
-    resultado = _landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
-    if not resultado.pose_landmarks:
-        return None
-    puntos = [(lm.x, lm.y, lm.visibility or 0.0) for lm in resultado.pose_landmarks[0]]
-    return puntos, ancho, alto
+    return None if imagen is None else detectar(_landmarker, imagen)
 
 
 class MediaPipeEstimador:
@@ -73,11 +85,8 @@ class MediaPipeEstimador:
 
     async def estimar(self, jpeg: bytes) -> Pose | None:
         bucle = asyncio.get_running_loop()
-        salida = await bucle.run_in_executor(self._pool, _estimar, jpeg)
-        if salida is None:
-            return None
-        puntos, ancho, alto = salida
-        return Pose(tuple(Landmark(x, y, v) for x, y, v in puntos), ancho, alto)
+        pose: Pose | None = await bucle.run_in_executor(self._pool, _estimar, jpeg)
+        return pose
 
     def cerrar(self) -> None:
         self._pool.shutdown(cancel_futures=True)

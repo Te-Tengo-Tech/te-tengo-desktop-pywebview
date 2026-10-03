@@ -38,6 +38,7 @@ El método de referencia (Chen et al., 2020) usa un esqueleto de **14 puntos**, 
 | **A2** | La nariz reemplaza a la «cabeza». | MediaPipe no tiene un punto cabeza; la nariz es el punto central de la cabeza más estable. |
 | **A3** | La velocidad se divide entre el largo de la línea central. | Una cámara 2D no mide metros, y las *world landmarks* no sirven porque su origen es la propia cadera. |
 | **A4** | Δt es la diferencia real entre las marcas de tiempo de las muestras. | El agente envía de 5 a 10 fps, no una tasa fija. |
+| **A6** | Para declarar a la persona «erguida» (R5 y R7), la nariz, las caderas y los tobillos deben tener visibilidad ≥ 0,5. Para detectar una caída sí se usan poses con puntos poco visibles. | Con puntos poco visibles, MediaPipe estima posiciones poco fiables: una persona tendida y cortada por el borde puede parecer de pie. Es preferible una falsa alarma a perder una caída, pero no una falsa recuperación. |
 | **A5** | Solo entran al rectángulo del cuerpo los landmarks con visibilidad ≥ 0,5. | Los puntos ocultos «inventados» por el modelo agrandan el rectángulo. Se toma 0,5 por ser el valor por defecto de los umbrales de confianza de MediaPipe (Google, s.f.-a). |
 
 ---
@@ -134,6 +135,13 @@ En los resultados de Chen et al. (2020), sección 4.2:
 Por eso, exigir M1 **y** M2 descarta agacharse (solo M1) e inclinarse (solo M2). Caminar y sentarse no cumplen ninguna. Si después no llega M3 y la persona vuelve a estar erguida, el sistema lo trata como una pérdida de equilibrio recuperada.
 
 **Límite:** no detecta un balanceo leve de pie ni un apoyo brusco sin inclinarse. La búsqueda de fuentes para esos casos está en curso.
+
+### Hallazgo en las primeras pruebas: recuperación falsa
+Con el video `fall-01` de URFD, el worker detectó bien la caída, pero 1 s después emitió una `recuperacion`, aunque la persona sigue en el suelo:
+- MediaPipe pierde con frecuencia a la persona tendida (muchos fotogramas sin pose).
+- En un fotograma la estimó de pie **con visibilidad alta**.
+
+A6 evita este error cuando los puntos son poco visibles, pero no en este caso. La fuente indica que la persona debe verse de pie «durante un periodo» (Chen et al., 2020, secc. 3.5), **sin dar el valor**. **Pendiente:** exigir que la postura erguida se mantenga un tiempo mínimo y calibrar ese tiempo con los datasets.
 
 ---
 

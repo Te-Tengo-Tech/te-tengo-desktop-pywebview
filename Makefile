@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := ayuda
-.PHONY: ayuda instalar env modelo ejecutar formatear revisar probar imagen
+.PHONY: ayuda instalar env modelo ejecutar camara agente formatear revisar probar imagen
 
 PUERTO ?= 8001
 IMAGEN ?= te-tengo-service-detection-worker
@@ -19,6 +19,12 @@ modelo: ## Descarga el modelo de MediaPipe en models/
 
 ejecutar: ## Levanta el servicio en local con recarga automática
 	uv run uvicorn detection_worker.main:create_app --factory --reload --port $(PUERTO)
+
+camara: ## Prueba el clasificador con la webcam o un video (ARGS="--video x.mp4 ...")
+	uv run python scripts/probar_camara.py $(ARGS)
+
+agente: ## Envía la webcam o un video al worker como el agente real (ARGS="...")
+	uv run python scripts/agente_simulado.py $(ARGS)
 
 formatear: ## Formatea y ordena imports
 	uv run ruff format .

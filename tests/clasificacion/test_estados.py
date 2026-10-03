@@ -7,7 +7,7 @@ from detection_worker.clasificacion.estados import (
     UmbralSinCalibrarError,
 )
 from detection_worker.clasificacion.umbrales import Umbrales
-from detection_worker.pose.schemas import Pose
+from detection_worker.pose.schemas import Landmark, Pose
 from tests import fabricas
 
 PASO = 0.1  # 10 fps
@@ -116,3 +116,25 @@ def test_aviso_no_confiable_se_reinicia_al_volver_a_ver_a_la_persona(umbrales: U
 def test_clasificador_exige_el_umbral_de_velocidad() -> None:
     with pytest.raises(UmbralSinCalibrarError):
         ClasificadorCinematico(Umbrales())
+
+
+def test_pose_dudosa_no_declara_recuperacion(umbrales: Umbrales) -> None:
+    # Persona tendida con los tobillos poco visibles: MediaPipe los «inventa» en una posición
+    # que la haría parecer de pie. No debe tomarse como recuperación.
+    c = ClasificadorCinematico(umbrales)
+    reproducir(c, [*de_pie(0, 1.0), (1.1, fabricas.CAYENDO)])
+    falsa = list(fabricas.DE_PIE.landmarks)
+    falsa[27] = falsa[28] = Landmark(falsa[27].x, falsa[27].y, 0.3)
+    pose_dudosa = Pose(tuple(falsa), fabricas.ANCHO, fabricas.ALTO)
+    assert c.actualizar(2.0, pose_dudosa) == []
+    assert c.fase is Fase.EN_EL_SUELO
+
+
+def test_pose_dudosa_si_puede_iniciar_una_caida(umbrales: Umbrales) -> None:
+    c = ClasificadorCinematico(umbrales)
+    dudosa = list(fabricas.CAYENDO.landmarks)
+    dudosa[27] = dudosa[28] = Landmark(dudosa[27].x, dudosa[27].y, 0.4)
+    eventos = reproducir(
+        c, [*de_pie(0, 1.0), (1.1, Pose(tuple(dudosa), fabricas.ANCHO, fabricas.ALTO))]
+    )
+    assert eventos == [(1.1, TipoEvento.CAIDA)]

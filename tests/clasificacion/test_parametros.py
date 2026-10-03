@@ -59,3 +59,10 @@ def test_velocidad_rechaza_valores_invalidos(dt: float, escala: float) -> None:
 
 def test_en_pixeles_respeta_imagen_no_cuadrada() -> None:
     assert fabricas.DE_PIE.en_pixeles(0) == Punto(320, 100)
+
+
+def test_puntos_clave_visibles() -> None:
+    assert parametros.puntos_clave_visibles(fabricas.DE_PIE, 0.5)
+    oculto = list(fabricas.DE_PIE.landmarks)
+    oculto[0] = Landmark(oculto[0].x, oculto[0].y, 0.2)  # nariz poco visible
+    assert not parametros.puntos_clave_visibles(Pose(tuple(oculto), 640, 480), 0.5)

@@ -63,6 +63,12 @@ class ProcesadorCamara:
                 ocurrido_en=datetime.fromtimestamp(evento.instante, UTC),
                 parametros=evento.parametros,
             )
+            logger.info(
+                "Evento detectado: %s en %s %s",
+                evento.tipo.value,
+                self._camara_id,
+                evento.parametros,
+            )
             if evento.tipo in EVENTOS_CON_CLIP:
                 self._buffer.marcar_evento(detectado.evento_id, evento.instante)
             await self._publicar(detectado)
@@ -76,8 +82,14 @@ class ProcesadorCamara:
     async def _publicar(self, evento: EventoDetectado) -> None:
         try:
             await self._publicador.publicar(evento)
-        except httpx.HTTPError:
-            logger.exception("No se pudo publicar el evento %s", evento.evento_id)
+        except httpx.HTTPError as error:
+            # Sin traza completa: con el backend caído el log se llenaría de ruido.
+            logger.warning(
+                "No se pudo publicar el evento %s (%s): %s",
+                evento.tipo.value,
+                evento.evento_id,
+                error,
+            )
 
     async def _guardar_clip(self, clip: Clip) -> None:
         try:

@@ -29,6 +29,7 @@ dev = [
     "pytest-asyncio>=1.4",
     "pytest-cov>=7.1",
     "ruff>=0.16",
+    "websockets>=17",
 ]
 
 [build-system]
@@ -57,7 +58,7 @@ known-first-party = ["detection_worker"]
 python_version = "3.11"
 strict = true
 mypy_path = "src"
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]

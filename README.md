@@ -52,10 +52,39 @@ make ejecutar      # http://localhost:8001/docs
 | `make env` | Crea `.env` desde `.env.example` con tokens locales aleatorios |
 | `make modelo` | Descarga el modelo de MediaPipe |
 | `make ejecutar` | Levanta el servicio con recarga automática |
+| `make camara` | Prueba el clasificador con la webcam o un video, con dibujo en pantalla |
+| `make agente` | Envía la webcam o un video al worker como el agente real |
 | `make formatear` | Formatea el código con Ruff |
 | `make revisar` | Lint (Ruff), formato y tipos (mypy en modo estricto) |
 | `make probar` | Pruebas con cobertura (pytest) |
 | `make imagen` | Construye la imagen Docker |
+
+## Probar con la cámara o con videos
+
+Hay dos herramientas en `scripts/`. Ninguna necesita el backend ni el agente real.
+
+**1. Prueba local del clasificador** (`make camara`). Abre la webcam o un video y usa el mismo código del worker. Dibuja el esqueleto, la línea central (cian), el rectángulo del cuerpo (amarillo), el ángulo, la razón, la velocidad, la fase y los eventos.
+
+```bash
+make camara                                          # webcam: solo mide (sin umbral no clasifica)
+make camara ARGS="--velocidad-min 0.8"               # clasifica con un umbral PROVISIONAL
+make camara ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240 --csv mediciones.csv"
+```
+
+- **Videos de URFD:** traen la profundidad a la izquierda y el RGB a la derecha. Usa `--recorte 320,0,320,240`.
+- **`--csv`:** guarda el ángulo, la razón y la velocidad de cada fotograma; sirve para calibrar.
+- **`--sin-ventana`:** solo imprime los eventos, sin abrir ventana.
+- **En macOS:** la primera vez hay que dar permiso de cámara a la terminal o al IDE (Ajustes del Sistema → Privacidad y seguridad → Cámara).
+
+**2. Agente simulado** (`make agente`). Envía la webcam o un video al worker por WebSocket, igual que lo hará Te Tengo Captura (480p, 8 fps y JPEG). Prueba el servicio completo:
+
+```bash
+make ejecutar                                    # en una terminal (requiere el umbral en .env)
+make agente                                      # en otra: webcam
+make agente ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240"
+```
+
+El worker registra cada evento en su log (`Evento detectado: caida en camara-local …`). Sin backend ni SeaweedFS, también registra un aviso de que no pudo publicarlo, pero sigue funcionando.
 
 ## Interfaces
 

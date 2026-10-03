@@ -22,11 +22,11 @@ Eventos que se generan:
 * ``deteccion_no_confiable`` (R8): pasó demasiado tiempo sin ver a la persona.
 """
 
-from collections import deque
 from dataclasses import dataclass, field
 from enum import StrEnum
 
 from detection_worker.clasificacion import parametros
+from detection_worker.clasificacion.medicion import Medicion, MedidorCinematico
 from detection_worker.clasificacion.umbrales import Umbrales
 from detection_worker.pose.schemas import Pose
 
@@ -62,13 +62,6 @@ class Evento:
     parametros: dict[str, float] = field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class _Muestra:
-    instante: float
-    y_cadera: float
-    escala: float
-
-
 class ClasificadorCinematico:
     """Clasifica la secuencia de poses de UNA cámara. ``instante`` está en segundos."""
 
@@ -77,8 +70,9 @@ class ClasificadorCinematico:
             raise UmbralSinCalibrarError
         self._u = umbrales
         self._velocidad_min = umbrales.velocidad_descenso_min
+        self._medidor = MedidorCinematico(umbrales.intervalo_velocidad_s, umbrales.visibilidad_min)
+        self._ultima: Medicion | None = None
         self._fase = Fase.NORMAL
-        self._historial: deque[_Muestra] = deque()
         self._inicio_caida = 0.0
         self._instante_caida = 0.0
         self._confirmada = False
@@ -90,8 +84,13 @@ class ClasificadorCinematico:
     def fase(self) -> Fase:
         return self._fase
 
+    @property
+    def ultima_medicion(self) -> Medicion | None:
+        """Medición del último fotograma con pose (para mostrarla o registrarla)."""
+        return self._ultima
+
     def actualizar(self, instante: float, pose: Pose | None) -> list[Evento]:
-        """Procesa un fotograma. ``pose`` es ``None`` si el fotograma se descartó."""
+        """Procesa un fotograma. ``pose`` es ``None`` si no se detectó a nadie."""
         if self._primer_instante is None:
             self._primer_instante = instante
         if pose is None:
@@ -99,15 +98,18 @@ class ClasificadorCinematico:
 
         self._ultimo_valido = instante
         self._aviso_no_confiable = False
-        p = parametros.calcular(pose, self._u.visibilidad_min)
-        velocidad = self._velocidad(instante, p)
-        self._registrar(instante, p)
+        self._ultima = self._medidor.medir(instante, pose)
+        p, velocidad = self._ultima.parametros, self._ultima.velocidad
 
         m1 = velocidad is not None and velocidad >= self._velocidad_min
         m2 = p.angulo_grados < self._u.angulo_linea_central_max_grados
         m3 = p.razon_ancho_alto >= self._u.razon_ancho_alto_min
+        # «Erguido» apaga una alerta (recuperación) o la rebaja (movimiento inestable), así que
+        # solo se acepta con los puntos clave bien visibles (A6). Las condiciones de caída sí
+        # usan poses dudosas: es preferible una falsa alarma a perder una caída.
         erguido = (
-            p.angulo_grados > self._u.angulo_linea_central_max_grados
+            parametros.puntos_clave_visibles(pose, self._u.visibilidad_min)
+            and p.angulo_grados > self._u.angulo_linea_central_max_grados
             and p.razon_ancho_alto < self._u.razon_ancho_alto_min
         )
         datos = {
@@ -171,23 +173,3 @@ class ClasificadorCinematico:
             self._aviso_no_confiable = True
             eventos.append(Evento(TipoEvento.DETECCION_NO_CONFIABLE, instante))
         return eventos
-
-    def _velocidad(self, instante: float, p: parametros.Parametros) -> float | None:
-        """Velocidad contra la muestra más reciente separada al menos ``intervalo_velocidad_s``."""
-        limite = instante - self._u.intervalo_velocidad_s
-        for muestra in reversed(self._historial):
-            if muestra.instante <= limite:
-                return parametros.velocidad_descenso(
-                    muestra.y_cadera,
-                    p.centro_cadera.y,
-                    instante - muestra.instante,
-                    muestra.escala,
-                )
-        return None
-
-    def _registrar(self, instante: float, p: parametros.Parametros) -> None:
-        if p.longitud_linea_central > 0:
-            self._historial.append(_Muestra(instante, p.centro_cadera.y, p.longitud_linea_central))
-        antiguedad_max = 4 * self._u.intervalo_velocidad_s
-        while self._historial and self._historial[0].instante < instante - antiguedad_max:
-            self._historial.popleft()

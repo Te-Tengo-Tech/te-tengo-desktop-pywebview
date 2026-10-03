@@ -24,6 +24,26 @@ class Parametros:
     razon_ancho_alto: float
 
 
+# Landmarks que usan las fórmulas: nariz, caderas y tobillos.
+PUNTOS_CLAVE = (
+    Indice.NARIZ,
+    Indice.CADERA_IZQUIERDA,
+    Indice.CADERA_DERECHA,
+    Indice.TOBILLO_IZQUIERDO,
+    Indice.TOBILLO_DERECHO,
+)
+
+
+def puntos_clave_visibles(pose: Pose, visibilidad_min: float) -> bool:
+    """Indica si se ven bien los puntos que usan las fórmulas (adaptación A6).
+
+    Si alguno no se ve bien, MediaPipe igual devuelve una posición estimada, pero poco fiable:
+    con ella una persona tendida y cortada por el borde de la imagen puede parecer de pie. Por
+    eso esas poses no pueden declarar que la persona se levantó.
+    """
+    return all(pose.landmarks[i].visibilidad >= visibilidad_min for i in PUNTOS_CLAVE)
+
+
 def punto_medio(a: Punto, b: Punto) -> Punto:
     return Punto((a.x + b.x) / 2, (a.y + b.y) / 2)
 
