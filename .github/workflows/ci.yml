@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  calidad:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+      - name: Instalar dependencias
+        run: uv sync --locked
+      - name: Lint y formato
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Tipos
+        run: uv run mypy
+      - name: Descargar modelo de MediaPipe
+        run: ./scripts/descargar_modelo.sh
+      - name: Pruebas
+        run: uv run pytest
+
+  imagen:
+    runs-on: ubuntu-latest
+    needs: calidad
+    steps:
+      - uses: actions/checkout@v7
+      - name: Construir imagen Docker
+        run: docker build -t te-tengo-service-detection-worker .

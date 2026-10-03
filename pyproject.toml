@@ -1,0 +1,76 @@
+[project]
+name = "te-tengo-service-detection-worker"
+version = "0.1.0"
+description = "Módulo de detección de Te Tengo: ingesta de video, estimación de pose y clasificación cinemática de caídas."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+authors = [
+    { name = "Jhosepmyr Orlando Gutierrez Soto" },
+    { name = "Elmer Augusto Riva Rodriguez" },
+]
+dependencies = [
+    "boto3>=1.43",
+    "fastapi>=0.142",
+    "httpx>=0.28",
+    # Fijado: la 1.0.x falla en macOS (issue google-ai-edge/mediapipe#6356). Ver docs/adr/0003.
+    "mediapipe==0.10.35",
+    "numpy>=2.0",
+    "pydantic>=2.13",
+    "pydantic-settings>=2.15",
+    "uvicorn[standard]>=0.54",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13",
+    "mypy>=2.4",
+    "pre-commit>=4.6",
+    "pytest>=9.1",
+    "pytest-asyncio>=1.4",
+    "pytest-cov>=7.1",
+    "ruff>=0.16",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/detection_worker"]
+
+# ---------------------------------------------------------------- Ruff
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "N", "ASYNC", "RUF", "PT"]
+# RUF001-003: el código y los textos están en español (tildes, «θ», guiones).
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["detection_worker"]
+
+# ---------------------------------------------------------------- Mypy
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["mediapipe.*", "cv2.*", "boto3.*", "botocore.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------- Pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers --cov=detection_worker --cov-report=term-missing"
+markers = ["integracion: requiere el modelo de MediaPipe descargado"]
+
+[tool.coverage.run]
+branch = true
+source = ["detection_worker"]
