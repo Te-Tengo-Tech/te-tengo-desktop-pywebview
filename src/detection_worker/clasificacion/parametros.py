@@ -22,6 +22,8 @@ class Parametros:
     longitud_linea_central: float
     angulo_grados: float
     razon_ancho_alto: float
+    cabeza_bajo_pies: bool
+    puntos_visibles: bool
 
 
 # Landmarks que usan las fórmulas: nariz, caderas y tobillos.
@@ -82,6 +84,17 @@ def angulo_linea_central(pose: Pose) -> float:
     return math.degrees(math.atan2(abs(cabeza.y - pies.y), abs(cabeza.x - pies.x)))
 
 
+def cabeza_bajo_pies(pose: Pose) -> bool:
+    """Indica si la cabeza quedó más abajo que los pies en la imagen (adaptación A7).
+
+    Una persona de pie siempre tiene la cabeza arriba de los pies. Si cae hacia la cámara, el
+    cuerpo se ve acortado: el ángulo con valor absoluto sale «casi vertical» y la razón ancho/alto
+    no supera 1, pero la cabeza termina por debajo de los pies. Esta señal lo detecta.
+    """
+    cabeza, pies = extremos_linea_central(pose)
+    return cabeza.y > pies.y
+
+
 def longitud_linea_central(pose: Pose) -> float:
     """Largo de la línea central en píxeles; sirve de escala para la velocidad (adaptación A3)."""
     cabeza, pies = extremos_linea_central(pose)
@@ -104,18 +117,18 @@ def razon_ancho_alto(pose: Pose, visibilidad_min: float) -> float:
 
 
 def velocidad_descenso(y1: float, y2: float, dt: float, escala: float) -> float:
-    """Velocidad vertical del centro de la cadera entre dos instantes (R1).
+    """Velocidad con que baja el centro de la cadera entre dos instantes (R1).
 
-    Se usa el valor absoluto del desplazamiento vertical dividido entre el tiempo. Una sola
-    cámara no mide metros, así que el resultado se divide además entre el largo de la línea
-    central: la unidad queda en «cuerpos por segundo» y no cambia si la persona está cerca o
-    lejos de la cámara (adaptación A3).
+    Es positiva cuando la cadera baja y negativa cuando sube (adaptación A3): así, levantarse
+    rápido no se confunde con caer. Una sola cámara no mide metros, por eso se divide entre el
+    largo de la línea central y la unidad queda en «cuerpos por segundo», sin depender de la
+    distancia a la cámara.
     """
     if dt <= 0:
         raise ValueError("Δt debe ser positivo")
     if escala <= 0:
         raise ValueError("La escala debe ser positiva")
-    return abs(y2 - y1) / dt / escala
+    return (y2 - y1) / dt / escala
 
 
 def calcular(pose: Pose, visibilidad_min: float) -> Parametros:
@@ -125,4 +138,6 @@ def calcular(pose: Pose, visibilidad_min: float) -> Parametros:
         longitud_linea_central=longitud_linea_central(pose),
         angulo_grados=angulo_linea_central(pose),
         razon_ancho_alto=razon_ancho_alto(pose, visibilidad_min),
+        cabeza_bajo_pies=cabeza_bajo_pies(pose),
+        puntos_visibles=puntos_clave_visibles(pose, visibilidad_min),
     )

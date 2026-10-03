@@ -54,6 +54,8 @@ make ejecutar      # http://localhost:8001/docs
 | `make ejecutar` | Levanta el servicio con recarga automática |
 | `make camara` | Prueba el clasificador con la webcam o un video, con dibujo en pantalla |
 | `make agente` | Envía la webcam o un video al worker como el agente real |
+| `make datasets` | Descarga URFD y CAUCAFall |
+| `make validar` | Valida el clasificador con los datasets y genera el reporte |
 | `make formatear` | Formatea el código con Ruff |
 | `make revisar` | Lint (Ruff), formato y tipos (mypy en modo estricto) |
 | `make probar` | Pruebas con cobertura (pytest) |
@@ -67,7 +69,7 @@ Hay dos herramientas en `scripts/`. Ninguna necesita el backend ni el agente rea
 
 ```bash
 make camara                                          # webcam: solo mide (sin umbral no clasifica)
-make camara ARGS="--velocidad-min 0.8"               # clasifica con un umbral PROVISIONAL
+make camara ARGS="--velocidad-min 0.01"              # clasifica con el umbral calibrado
 make camara ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240 --csv mediciones.csv"
 ```
 
@@ -86,6 +88,21 @@ make agente ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240"
 
 El worker registra cada evento en su log (`Evento detectado: caida en camara-local …`). Sin backend ni SeaweedFS, también registra un aviso de que no pudo publicarlo, pero sigue funcionando.
 
+## Validación con datasets públicos
+
+El clasificador se validó con **URFD** (70 videos) y **CAUCAFall** (100 videos) en las condiciones de producción: 480p, 8 fps, JPEG y MediaPipe en modo VIDEO. Para medir sin sesgo se dejó fuera cada grupo al calibrar:
+
+| Sensibilidad | Especificidad | Exactitud | Recuperaciones falsas |
+|---|---|---|---|
+| **81,2 %** | **81,1 %** | **81,2 %** | 0 de 30 |
+
+Protocolo, resultados por actividad, cambios hechos y límites: [docs/validacion.md](docs/validacion.md). Para reproducirlo:
+
+```bash
+make datasets   # descarga los datasets en datos/ (no se versionan)
+make validar    # genera resultados/reporte.md
+```
+
 ## Interfaces
 
 | Interfaz | Detalle |
@@ -99,13 +116,12 @@ El worker registra cada evento en su log (`Evento detectado: caida en camara-loc
 
 Todas las variables llevan el prefijo `TT_`. La lista completa está en [.env.example](.env.example).
 
-`TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN` **no tiene valor por defecto**: debe calibrarse con pruebas (regla R1 de la especificación). Mientras esté vacío, el servicio arranca (`/health`, `/docs`), pero la ingesta cierra el WebSocket con el código 1011.
+`TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN` no tiene valor por defecto en el código; `.env.example` trae el valor calibrado (0,01; ver [docs/validacion.md](docs/validacion.md)). Mientras esté vacío, el servicio arranca (`/health`, `/docs`), pero la ingesta cierra el WebSocket con el código 1011.
 
 ## Estado
 
-Versión inicial (0.1.0). Pendiente:
-- Calibrar el umbral de velocidad.
-- Validar la regla de movimiento inestable.
+Versión 0.2.0: clasificador validado con URFD y CAUCAFall. Pendiente:
+- Validar la regla de movimiento inestable con grabaciones propias (los datasets no tienen tambaleos etiquetados).
 - Detección de movimiento y control de calidad de fotogramas.
 - Descartar fotogramas atrasados (contrapresión).
 - Reenviar el video al Servicio de transmisión en vivo.

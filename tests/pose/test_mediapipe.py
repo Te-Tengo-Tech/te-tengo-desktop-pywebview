@@ -22,7 +22,11 @@ async def test_imagen_sin_personas_no_devuelve_pose() -> None:
     try:
         ok, jpeg = cv2.imencode(".jpg", np.zeros((480, 640, 3), dtype=np.uint8))
         assert ok
-        assert await estimador.estimar(jpeg.tobytes()) is None
+        assert await estimador.estimar(jpeg.tobytes(), "camara-1", 0) is None
+        assert await estimador.estimar(jpeg.tobytes(), "camara-1", 100) is None
+        # Una reconexión con marcas de tiempo anteriores reinicia el seguimiento sin fallar.
+        assert await estimador.estimar(jpeg.tobytes(), "camara-1", 50) is None
+        await estimador.liberar("camara-1")
     finally:
         estimador.cerrar()
 

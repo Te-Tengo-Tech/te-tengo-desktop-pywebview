@@ -1,6 +1,6 @@
 # 0003. MediaPipe 0.10.35 en un proceso aparte
 
-**Estado:** aceptada (2026-10-03)
+**Estado:** aceptada (2026-10-03). El modo `IMAGE` fue reemplazado por el modo `VIDEO` en el [ADR 0006](0006-mediapipe-modo-video.md).
 
 ## Contexto
 - La estimación de pose es intensiva en CPU (la EC2 t3.small no tiene GPU). Esperarla dentro de una ruta `async`, o mandarla a un hilo, no ayuda por el GIL; hay que usar otro proceso (Zhanymkanov, s.f.).

@@ -1,9 +1,10 @@
-"""Medición por fotograma: parámetros (R1 a R3) y velocidad, con el historial que esta necesita.
+"""Medición por fotograma: parámetros (R1 a R3) y velocidad de bajada de la cadera.
 
 Está separada de la máquina de estados para poder medir sin clasificar; por ejemplo, para ver
-los valores en vivo con la cámara mientras se calibra el umbral de velocidad.
+los valores en vivo con la cámara mientras se calibran los umbrales.
 """
 
+import statistics
 from collections import deque
 from dataclasses import dataclass
 
@@ -15,46 +16,56 @@ from detection_worker.pose.schemas import Pose
 class Medicion:
     instante: float
     parametros: parametros.Parametros
-    velocidad: float | None  # None mientras no haya una muestra anterior a la distancia mínima
+    velocidad: float | None  # None si el fotograma no sirve para medirla
 
 
 @dataclass(frozen=True, slots=True)
 class _Muestra:
     instante: float
     y_cadera: float
-    escala: float
+    largo: float
 
 
 class MedidorCinematico:
     """Calcula los parámetros de cada fotograma y la velocidad de bajada de la cadera (R1).
 
-    La velocidad se mide contra la muestra más reciente que esté al menos ``intervalo_s`` antes,
-    usando como escala el largo de la línea central de esa muestra anterior (adaptación A3).
+    La velocidad es la mayor bajada por segundo entre el fotograma actual y cada fotograma de la
+    ventana anterior (de ``ventana_s`` hasta ``separacion_min_s`` atrás). Así tolera los
+    fotogramas que MediaPipe pierde justo durante la caída (adaptación A3). Solo se usan
+    fotogramas con los puntos clave visibles (A6): con puntos dudosos la cadera «salta» y genera
+    velocidades imposibles. La escala es la mediana del largo de la línea central de los últimos
+    segundos, más estable que el de un solo fotograma.
     """
 
-    def __init__(self, intervalo_s: float, visibilidad_min: float) -> None:
-        self._intervalo = intervalo_s
+    def __init__(self, separacion_min_s: float, ventana_s: float, visibilidad_min: float) -> None:
+        self._separacion = separacion_min_s
+        self._ventana = ventana_s
         self._visibilidad_min = visibilidad_min
         self._historial: deque[_Muestra] = deque()
 
     def medir(self, instante: float, pose: Pose) -> Medicion:
         p = parametros.calcular(pose, self._visibilidad_min)
+        if not p.puntos_visibles:
+            return Medicion(instante, p, None)
         velocidad = self._velocidad(instante, p)
-        self._registrar(instante, p)
+        self._historial.append(_Muestra(instante, p.centro_cadera.y, p.longitud_linea_central))
+        while self._historial and self._historial[0].instante < instante - 2 * self._ventana:
+            self._historial.popleft()
         return Medicion(instante, p, velocidad)
 
     def _velocidad(self, instante: float, p: parametros.Parametros) -> float | None:
-        limite = instante - self._intervalo
-        for muestra in reversed(self._historial):
-            if muestra.instante <= limite:
-                return parametros.velocidad_descenso(
-                    muestra.y_cadera, p.centro_cadera.y, instante - muestra.instante, muestra.escala
-                )
-        return None
-
-    def _registrar(self, instante: float, p: parametros.Parametros) -> None:
-        if p.longitud_linea_central > 0:
-            self._historial.append(_Muestra(instante, p.centro_cadera.y, p.longitud_linea_central))
-        antiguedad_max = 4 * self._intervalo
-        while self._historial and self._historial[0].instante < instante - antiguedad_max:
-            self._historial.popleft()
+        anteriores = [
+            m
+            for m in self._historial
+            if instante - self._ventana <= m.instante <= instante - self._separacion
+        ]
+        largos = [m.largo for m in self._historial if m.largo > 0]
+        if not anteriores or not largos:
+            return None
+        escala = statistics.median(largos)
+        return max(
+            parametros.velocidad_descenso(
+                m.y_cadera, p.centro_cadera.y, instante - m.instante, escala
+            )
+            for m in anteriores
+        )

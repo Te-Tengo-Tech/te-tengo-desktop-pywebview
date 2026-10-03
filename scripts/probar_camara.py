@@ -8,7 +8,7 @@ Ejemplos:
     uv run python scripts/probar_camara.py
 
     # Webcam clasificando con un umbral PROVISIONAL elegido para experimentar
-    uv run python scripts/probar_camara.py --velocidad-min 0.8
+    uv run python scripts/probar_camara.py --velocidad-min 0.01
 
     # Video de URFD (la mitad derecha es RGB) guardando las mediciones para calibrar
     uv run python scripts/probar_camara.py --video fall-01-cam0.mp4 --recorte 320,0,320,240 \
@@ -155,7 +155,9 @@ def main() -> int:
     recorte = leer_recorte(args.recorte)
     umbrales = Umbrales(velocidad_descenso_min=args.velocidad_min)
     clasificador = ClasificadorCinematico(umbrales) if umbrales.calibrado else None
-    medidor = MedidorCinematico(umbrales.intervalo_velocidad_s, umbrales.visibilidad_min)
+    medidor = MedidorCinematico(
+        umbrales.intervalo_velocidad_s, umbrales.ventana_velocidad_s, umbrales.visibilidad_min
+    )
     if clasificador is None:
         print("Sin --velocidad-min: solo se miden los parámetros (no se clasifican eventos).")
     else:
@@ -169,7 +171,7 @@ def main() -> int:
         )
         return 1
     fps_fuente = captura.get(cv2.CAP_PROP_FPS) or 30.0
-    landmarker = crear_landmarker(str(args.modelo), umbrales.visibilidad_min)
+    landmarker = crear_landmarker(str(args.modelo), umbrales.visibilidad_min, modo="video")
     archivo_csv = args.csv.open("w", newline="", encoding="utf-8") if args.csv else None
     escritor = csv.writer(archivo_csv) if archivo_csv else None
     if escritor:
@@ -191,7 +193,7 @@ def main() -> int:
             siguiente = instante + 1 / args.fps
 
             imagen = preparar(imagen, recorte)
-            pose = detectar(landmarker, imagen)
+            pose = detectar(landmarker, imagen, round(instante * 1000))
             eventos: list[Evento] = []
             if clasificador is not None:
                 eventos = clasificador.actualizar(instante, pose)

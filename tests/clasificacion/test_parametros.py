@@ -46,9 +46,16 @@ def test_razon_ignora_landmarks_poco_visibles() -> None:
     assert parametros.razon_ancho_alto(pose, 0.5) == parametros.razon_ancho_alto(base, 0.5)
 
 
-def test_velocidad_es_absoluta_y_normalizada() -> None:
+def test_velocidad_positiva_al_bajar_y_negativa_al_subir() -> None:
     assert parametros.velocidad_descenso(220, 300, 0.25, 240) == pytest.approx(80 / 0.25 / 240)
-    assert parametros.velocidad_descenso(300, 220, 0.25, 240) == pytest.approx(80 / 0.25 / 240)
+    assert parametros.velocidad_descenso(300, 220, 0.25, 240) == pytest.approx(-80 / 0.25 / 240)
+
+
+def test_cabeza_bajo_pies() -> None:
+    assert not parametros.cabeza_bajo_pies(fabricas.DE_PIE)
+    assert parametros.cabeza_bajo_pies(
+        fabricas.pose(cabeza=(320, 420), cadera=(320, 360), tobillos=(320, 300))
+    )
 
 
 @pytest.mark.parametrize(("dt", "escala"), [(0, 1), (-1, 1), (1, 0)])

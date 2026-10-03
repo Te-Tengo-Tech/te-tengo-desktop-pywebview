@@ -25,7 +25,6 @@ Eventos que se generan:
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from detection_worker.clasificacion import parametros
 from detection_worker.clasificacion.medicion import Medicion, MedidorCinematico
 from detection_worker.clasificacion.umbrales import Umbrales
 from detection_worker.pose.schemas import Pose
@@ -70,7 +69,10 @@ class ClasificadorCinematico:
             raise UmbralSinCalibrarError
         self._u = umbrales
         self._velocidad_min = umbrales.velocidad_descenso_min
-        self._medidor = MedidorCinematico(umbrales.intervalo_velocidad_s, umbrales.visibilidad_min)
+        self._medidor = MedidorCinematico(
+            umbrales.intervalo_velocidad_s, umbrales.ventana_velocidad_s, umbrales.visibilidad_min
+        )
+        self._erguido_desde: float | None = None
         self._ultima: Medicion | None = None
         self._fase = Fase.NORMAL
         self._inicio_caida = 0.0
@@ -102,15 +104,28 @@ class ClasificadorCinematico:
         p, velocidad = self._ultima.parametros, self._ultima.velocidad
 
         m1 = velocidad is not None and velocidad >= self._velocidad_min
-        m2 = p.angulo_grados < self._u.angulo_linea_central_max_grados
-        m3 = p.razon_ancho_alto >= self._u.razon_ancho_alto_min
+        # Con la cabeza bajo los pies (caída hacia la cámara) el cuerpo no está vertical ni
+        # erguido aunque el ángulo y la razón no lo muestren (A7).
+        m2 = p.angulo_grados < self._u.angulo_linea_central_max_grados or p.cabeza_bajo_pies
+        m3 = p.razon_ancho_alto >= self._u.razon_ancho_alto_min or p.cabeza_bajo_pies
         # «Erguido» apaga una alerta (recuperación) o la rebaja (movimiento inestable), así que
         # solo se acepta con los puntos clave bien visibles (A6). Las condiciones de caída sí
         # usan poses dudosas: es preferible una falsa alarma a perder una caída.
         erguido = (
-            parametros.puntos_clave_visibles(pose, self._u.visibilidad_min)
+            p.puntos_visibles
+            and not p.cabeza_bajo_pies
             and p.angulo_grados > self._u.angulo_linea_central_max_grados
             and p.razon_ancho_alto < self._u.razon_ancho_alto_min
+        )
+        # La recuperación exige verse erguido un tiempo mínimo: MediaPipe a veces estima «de pie»
+        # a una persona tendida durante un fotograma suelto (A8).
+        if not erguido:
+            self._erguido_desde = None
+        elif self._erguido_desde is None:
+            self._erguido_desde = instante
+        erguido_sostenido = (
+            self._erguido_desde is not None
+            and instante - self._erguido_desde >= self._u.persistencia_erguido_s
         )
         datos = {
             "angulo_grados": round(p.angulo_grados, 2),
@@ -133,7 +148,7 @@ class ClasificadorCinematico:
             return []
 
         if self._fase is Fase.EN_EL_SUELO:
-            if erguido:
+            if erguido_sostenido:
                 self._fase = Fase.NORMAL
                 return [Evento(TipoEvento.RECUPERACION, instante, datos)]
             return self._revisar_confirmacion(instante, datos)

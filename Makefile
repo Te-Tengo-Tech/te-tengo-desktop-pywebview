@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := ayuda
-.PHONY: ayuda instalar env modelo ejecutar camara agente formatear revisar probar imagen
+.PHONY: ayuda instalar env modelo ejecutar camara agente datasets validar formatear revisar probar imagen
 
 PUERTO ?= 8001
 IMAGEN ?= te-tengo-service-detection-worker
@@ -25,6 +25,13 @@ camara: ## Prueba el clasificador con la webcam o un video (ARGS="--video x.mp4 
 
 agente: ## Envía la webcam o un video al worker como el agente real (ARGS="...")
 	uv run python scripts/agente_simulado.py $(ARGS)
+
+datasets: ## Descarga URFD y CAUCAFall en datos/ (unos 220 MB, no se versionan)
+	uv run python scripts/descargar_datasets.py
+
+validar: ## Extrae poses y valida el clasificador con los datasets (reporte en resultados/)
+	uv run python scripts/evaluar.py extraer
+	uv run python scripts/evaluar.py evaluar --barrer 0.01 1.0 0.01
 
 formatear: ## Formatea y ordena imports
 	uv run ruff format .

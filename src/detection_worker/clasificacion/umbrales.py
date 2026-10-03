@@ -36,6 +36,16 @@ class Umbrales(BaseModel):
         gt=0,
         description="R1. Separación mínima entre las dos muestras con que se mide la velocidad.",
     )
+    ventana_velocidad_s: float = Field(
+        default=1.0,
+        gt=0,
+        description="R1. Hasta cuánto atrás se busca la muestra para medir la bajada (A3).",
+    )
+    persistencia_erguido_s: float = Field(
+        default=1.0,
+        ge=0,
+        description="R5. Tiempo que la persona debe verse erguida para declarar la recuperación.",
+    )
     ventana_reaccion_s: float = Field(
         default=1.48,
         gt=0,

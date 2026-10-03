@@ -1,6 +1,6 @@
 [project]
 name = "te-tengo-service-detection-worker"
-version = "0.1.0"
+version = "0.2.0"
 description = "Módulo de detección de Te Tengo: ingesta de video, estimación de pose y clasificación cinemática de caídas."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"

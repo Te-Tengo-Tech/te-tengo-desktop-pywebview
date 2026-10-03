@@ -35,8 +35,11 @@ class EstimadorFalso:
     def __init__(self, poses: list[Pose | None] | None = None) -> None:
         self._poses: Iterator[Pose | None] = iter(poses or [])
 
-    async def estimar(self, jpeg: bytes) -> Pose | None:
+    async def estimar(self, jpeg: bytes, camara_id: str, instante_ms: int) -> Pose | None:
         return next(self._poses, None)
+
+    async def liberar(self, camara_id: str) -> None:
+        pass
 
     def cerrar(self) -> None:
         pass

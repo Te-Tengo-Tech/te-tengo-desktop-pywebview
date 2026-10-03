@@ -59,7 +59,9 @@ def main() -> int:
 
     url = f"{args.url}/v1/ingesta/{args.camara_id}"
     periodo = 1 / args.fps
-    enviados = 0
+    fps_video = captura.get(cv2.CAP_PROP_FPS) or 30.0
+    origen_ms = int(time.time() * 1000)
+    indice, siguiente, enviados = 0, 0.0, 0
     try:
         with connect(url, additional_headers={"Authorization": f"Bearer {token}"}) as ws:
             print(f"Conectado a {url}. Enviando a {args.fps} fps (Ctrl+C para terminar).")
@@ -68,6 +70,17 @@ def main() -> int:
                 ok, imagen = captura.read()
                 if not ok:
                     break
+                if args.video:
+                    # Igual que la validación: se toma el fotograma cuando el tiempo del video
+                    # alcanza el siguiente instante a 1/fps, y se usa ese tiempo como marca.
+                    t_video = indice / fps_video
+                    indice += 1
+                    if t_video + 1e-9 < siguiente:
+                        continue
+                    siguiente += periodo
+                    marca_ms = origen_ms + round(t_video * 1000)
+                else:
+                    marca_ms = int(time.time() * 1000)
                 if recorte:
                     x, y, w, h = recorte
                     imagen = imagen[y : y + h, x : x + w]
@@ -76,12 +89,8 @@ def main() -> int:
                     imagen = cv2.resize(imagen, (round(ancho * ALTO_MAX / alto / 2) * 2, ALTO_MAX))
                 ok, jpeg = cv2.imencode(".jpg", imagen, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if ok:
-                    ws.send(protocolo.codificar(int(time.time() * 1000), jpeg.tobytes()))
+                    ws.send(protocolo.codificar(marca_ms, jpeg.tobytes()))
                     enviados += 1
-                if args.video:  # en un video, saltar fotogramas para respetar los fps
-                    saltar = max(0, round((captura.get(cv2.CAP_PROP_FPS) or 30) / args.fps) - 1)
-                    for _ in range(saltar):
-                        captura.grab()
                 time.sleep(max(0.0, periodo - (time.monotonic() - inicio)))
     except ConnectionClosed as cierre:
         print(

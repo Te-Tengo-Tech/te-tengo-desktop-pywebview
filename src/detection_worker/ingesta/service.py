@@ -53,7 +53,7 @@ class ProcesadorCamara:
         for clip in self._buffer.agregar(instante, jpeg):
             self._en_segundo_plano(self._guardar_clip(clip))
 
-        pose = await self._estimador.estimar(jpeg)
+        pose = await self._estimador.estimar(jpeg, self._camara_id, instante_ms)
         publicados = []
         for evento in self._clasificador.actualizar(instante, pose):
             detectado = EventoDetectado(
@@ -78,6 +78,7 @@ class ProcesadorCamara:
     async def cerrar(self) -> None:
         if self._tareas:
             await asyncio.gather(*self._tareas, return_exceptions=True)
+        await self._estimador.liberar(self._camara_id)
 
     async def _publicar(self, evento: EventoDetectado) -> None:
         try:

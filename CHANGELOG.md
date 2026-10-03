@@ -5,10 +5,26 @@ Formato basado en [Keep a Changelog 1.1.0](https://keepachangelog.com/es-ES/1.1.
 ## [Sin publicar]
 
 ### Pendiente
-- Calibrar `velocidad_descenso_min` con pruebas.
-- Validar la regla de movimiento inestable (búsqueda de fuentes en curso).
+- Validar la regla de movimiento inestable con grabaciones propias.
 - Control de calidad de fotogramas, detección de movimiento y contrapresión.
 - Reenvío del video al Servicio de transmisión en vivo.
+
+## [0.2.0] - 2026-10-03
+
+### Agregado
+- Validación con URFD y CAUCAFall (`scripts/descargar_datasets.py`, `scripts/evaluar.py`, `make datasets`, `make validar`) y reporte en `docs/validacion.md`: sensibilidad 81,2 %, especificidad 81,1 %, exactitud 81,2 %.
+- Herramientas de prueba con webcam o video: `make camara` y `make agente`.
+- Adaptación A7: la cabeza bajo los pies indica caída hacia la cámara.
+- Adaptación A8: la recuperación exige 1 s erguido.
+
+### Cambiado
+- MediaPipe en modo VIDEO con un seguimiento por cámara (ADR 0006).
+- Velocidad de bajada con signo, ventana de 1 s y solo con puntos visibles (A3, A6).
+- Umbral de velocidad calibrado (0,01) en `.env.example`.
+
+### Corregido
+- Clips de webcams 16:9 con ancho impar.
+- Recuperaciones falsas por errores de un solo fotograma de MediaPipe.
 
 ## [0.1.0] - 2026-10-03
 
