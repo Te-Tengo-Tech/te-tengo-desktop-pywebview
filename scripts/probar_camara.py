@@ -150,21 +150,34 @@ def leer_recorte(texto: str | None) -> tuple[int, int, int, int] | None:
     return x, y, ancho, alto
 
 
-def listar_camaras(maximo: int = 8) -> None:
-    """Abre cada índice y muestra su resolución (el iPhone suele dar 1920 × 1080)."""
+def listar_camaras(maximo: int = 6) -> None:
+    """Guarda una foto de cada cámara para reconocerla, porque OpenCV no da sus nombres."""
+    carpeta = Path("resultados/camaras")
+    carpeta.mkdir(parents=True, exist_ok=True)
     for indice in range(maximo):
         captura = cv2.VideoCapture(indice)
-        ok, imagen = captura.read() if captura.isOpened() else (False, None)
-        if ok and imagen is not None:
-            alto, ancho = imagen.shape[:2]
-            print(f"  --camara {indice}: {ancho} × {alto}")
+        if not captura.isOpened():
+            captura.release()
+            break  # no hay más cámaras
+        imagen = None
+        for _ in range(15):  # las primeras lecturas pueden venir vacías mientras la cámara arranca
+            ok, imagen = captura.read()
+            if ok and imagen is not None and imagen.any():
+                break
         captura.release()
+        if imagen is None or not imagen.any():
+            print(f"  --camara {indice}: no entrega imagen (¿cámara virtual sin usar?)")
+            continue
+        foto = carpeta / f"camara-{indice}.jpg"
+        cv2.imwrite(str(foto), imagen)
+        alto, ancho = imagen.shape[:2]
+        print(f"  --camara {indice}: {ancho} × {alto} · foto: {foto}")
 
 
 def main() -> int:
     args = argumentos()
     if args.listar_camaras:
-        print("Cámaras disponibles (prueba cada índice para ver cuál es cuál):")
+        print("Cámaras disponibles. Abre las fotos para saber cuál es cuál:")
         listar_camaras()
         return 0
     if not args.modelo.is_file():
