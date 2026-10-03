@@ -1,8 +1,8 @@
 """Tipos de datos de la estimación de pose.
 
-MediaPipe Pose Landmarker entrega 33 landmarks por persona. Sus coordenadas ``x`` e ``y``
-están normalizadas entre 0 y 1 por el ancho y el alto de la imagen, y ``y`` crece hacia abajo
-(Google, s.f., *Pose landmark detection guide for Python*).
+MediaPipe Pose Landmarker entrega 33 landmarks por persona. Sus coordenadas ``x`` e ``y`` van
+de 0 a 1 (divididas entre el ancho y el alto de la imagen) e ``y`` crece hacia abajo. Detalle y
+fuente en ``docs/especificacion-clasificacion.md`` (sección 1).
 """
 
 from dataclasses import dataclass

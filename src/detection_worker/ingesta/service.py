@@ -22,7 +22,7 @@ from detection_worker.pose.service import EstimadorPose
 
 logger = logging.getLogger(__name__)
 
-# Eventos que llevan clip de 6 s antes y 6 s después (US-16, US-17 y US-18).
+# Eventos que se envían como alerta y llevan clip; los demás son avisos sin video.
 EVENTOS_CON_CLIP = frozenset({TipoEvento.CAIDA, TipoEvento.MOVIMIENTO_INESTABLE})
 
 

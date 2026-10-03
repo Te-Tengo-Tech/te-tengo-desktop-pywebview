@@ -1,13 +1,11 @@
-"""Parámetros cinemáticos de Chen et al. (2020) calculados sobre landmarks de MediaPipe.
+"""Parámetros cinemáticos que se calculan en cada fotograma a partir de los landmarks.
 
-Funciones puras: no leen la cámara, la red ni el reloj. Así se prueban con secuencias de
-landmarks grabadas o sintéticas.
+Son funciones puras: no leen la cámara, la red ni el reloj, así que se prueban con poses
+sintéticas o grabadas. Cada función indica la regla que implementa; las fórmulas completas,
+sus fuentes y las adaptaciones están en ``docs/especificacion-clasificacion.md``.
 
-Fuente: Chen, W., Jiang, Z., Guo, H., & Ni, X. (2020). Fall detection based on key points of
-human-skeleton using OpenPose. *Symmetry, 12*(5), 744. https://doi.org/10.3390/sym12050744
-
-Correspondencia de puntos (Chen, Figura 4 → MediaPipe):
-    s0 cabeza → 0 nariz · s8/s11 caderas → 24/23 · s10/s13 tobillos → 28/27
+Antes de calcular, todo se pasa a píxeles (adaptación A1), porque MediaPipe normaliza ``x`` por
+el ancho e ``y`` por el alto, y en una imagen 640 × 480 eso deforma ángulos y proporciones.
 """
 
 import math
@@ -31,16 +29,20 @@ def punto_medio(a: Punto, b: Punto) -> Punto:
 
 
 def centro_cadera(pose: Pose) -> Punto:
-    """Centro de la articulación de la cadera: (s8 + s11) / 2 (Chen, sección 3.2, ec. 1)."""
+    """Punto medio entre las dos caderas (regla R1).
+
+    Representa el centro de gravedad del cuerpo: cuando alguien cae, es el punto que baja de
+    forma brusca.
+    """
     return punto_medio(
         pose.en_pixeles(Indice.CADERA_DERECHA), pose.en_pixeles(Indice.CADERA_IZQUIERDA)
     )
 
 
 def extremos_linea_central(pose: Pose) -> tuple[Punto, Punto]:
-    """Extremos de la línea central L: cabeza s0 y punto medio de los tobillos (s10 + s13) / 2.
+    """Extremos de la línea central del cuerpo: la cabeza y el punto medio de los tobillos (R2).
 
-    Chen (sección 3.3, ec. 4). MediaPipe no tiene un punto «cabeza»; se usa la nariz.
+    MediaPipe no tiene un punto «cabeza», así que se usa la nariz (adaptación A2).
     """
     cabeza = pose.en_pixeles(Indice.NARIZ)
     pies = punto_medio(
@@ -50,26 +52,28 @@ def extremos_linea_central(pose: Pose) -> tuple[Punto, Punto]:
 
 
 def angulo_linea_central(pose: Pose) -> float:
-    """Ángulo θ entre la línea central y el suelo, en grados (0° tendido, 90° de pie).
+    """Ángulo entre la línea central y el suelo, en grados (R2).
 
-    Chen: θ = arctan |(y0 − ȳ) / (x0 − x̄)|. Se calcula con ``atan2`` para no dividir entre cero
-    cuando la persona está totalmente vertical (x0 = x̄).
+    90° es una persona de pie y 0° una persona tendida. Al caer, el cuerpo pierde la vertical y
+    el ángulo baja. Se calcula con ``atan2`` sobre las diferencias absolutas, que equivale a
+    arctan(|Δy| / |Δx|) pero no falla cuando la persona está totalmente vertical (Δx = 0).
     """
     cabeza, pies = extremos_linea_central(pose)
     return math.degrees(math.atan2(abs(cabeza.y - pies.y), abs(cabeza.x - pies.x)))
 
 
 def longitud_linea_central(pose: Pose) -> float:
-    """Longitud de L en píxeles: escala para normalizar la velocidad (adaptación propia)."""
+    """Largo de la línea central en píxeles; sirve de escala para la velocidad (adaptación A3)."""
     cabeza, pies = extremos_linea_central(pose)
     return math.hypot(cabeza.x - pies.x, cabeza.y - pies.y)
 
 
 def razon_ancho_alto(pose: Pose, visibilidad_min: float) -> float:
-    """P = ancho / alto del rectángulo que encierra el cuerpo (Chen, sección 3.4, ec. 5).
+    """Ancho dividido entre alto del rectángulo que encierra el cuerpo (R3).
 
-    El rectángulo se arma con los landmarks visibles, en píxeles. Si no hay altura, devuelve
-    infinito (cuerpo completamente horizontal).
+    De pie el rectángulo es angosto y alto (razón < 1); tendido en el suelo es ancho y bajo
+    (razón > 1). Solo se usan los landmarks suficientemente visibles (adaptación A5). Si el
+    rectángulo no tiene altura, el cuerpo está totalmente horizontal y se devuelve infinito.
     """
     puntos = pose.visibles(visibilidad_min)
     if len(puntos) < 2:
@@ -80,11 +84,12 @@ def razon_ancho_alto(pose: Pose, visibilidad_min: float) -> float:
 
 
 def velocidad_descenso(y1: float, y2: float, dt: float, escala: float) -> float:
-    """Velocidad del centro de la cadera: v = |y(t2) − y(t1)| / Δt (Chen, sección 3.2, ec. 2).
+    """Velocidad vertical del centro de la cadera entre dos instantes (R1).
 
-    Chen la expresa en m/s, que una sola cámara 2D no puede medir. Adaptación propia: se divide
-    entre la longitud de la línea central para que el valor no dependa de la distancia a la
-    cámara. Unidad resultante: longitudes de línea central por segundo.
+    Se usa el valor absoluto del desplazamiento vertical dividido entre el tiempo. Una sola
+    cámara no mide metros, así que el resultado se divide además entre el largo de la línea
+    central: la unidad queda en «cuerpos por segundo» y no cambia si la persona está cerca o
+    lejos de la cámara (adaptación A3).
     """
     if dt <= 0:
         raise ValueError("Δt debe ser positivo")

@@ -1,15 +1,25 @@
-"""Máquina de estados del Servicio de clasificación cinemática.
+"""Máquina de estados que convierte la secuencia de poses de una cámara en eventos.
 
-Combina las condiciones de Chen et al. (2020) con los tiempos del product backlog:
+En cada fotograma se evalúan tres condiciones (reglas R1 a R3 de
+``docs/especificacion-clasificacion.md``):
 
-* **Caída** (Chen, Figura 2): se cumplen M1 (descenso rápido de la cadera), M2 (θ < 45°) y
-  M3 (P ≥ 1). Como esas condiciones no ocurren en el mismo instante, M3 debe llegar dentro de la
-  ventana de reacción después de M1 y M2 (adaptación propia; ver la especificación).
-* **Se levantó** (Chen, sección 3.5): θ > 45° y P < 1 después de una caída → recuperación.
-* **Caída confirmada**: sigue en el suelo durante ``confirmacion_suelo_s`` (US-13).
-* **Movimiento inestable** (PROPUESTA pendiente de validación): M1 y M2 sin llegar a M3, y la
-  persona vuelve a estar erguida dentro de la ventana de reacción.
-* **Detección no confiable**: ``sin_deteccion_confiable_s`` solo con fotogramas descartados (US-15).
+* **M1**: el centro de la cadera bajó rápido.
+* **M2**: el cuerpo perdió la vertical (ángulo con el suelo menor que el umbral).
+* **M3**: el cuerpo quedó más ancho que alto, como cuando alguien está tendido.
+
+Las tres no ocurren en el mismo instante: primero baja la cadera y se inclina el cuerpo, y un
+momento después el cuerpo queda horizontal. Por eso hay tres fases:
+
+``NORMAL`` → (M1 y M2) → ``INICIO_CAIDA`` → (M3 dentro de la ventana) → ``EN_EL_SUELO``
+
+Eventos que se generan:
+
+* ``caida`` (R4): se llegó a ``EN_EL_SUELO``.
+* ``recuperacion`` (R5): estando en el suelo, la persona vuelve a estar erguida.
+* ``caida_confirmada`` (R6): sigue en el suelo el tiempo de confirmación.
+* ``movimiento_inestable`` (R7, propuesta pendiente de validación): empezó a caer, pero volvió
+  a estar erguida antes de quedar horizontal.
+* ``deteccion_no_confiable`` (R8): pasó demasiado tiempo sin ver a la persona.
 """
 
 from collections import deque
@@ -134,7 +144,8 @@ class ClasificadorCinematico:
         return []
 
     def _sin_pose(self, instante: float) -> list[Evento]:
-        # Si la persona quedó en el suelo fuera de la vista, la confirmación sigue contando.
+        # Si la persona quedó en el suelo fuera de la vista (por ejemplo, detrás de un mueble),
+        # la confirmación sigue contando: no verla no significa que se haya levantado.
         eventos = self._revisar_confirmacion(instante, {})
         referencia = (
             self._ultimo_valido if self._ultimo_valido is not None else self._primer_instante

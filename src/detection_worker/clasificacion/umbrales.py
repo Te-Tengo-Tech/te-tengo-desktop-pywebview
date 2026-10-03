@@ -1,66 +1,59 @@
-"""Umbrales de la clasificación cinemática y de dónde sale cada uno.
+"""Umbrales de la clasificación cinemática.
 
-Toda la trazabilidad (fórmula, fuente y adaptación) está en
-``docs/especificacion-clasificacion.md``.
+Se configuran por variable de entorno (``TT_CLASIFICACION__<CAMPO>``). El origen de cada valor
+está en la tabla de umbrales de ``docs/especificacion-clasificacion.md``.
 """
 
 from pydantic import BaseModel, Field
 
 
 class Umbrales(BaseModel):
-    """Valores configurables por variable de entorno (``TT_CLASIFICACION__<CAMPO>``)."""
-
     model_config = {"frozen": True}
 
     velocidad_descenso_min: float = Field(
         gt=0,
         description=(
-            "Condición M1. Velocidad de descenso del centro de la cadera en longitudes de línea "
-            "central por segundo. Adaptación propia: Chen et al. (2020) la dan en m/s con dos "
-            "valores contradictorios (0,009 y 0,09), así que no hay valor por defecto y debe "
-            "calibrarse con pruebas."
+            "R1. Velocidad mínima de bajada del centro de la cadera, en cuerpos por segundo. "
+            "No tiene valor por defecto: se calibra con pruebas."
         ),
     )
     angulo_linea_central_max_grados: float = Field(
         default=45.0,
         gt=0,
         lt=90,
-        description="Condición M2: θ < 45° (Chen et al., 2020, sección 3.3).",
+        description="R2. Por debajo de este ángulo con el suelo, el cuerpo perdió la vertical.",
     )
     razon_ancho_alto_min: float = Field(
         default=1.0,
         gt=0,
-        description="Condición M3: P ≥ 1 (Chen et al., 2020, sección 3.4).",
+        description="R3. Desde esta razón ancho/alto, el cuerpo está más acostado que de pie.",
     )
     intervalo_velocidad_s: float = Field(
         default=0.25,
         gt=0,
-        description="Δt de la velocidad: cada 5 fotogramas, 0,25 s (Chen et al., 2020, secc. 3.2).",
+        description="R1. Separación mínima entre las dos muestras con que se mide la velocidad.",
     )
     ventana_reaccion_s: float = Field(
         default=1.48,
         gt=0,
         description=(
-            "Tiempo máximo entre el inicio de la caída (M1 y M2) y la postura horizontal (M3). "
-            "Límite superior del tiempo de caída de 1,0 a 1,48 s de Gutiérrez et al. (2023)."
+            "R4 y R7. Tiempo máximo entre el inicio de la caída y la postura horizontal; si en "
+            "ese tiempo la persona vuelve a estar erguida, fue un movimiento inestable."
         ),
     )
     confirmacion_suelo_s: float = Field(
         default=30.0,
         gt=0,
-        description="Permanencia en el suelo que confirma la caída (US-13 del product backlog).",
+        description="R6. Tiempo en el suelo que confirma la caída.",
     )
     sin_deteccion_confiable_s: float = Field(
         default=300.0,
         gt=0,
-        description="Tiempo solo con fotogramas descartados antes de avisar (US-15 del backlog).",
+        description="R8. Tiempo seguido sin ver a la persona antes de avisar.",
     )
     visibilidad_min: float = Field(
         default=0.5,
         ge=0,
         le=1,
-        description=(
-            "Visibilidad mínima de un landmark para usarlo. Valor inicial igual a los umbrales por "
-            "defecto de MediaPipe (0,5); se calibra con pruebas."
-        ),
+        description="A5. Visibilidad mínima para usar un landmark en el rectángulo del cuerpo.",
     )

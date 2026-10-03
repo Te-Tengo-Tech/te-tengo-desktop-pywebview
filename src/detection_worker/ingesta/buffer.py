@@ -1,4 +1,7 @@
-"""Búfer del clip del evento: 6 s antes y 6 s después (US-18 del product backlog)."""
+"""Búfer del clip del evento: guarda los fotogramas de 6 s antes y 6 s después del evento.
+
+Así el familiar puede ver qué pasó justo antes y justo después de la alerta.
+"""
 
 from collections import deque
 from dataclasses import dataclass
