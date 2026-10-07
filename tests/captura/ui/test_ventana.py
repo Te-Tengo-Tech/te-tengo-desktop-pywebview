@@ -107,6 +107,7 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     monkeypatch.setattr(arranque, "SALIDA_S", 0.0)
     ejecutar(agente)  # type: ignore[arg-type]
     assert webview.iniciado
+    assert Path(webview.opciones["icon"]).is_file()  # window icon on Linux
     assert agente.eventos == ["iniciar", "publicar", "detener"]
     assert len(agente.oyentes) == 3  # window, tray icon and notifications
     inicio, estado = webview.ventanas
@@ -145,3 +146,15 @@ def test_quita_los_plugins_qt_de_opencv() -> None:
     propio = {"QT_QPA_PLATFORM_PLUGIN_PATH": os.path.join("", "opt", "qt", "plugins")}
     quitar_qt_de_opencv(propio)
     assert "QT_QPA_PLATFORM_PLUGIN_PATH" in propio
+
+
+def test_el_icono_de_la_aplicacion_es_el_de_la_marca(tmp_path: Path) -> None:
+    from PIL import Image
+
+    from te_tengo_captura.bandeja.iconos import MORADO
+    from te_tengo_captura.ui.aplicacion import guardar_icono
+
+    with Image.open(guardar_icono(tmp_path)) as imagen:
+        assert imagen.size == (512, 512)
+        fondo = imagen.convert("RGB").getpixel((256, 480))  # below the stem: the purple square
+    assert fondo == tuple(int(MORADO[i : i + 2], 16) for i in (1, 3, 5))
