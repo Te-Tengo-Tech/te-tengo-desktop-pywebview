@@ -1,0 +1,42 @@
+name: Feature / user story
+description: Propose a feature or implement a user story of the product backlog
+title: "feat: <short description>"
+labels: ["enhancement"]
+body:
+  - type: input
+    id: story
+    attributes:
+      label: User story
+      description: ID in docs/references/PRODUCT_BACKLOG.md, if any.
+      placeholder: US-05
+    validations:
+      required: false
+  - type: textarea
+    id: narrative
+    attributes:
+      label: Story
+      placeholder: |
+        As a <family member | project team | older adult>,
+        I want <capability>,
+        so that <benefit>.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: One Given/When/Then scenario per criterion; each one becomes a test.
+      placeholder: |
+        CA-05.2
+        Given ...
+        When ...
+        Then ...
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Contract and classifier impact
+      description: Changes to docs/AGENT_CONTRACT.md, or to validated thresholds (needs an ADR and re-running make validar).
+    validations:
+      required: false

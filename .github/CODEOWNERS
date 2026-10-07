@@ -1,0 +1,16 @@
+# Owners are requested as reviewers on every pull request that touches matching files.
+# Format: <pattern> @<github-login>. The last matching pattern wins.
+
+*                              @jhosepmyr
+
+# Build, packaging, CI and governance
+/pyproject.toml                @jhosepmyr
+/uv.lock                       @jhosepmyr
+/packaging/                    @jhosepmyr
+/.github/                      @jhosepmyr
+
+# Validated detection core (changes need an ADR) and the contract shared with the API
+/src/te_tengo_deteccion/       @jhosepmyr
+/docs/classification-spec.md   @jhosepmyr
+/docs/adr/                     @jhosepmyr
+/docs/AGENT_CONTRACT.md        @jhosepmyr

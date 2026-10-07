@@ -71,7 +71,7 @@ files = ["src", "tests", "scripts"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["mediapipe.*", "cv2.*", "pystray.*", "PyObjCTools.*"]
+module = ["mediapipe.*", "cv2.*", "pystray.*", "PyObjCTools.*", "AppKit.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- Pytest

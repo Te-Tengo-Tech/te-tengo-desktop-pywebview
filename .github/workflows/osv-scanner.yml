@@ -1,0 +1,49 @@
+name: OSV-Scanner
+
+# Scans uv.lock against the OSV database (PyPI and GitHub advisories). No API key needed.
+# Scheduled and manual runs fail on high or critical findings; pull request runs only report.
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Mondays 08:00 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/osv-scanner.yml
+      - .github/scripts/osv_summary.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: osv-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: OSV-Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2.6.0
+        continue-on-error: true # exits non-zero when it finds vulnerabilities; the next step decides
+        with:
+          scan-args: |-
+            --lockfile=uv.lock
+            --format=json
+            --output-file=osv-results.json
+      - name: Summary and gate
+        run: |
+          gate=""
+          if [ "${{ github.event_name }}" != "pull_request" ]; then gate="--fail-on-high"; fi
+          python3 .github/scripts/osv_summary.py osv-results.json $gate >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: osv-scanner-report
+          path: osv-results.json
+          if-no-files-found: warn
+          retention-days: 30

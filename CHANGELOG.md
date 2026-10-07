@@ -6,6 +6,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ### Added
 - Installation guide: issuing the installation credential (`create-installation.sh`, demo `seed-demo.sh`), `config.toml` location per OS, sourced webcam placement, verifying the registration (log, app, API, database), troubleshooting by window state (screens 01–05 and the cases without a screen) and a local end-to-end test with a cropped URFD fall video.
+- CI: separate lint/types and test jobs (coverage XML/HTML artifact and summary) before the Windows package, superseded runs cancelled; weekly pip-audit and OSV-Scanner scans of the locked dependencies; Dependabot, CODEOWNERS, issue and pull request templates, security policy and code of conduct.
 - Detection core split into `te_tengo_deteccion` (classification, pose, clip buffer and MP4 encoding, unchanged logic) and the empty `te_tengo_captura` app package with the `te-tengo-captura` entry point; a test keeps the core free of app, GUI and network imports (T01).
 - Documentation (T19): README for the agent (install, configure, run, package), `docs/architecture.md` with the component diagram of `te_tengo_captura`, and `docs/INSTALLATION.md` for the project team (configuration file, webcam position as in the validation, autostart, files and uninstall).
 - Live view interface (T18, blocked on the transport decision): `TransmisorEnVivo` protocol fed by the capture loop while someone watches and capture is allowed, with a no-op default.

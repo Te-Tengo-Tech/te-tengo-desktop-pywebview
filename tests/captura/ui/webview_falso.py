@@ -57,6 +57,7 @@ class WebviewFalso(ModuleType):
         super().__init__("webview")
         self.ventanas: list[VentanaFalsa] = []
         self.iniciado = False
+        self.opciones: dict[str, Any] = {}
         self.screens: list[Any] = []
 
     def create_window(self, titulo: str, url: str | None = None, **opciones: Any) -> VentanaFalsa:
@@ -68,6 +69,7 @@ class WebviewFalso(ModuleType):
         self, func: Callable[..., Any] | None = None, args: Any = None, **opciones: Any
     ) -> None:
         self.iniciado = True
+        self.opciones = opciones
         for ventana in self.ventanas:
             ventana.events.loaded.disparar()
         if func is not None:
