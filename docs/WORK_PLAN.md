@@ -43,7 +43,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - Fields: `api_url`, `credencial_instalacion`, `[webcam] indice, nombre, especificacion`, `[vivienda] nombre_adulto_mayor, direccion`, `[camara] nombre_habitacion`, `instalada_el`, optional `[clasificacion]` overrides.
   - Defaults for the classifier come from the calibrated values in `docs/validation.md` (today `.env.example`), not from new numbers.
   - Clear Spanish error message naming the missing field; `config.ejemplo.toml` at the repo root; the old `.env`/`config.py` go away.
-- [ ] **T04 Backend client** (`docs/AGENT_CONTRACT.md`).
+- [x] **T04 Backend client** (`docs/AGENT_CONTRACT.md`).
   - `ClienteBackend` (httpx, `Api-Version: 1`): `registrar`, `estado_captura`, `senal`, `publicar_evento`, `solicitar_subida_clip`, `subir_clip`, `configuracion`.
   - Re-registers on `401` (not `CREDENCIAL_INVALIDA`); maps `ProblemDetail.codigo` to typed exceptions; timeouts and no secrets in logs.
   - `BackendFalso` (in-memory, on `httpx.MockTransport`) that implements the whole contract; it is reused by every later test and by `--backend-falso` for local runs without the API.
