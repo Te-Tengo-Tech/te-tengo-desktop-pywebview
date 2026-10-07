@@ -6,6 +6,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ### Added
 - Detection core split into `te_tengo_deteccion` (classification, pose, clip buffer and MP4 encoding, unchanged logic) and the empty `te_tengo_captura` app package with the `te-tengo-captura` entry point; a test keeps the core free of app, GUI and network imports (T01).
+- Live view interface (T18, blocked on the transport decision): `TransmisorEnVivo` protocol fed by the capture loop while someone watches and capture is allowed, with a no-op default.
 - Remote thresholds (T17): `GET /api/agente/configuracion` at startup and every hour (5 min after a failure); each field is validated on its own and applied over the installation's values, unknown or invalid fields are logged and ignored, and the capture thread switches to a fresh classifier.
 - Packaging (T16): PyInstaller spec `packaging/te-tengo-captura.spec` (one-folder build with the MediaPipe model, its data files, the web UI and an icon drawn from the brand), `make empaquetar`, a `--autoprueba` smoke test (model, clip encoding, UI libraries and assets) and a `windows-latest` CI job that builds, smoke-tests and uploads the app.
 - Logging and crash recovery (T15): rotating log files (1 MB × 5) in the platform log directory with a filter that masks the credential and the token, unhandled exceptions in any thread logged, and a capture loop that survives errors (reset and retry at 1 s doubling up to 30 s, shown as the webcam problem state meanwhile).

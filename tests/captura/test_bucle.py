@@ -8,7 +8,7 @@ import pytest
 
 from te_tengo_captura.backend.modelos import EventoAgente
 from te_tengo_captura.captura.bucle import BucleCaptura, HiloCaptura
-from te_tengo_captura.captura.fuentes import Captador, FuenteFalsa, Imagen
+from te_tengo_captura.captura.fuentes import Captador, Fotograma, FuenteFalsa, Imagen
 from te_tengo_captura.captura.pose import EstimadorMediaPipe
 from te_tengo_captura.ids import uuid7
 from te_tengo_deteccion.clasificacion.estados import TipoEvento
@@ -284,3 +284,34 @@ def test_mientras_falla_la_webcam_figura_desconectada(umbrales: Umbrales) -> Non
     assert not escenario.bucle.webcam_conectada
     escenario.correr(2)
     assert escenario.bucle.webcam_conectada
+
+
+class EnVivoGrabado:
+    def __init__(self) -> None:
+        self.activo = False
+        self.instantes: list[float] = []
+
+    def enviar(self, fotograma: Fotograma) -> None:
+        self.instantes.append(fotograma.instante)
+
+
+def test_la_vista_en_vivo_recibe_los_fotogramas_solo_si_alguien_mira(umbrales: Umbrales) -> None:
+    escenario = Escenario(umbrales, [])
+    en_vivo = EnVivoGrabado()
+    escenario.bucle._en_vivo = en_vivo
+    escenario.correr(3)
+    assert en_vivo.instantes == []
+    en_vivo.activo = True
+    escenario.correr(2)
+    assert len(en_vivo.instantes) == 2
+    escenario.permiso.valor = False  # paused: no live view (CA-23.4)
+    escenario.correr(5)
+    assert len(en_vivo.instantes) == 2
+
+
+def test_transmisor_nulo() -> None:
+    from te_tengo_captura.captura.en_vivo import TransmisorNulo
+
+    nulo = TransmisorNulo()
+    assert not nulo.activo
+    nulo.enviar(Fotograma(0.0, b"", np.zeros((1, 1, 3), dtype=np.uint8)))
