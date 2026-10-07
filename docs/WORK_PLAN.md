@@ -57,7 +57,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - `FuenteWebcam` over `cv2.VideoCapture(indice)` behind a `FuenteVideo` protocol; a `FuenteArchivo` (video file) and a `FuenteFalsa` (generated frames) for tests and demos.
   - Downscale to 480p, sample by time at 8 fps, JPEG quality 80 (same as validation).
   - Detects disconnection (read failures for N seconds; N is an implementation choice) and reconnection; "Buscar de nuevo" forces a reopen.
-- [ ] **T07 Capture loop** (US-05 CA-05.1/05.2, US-11 to US-15, US-18, US-21, US-22 CA-22.1/22.3).
+- [x] **T07 Capture loop** (US-05 CA-05.1/05.2, US-11 to US-15, US-18, US-21, US-22 CA-22.1/22.3).
   - frame → MediaPipe (VIDEO mode, monotonic ms) → `ClasificadorCinematico` → events with UUID v7 → outbox.
   - Clip: for the events in `EVENTOS_CON_CLIP` (`caida`, `movimiento_inestable`, as today), keep the 6 s before and the 6 s after (CA-18.1), encode MP4, enqueue the upload. If the clip fails, the event is still sent (CA-18.2).
   - Gate: only runs while `capturaPermitida`; when it turns false, stop, drop the buffer and reset the classifier.
