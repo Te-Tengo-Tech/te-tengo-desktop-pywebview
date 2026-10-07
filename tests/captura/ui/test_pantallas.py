@@ -106,3 +106,38 @@ def test_la_cuenta_regresiva_no_mueve_el_foco(configuracion: Configuracion) -> N
         timeout=60,
     )
     assert resultado.returncode == 0, resultado.stderr
+
+
+def test_el_arranque_coincide_con_la_pantalla_00(tmp_path: Path) -> None:
+    salida = tmp_path / "00.png"
+    resultado = subprocess.run(
+        [
+            "node",
+            str(Path(__file__).with_name("arranque.js")),
+            str(PLAYWRIGHT),
+            str(CHROMIUM),
+            str(WEB / "arranque.html"),
+            str(salida),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert resultado.returncode == 0, resultado.stderr
+    # In the prototype PNG the 480 × 300 window sits on a desktop; compare that region.
+    esperada = (
+        Image.open(PANTALLAS / "00-pantalla-de-arranque.png")
+        .convert("L")
+        .crop((480, 296, 1440, 896))
+    )
+    obtenida = Image.open(salida).convert("L")
+    assert obtenida.size == esperada.size
+    # Ignore the 10 px rounded corners of the mock-up frame.
+    margen = 24
+    caja = (margen, margen, esperada.size[0] - margen, esperada.size[1] - margen)
+    diferencia = ImageChops.difference(esperada.crop(caja), obtenida.crop(caja)).point(
+        lambda v: 255 if v > 40 else 0
+    )
+    distintos = diferencia.histogram()[255] / ((caja[2] - caja[0]) * (caja[3] - caja[1]))
+    assert distintos < TOLERANCIA, f"{distintos:.2%} de píxeles distintos"
