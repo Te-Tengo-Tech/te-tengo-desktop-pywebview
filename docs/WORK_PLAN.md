@@ -53,7 +53,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - Tests: offline → online delivers in order; duplicate response `200` counts as delivered.
 
 ### Capture and detection
-- [ ] **T06 Webcam source.**
+- [x] **T06 Webcam source.**
   - `FuenteWebcam` over `cv2.VideoCapture(indice)` behind a `FuenteVideo` protocol; a `FuenteArchivo` (video file) and a `FuenteFalsa` (generated frames) for tests and demos.
   - Downscale to 480p, sample by time at 8 fps, JPEG quality 80 (same as validation).
   - Detects disconnection (read failures for N seconds; N is an implementation choice) and reconnection; "Buscar de nuevo" forces a reopen.
