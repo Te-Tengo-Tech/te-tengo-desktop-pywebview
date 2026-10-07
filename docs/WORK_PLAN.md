@@ -62,7 +62,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - Clip: for the events in `EVENTOS_CON_CLIP` (`caida`, `movimiento_inestable`, as today), keep the 6 s before and the 6 s after (CA-18.1), encode MP4, enqueue the upload. If the clip fails, the event is still sent (CA-18.2).
   - Gate: only runs while `capturaPermitida`; when it turns false, stop, drop the buffer and reset the classifier.
   - Tests with `FuenteArchivo` or recorded poses: a fall sequence produces `caida` then `caida_confirmada`; a paused camera produces nothing.
-- [ ] **T08 Heartbeat and capture state** (US-07 CA-07.1/07.2/07.3).
+- [x] **T08 Heartbeat and capture state** (US-07 CA-07.1/07.2/07.3).
   - Heartbeat every 30 s with `webcamConectada` and `deteccionConfiable`; its response updates `capturaPermitida`, `pausadaHasta` and `nombreHabitacion`.
   - Offline handling: state "sin internet" with the retry countdown shown in the UI; "Reintentar ahora" retries at once.
 - [ ] **T09 Agent state model** (`estado.py`).
