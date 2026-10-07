@@ -265,14 +265,14 @@ curl -fL -o datos/urfd/fall-01-cam0.mp4 https://fenix.ur.edu.pl/~mkepski/ds/data
 
 You can also run `make datasets` to get both datasets (about 220 MB).
 
-URFD MP4 files have the depth image on the left and the RGB image on the right (`scripts/evaluar.py`, `listar_videos`). The validation uses only the RGB half (`--recorte 320,0,320,240`). The agent's `--video` plays the whole frame. With the uncropped file, the classifier detects nothing, so crop the RGB half first:
+URFD MP4 files have the depth image on the left and the RGB image on the right (`scripts/evaluar.py`, `listar_videos`). The validation uses only the RGB half (`--recorte 320,0,320,240`). The agent's `--video` plays the whole frame. With the uncropped file, the classifier detects nothing, so crop the RGB half first. Write it **without loss** (FFV1 in an `.avi`): re-encoding it with a lossy codec such as `mp4v` changes the pixels MediaPipe sees, and on `fall-01` that is enough to lose the only frame with the person on the floor, so the agent misses a fall that the validation detects (`scripts/comparar_pipelines.py fall-01 --recodificado` shows it frame by frame).
 
 ```bash
 uv run python - <<'EOF'
 import cv2
 src = cv2.VideoCapture("datos/urfd/fall-01-cam0.mp4")
 fps = src.get(cv2.CAP_PROP_FPS)
-out = cv2.VideoWriter("datos/urfd/fall-01-rgb.mp4", cv2.VideoWriter_fourcc(*"mp4v"), fps, (320, 240))
+out = cv2.VideoWriter("datos/urfd/fall-01-rgb.avi", cv2.VideoWriter_fourcc(*"FFV1"), fps, (320, 240))
 while True:
     ok, frame = src.read()
     if not ok:
@@ -282,10 +282,10 @@ out.release()
 EOF
 ```
 
-The output name does not end in `-cam0.mp4`, so `make validar` ignores it. Check that the cropped clip triggers a fall before starting the agent:
+The output name does not end in `-cam0.mp4`, so `make validar` ignores it. Check that the cropped clip triggers a fall before starting the agent. `make camara` processes the frames exactly as the agent does (8 fps sampling, 480p, JPEG quality 80), so its result is the agent's:
 
 ```bash
-make camara ARGS="--video datos/urfd/fall-01-rgb.mp4 --sin-ventana"   # expect one `caida` event
+make camara ARGS="--video datos/urfd/fall-01-rgb.avi --sin-ventana"   # expect one `caida` event at 4.77 s
 ```
 
 URFD falls are detected in 23 of 30 videos ([validation.md](validation.md), section 3.1). If you pick another video, check it the same way.
@@ -293,7 +293,7 @@ URFD falls are detected in 23 of 30 videos ([validation.md](validation.md), sect
 **4. Agent** (terminal 3, in `te-tengo-desktop-pywebview`):
 
 ```bash
-uv run te-tengo-captura --config config.local.toml --video datos/urfd/fall-01-rgb.mp4
+uv run te-tengo-captura --config config.local.toml --video datos/urfd/fall-01-rgb.avi
 ```
 
 The video plays in a loop, in real time, instead of the webcam (`[webcam] indice` is ignored). Expected results:

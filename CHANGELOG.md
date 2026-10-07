@@ -28,6 +28,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 - Work plan, agent contract, desktop prototype references and Claude Code cloud setup to build the agent autonomously (`AGENTS.md`, `docs/WORK_PLAN.md`, `.claude/`).
 
 ### Fixed
+- Detection parity with the validation: `scripts/comparar_pipelines.py` runs a dataset clip through `evaluar.py extraer` and through the agent's capture loop and compares every frame. The agent already matched (170 of 170 videos, same landmarks, phase and events); the `fall-01` miss of the end-to-end test came from the lossy `mp4v` crop of the installation guide, which now writes the RGB half losslessly (FFV1). `make camara` (`probar_camara.py`) now samples and compresses exactly like the agent, so it no longer reports falls the agent cannot see; MediaPipe's confidences no longer follow `[clasificacion] visibilidad_min`; `evaluar.py evaluar --pipeline agente` measures the agent's own poses; a test locks the parity.
 - Found by running the real app under Xvfb with pywebview's Qt backend: the splash keeps the prototype's cadence even when startup is instant, has no light flash before painting, and on Linux Qt no longer picks OpenCV's bundled Qt plugins.
 
 ### Removed
