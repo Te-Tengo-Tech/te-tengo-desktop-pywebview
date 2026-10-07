@@ -49,6 +49,10 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "N", "ASYNC", "RUF", "PT"]
 # RUF001-003: identifiers and UI strings are Spanish (accents, «θ», dashes).
 ignore = ["RUF001", "RUF002", "RUF003"]
 
+[tool.ruff.lint.per-file-ignores]
+# Tests compare the Spanish copy verbatim; splitting it would hide what is asserted.
+"tests/**" = ["E501"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["te_tengo_deteccion", "te_tengo_captura"]
 

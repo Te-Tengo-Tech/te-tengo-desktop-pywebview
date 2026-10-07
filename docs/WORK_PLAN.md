@@ -65,7 +65,7 @@ The agent is built task by task from this checklist. An agent working autonomous
 - [x] **T08 Heartbeat and capture state** (US-07 CA-07.1/07.2/07.3).
   - Heartbeat every 30 s with `webcamConectada` and `deteccionConfiable`; its response updates `capturaPermitida`, `pausadaHasta` and `nombreHabitacion`.
   - Offline handling: state "sin internet" with the retry countdown shown in the UI; "Reintentar ahora" retries at once.
-- [ ] **T09 Agent state model** (`estado.py`).
+- [x] **T09 Agent state model** (`estado.py`).
   - One immutable `EstadoAgente` derived from: webcam connected, internet, consent, pause, last successful send. Its priority order and texts follow `camState`, `health` and `trayState` in `src/core.js`.
   - Serializes to the JSON the web UI consumes (same fields as `baseState()` in `core.js`, plus the household and webcam data from the config).
   - Table-driven tests covering the five states and their priority.
