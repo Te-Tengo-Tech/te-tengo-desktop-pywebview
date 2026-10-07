@@ -131,3 +131,17 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     assert estado.visible
     salir.accion()
     assert estado.destruida
+
+
+def test_quita_los_plugins_qt_de_opencv() -> None:
+    import os
+
+    from te_tengo_captura.ui.aplicacion import quitar_qt_de_opencv
+
+    cv2 = os.path.join("", "venv", "site-packages", "cv2", "qt", "plugins")
+    entorno = {"QT_QPA_PLATFORM_PLUGIN_PATH": cv2, "QT_QPA_FONTDIR": cv2, "OTRA": "x"}
+    quitar_qt_de_opencv(entorno)
+    assert entorno == {"OTRA": "x"}
+    propio = {"QT_QPA_PLATFORM_PLUGIN_PATH": os.path.join("", "opt", "qt", "plugins")}
+    quitar_qt_de_opencv(propio)
+    assert "QT_QPA_PLATFORM_PLUGIN_PATH" in propio

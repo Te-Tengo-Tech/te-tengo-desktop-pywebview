@@ -172,7 +172,7 @@ button{font:inherit}
 .estado .scr-foot{padding:0 0 18px;margin-top:auto}
 
 /* ---------- Arranque: ventana de inicio (480 × 300, sin marco) ---------- */
-body.arranque{background:var(--morado)}
+html.arranque,body.arranque{background:var(--morado)}  /* no light flash before painting */
 .boot{position:relative;width:100%;height:100vh;background:var(--morado);color:#fff;
   display:flex;flex-direction:column;align-items:center;padding:40px 32px 22px;font-family:var(--font);overflow:hidden}
 .boot-mark{width:84px;height:84px}

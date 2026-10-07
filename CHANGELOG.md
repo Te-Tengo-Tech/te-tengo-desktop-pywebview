@@ -24,6 +24,9 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 - Installation configuration (T03): TOML file in the platform config directory or `--config`, with `config.ejemplo.toml`, calibrated classifier defaults and Spanish errors naming the missing field. Replaces `.env`, `pydantic-settings` and `scripts/crear_env.py`.
 - Work plan, agent contract, desktop prototype references and Claude Code cloud setup to build the agent autonomously (`AGENTS.md`, `docs/WORK_PLAN.md`, `.claude/`).
 
+### Fixed
+- Found by running the real app under Xvfb with pywebview's Qt backend: the splash keeps the prototype's cadence even when startup is instant, has no light flash before painting, and on Linux Qt no longer picks OpenCV's bundled Qt plugins.
+
 ### Removed
 - Cloud ingestion service (ADR 0007, T02): FastAPI app, WebSocket ingestion and its protocol, `/health`, S3 clip storage, the provisional event publisher, the Docker image and CI job, `scripts/agente_simulado.py` and the `fastapi`, `uvicorn`, `boto3`, `websockets` and `httpx2` dependencies. `ProcesadorCamara` moved to `te_tengo_captura/captura/procesador.py`.
 

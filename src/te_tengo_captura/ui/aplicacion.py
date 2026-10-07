@@ -6,6 +6,8 @@ tray menu opens it again or exits.
 """
 
 import logging
+import os
+from collections.abc import MutableMapping
 
 from te_tengo_captura.agente import Agente
 from te_tengo_captura.bandeja.avisos import Avisos
@@ -15,6 +17,15 @@ from te_tengo_captura.ui.puente import Puente
 from te_tengo_captura.ui.ventana import VentanaEstado
 
 logger = logging.getLogger(__name__)
+
+
+def quitar_qt_de_opencv(entorno: MutableMapping[str, str] = os.environ) -> None:
+    """On Linux, importing ``cv2`` points Qt at the plugins bundled with OpenCV, which cannot
+    load pywebview's Qt backend. Drop those variables so Qt uses its own plugins."""
+    for variable in ("QT_QPA_PLATFORM_PLUGIN_PATH", "QT_QPA_FONTDIR"):
+        valor = entorno.get(variable, "")
+        if f"{os.sep}cv2{os.sep}" in valor:
+            del entorno[variable]
 
 
 class Aplicacion:
@@ -37,6 +48,7 @@ class Aplicacion:
     def ejecutar(self) -> None:
         import webview
 
+        quitar_qt_de_opencv()
         try:
             webview.start(self._iniciar)
         finally:
