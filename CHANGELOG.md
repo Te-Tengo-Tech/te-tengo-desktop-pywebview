@@ -6,6 +6,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ### Added
 - Detection core split into `te_tengo_deteccion` (classification, pose, clip buffer and MP4 encoding, unchanged logic) and the empty `te_tengo_captura` app package with the `te-tengo-captura` entry point; a test keeps the core free of app, GUI and network imports (T01).
+- Clip encoding with PyAV (T10, ADR 0008): H.264 MP4 in `yuv420p` with even dimensions, without an `ffmpeg` executable; FFmpeg is no longer installed in CI.
 - Agent state model (T09): immutable `EstadoAgente` with the priority and verbatim copy of `camState`, `health`, `trayState` and `osToast`, serialized to the JSON of `baseState()` plus the household and webcam data.
 - Heartbeat and capture state (T08): `POST /api/agente/senal` every 30 s and at once when the webcam state changes; the answer updates consent, pause and room name; offline retries at 2, 4, 8, 16 then 30 s with a countdown and «Reintentar ahora»; the last capture state is stored on disk and a pause ends on its own at its hour.
 - Capture loop (T07): frame → MediaPipe (VIDEO mode, in the capture thread) → classifier → events with UUID v7 → outbox; 6 s + 6 s clips for `caida` and `movimiento_inestable` encoded off the loop thread (the event is sent even if the clip fails); consent and pause gate that closes the webcam, drops the clip buffer and resets the classifier. Replaces the old async `ProcesadorCamara`.

@@ -15,6 +15,7 @@ dependencies = [
     "numpy>=2.0",
     "pydantic>=2.13",
     "platformdirs>=4",
+    "av>=18.1.0",
 ]
 
 [project.scripts]

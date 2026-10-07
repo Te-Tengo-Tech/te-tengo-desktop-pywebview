@@ -10,10 +10,10 @@ if ! command -v uv >/dev/null 2>&1; then
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# MediaPipe needs OpenGL ES and EGL on Linux even on CPU; ffmpeg encodes clips until T10.
+# MediaPipe needs OpenGL ES and EGL on Linux even on CPU (clips use PyAV, no ffmpeg needed).
 if ! ldconfig -p | grep -q libGLESv2; then
   SUDO=$(command -v sudo || true)
-  $SUDO apt-get update -qq && $SUDO apt-get install -y -qq --no-install-recommends libgles2 libegl1 ffmpeg >/dev/null
+  $SUDO apt-get update -qq && $SUDO apt-get install -y -qq --no-install-recommends libgles2 libegl1 >/dev/null
 fi
 
 uv python install 3.11

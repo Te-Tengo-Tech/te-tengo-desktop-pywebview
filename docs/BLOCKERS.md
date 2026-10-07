@@ -11,3 +11,4 @@ Things the agent cannot decide or get by itself. Work continues with fakes; the 
 | Dataset validation | `make validar` downloads URFD and CAUCAFall from hosts outside the cloud allow-list. Any change to the detection logic must be validated locally. | Team (local) | Open |
 | Windows code signing | Without a certificate, Windows SmartScreen warns on first run. Acceptable for the pilot; record the decision. | Team | Open |
 | Rejected installation credential | The prototype has no screen or copy for `401 CREDENCIAL_INVALIDA`. The agent logs it, keeps retrying and shows the «Sin internet» state (04), which tells the family to wait and the window note tells them to call the team. A specific copy is needed if the team wants one. | Team | Open |
+| Video codec license | PyAV's wheels bundle `libx264` (GPL-2.0-or-later), used to encode the clips (ADR 0008). Fine for the pilot; review before wider distribution or switch to an LGPL build with OpenH264. | Team | Open |
