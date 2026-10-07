@@ -1,0 +1,40 @@
+# Te Tengo Captura: installation file.
+#
+# The project team writes this file when installing the agent on the household PC. Copy it to
+# the platform config directory with the name config.toml:
+#   Windows: %APPDATA%\TeTengoCaptura\config.toml
+#   macOS:   ~/Library/Application Support/TeTengoCaptura/config.toml
+#   Linux:   ~/.config/TeTengoCaptura/config.toml
+# or pass it with: te-tengo-captura --config <path>
+#
+# The values below are the example household of the prototype; replace them on each installation.
+
+# Base URL of te-tengo-general-api (docs/AGENT_CONTRACT.md).
+api_url = "http://localhost:8080"
+# Installation credential issued by the team for this camera. Secret: never share or log it.
+credencial_instalacion = "cambia-esta-credencial"
+# Installation date, shown in the window as «Instalación».
+instalada_el = 2026-09-22
+
+[webcam]
+# OpenCV index of the USB webcam (0 is the first one; `make camara ARGS="--listar-camaras"`).
+indice = 0
+nombre = "Webcam USB HD (1080p)"
+especificacion = "USB · 1920 × 1080"
+
+[vivienda]
+nombre_adulto_mayor = "Rosa Huamán"
+direccion = "Jr. Los Pinos 482, San Miguel, Lima"
+
+[camara]
+# Room name used when registering; the family can rename it later in the mobile app (CA-06.2).
+nombre_habitacion = "Sala"
+
+# Optional overrides of the classifier (docs/classification-spec.md). Without this table the agent
+# uses the calibrated values of docs/validation.md. Change them only after re-validating.
+# [clasificacion]
+# velocidad_descenso_min = 0.01
+# angulo_linea_central_max_grados = 45
+# razon_ancho_alto_min = 1
+# confirmacion_suelo_s = 30
+# sin_deteccion_confiable_s = 300

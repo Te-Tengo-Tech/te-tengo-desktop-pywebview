@@ -1,146 +1,126 @@
 # te-tengo-desktop-pywebview
 
-**Te Tengo Captura**, the household agent. Today it holds the **validated detection module** (MediaPipe, kinematic classification and clips) and its validation tools. The desktop application (pywebview) will be built here. It will **process the video on the PC** and send only events and clips to the backend.
+**Te Tengo Captura**, the household agent of **Te Tengo**, a system that detects falls of older adults at home. It runs on the household PC, which stays on, and:
 
-> **Building the agent:** the work is planned in [docs/WORK_PLAN.md](docs/WORK_PLAN.md) and the rules for contributors and coding agents are in [AGENTS.md](AGENTS.md). The backend contract is [docs/AGENT_CONTRACT.md](docs/AGENT_CONTRACT.md).
+- opens the configured USB webcam;
+- estimates the pose with **MediaPipe on the PC's CPU** and classifies the movement with the validated **kinematic classifier**, without training models;
+- sends only **events and 6 s + 6 s clips** to the backend (`te-tengo-general-api`), never a continuous video stream;
+- shows the state of the webcam in a small window and in the system tray.
 
-> **Migration status (ADR 0007):** the code started as a cloud service (`te-tengo-service-detection-worker`, with FastAPI and WebSocket ingestion). The core (`clasificacion/`, `pose/`, the clip buffer and encoding, `eventos/`) is reused as is inside the agent; the ingestion server will be retired when the agent is ready. The change request to the charter is pending.
+The family manages consent, pauses, the room name and alerts in the Te Tengo mobile app. The agent has no settings screen: the project team installs it with a fixed configuration file.
 
+> **Contributors and coding agents:** the rules are in [AGENTS.md](AGENTS.md), the backend contract in [docs/AGENT_CONTRACT.md](docs/AGENT_CONTRACT.md), the work plan in [docs/WORK_PLAN.md](docs/WORK_PLAN.md) and the open questions in [docs/BLOCKERS.md](docs/BLOCKERS.md).
 
-**Detection module** of Te Tengo, the pose-estimation-based system for detecting falls of older adults in their homes.
+## How it works
 
-It receives the video from the Capture Agent, estimates the person's pose with MediaPipe and classifies the movement with **kinematic thresholds, without training models**. It detects falls, confirmed falls, recoveries, unstable movements and periods of unreliable detection. It reports each event to the system's Backend API and stores the clip from 6 s before to 6 s after the event.
+```
+USB webcam → 480p · 8 fps · JPEG 80 → MediaPipe Pose (VIDEO mode) → kinematic classifier
+                                                                        │ caida, caida_confirmada,
+                                                                        │ movimiento_inestable,
+                                                                        ▼ recuperacion, deteccion_no_confiable
+ window + tray ◄── agent state ◄── heartbeat (consent, pause) ◄──► te-tengo-general-api ◄── persistent outbox (events + clips)
+```
 
-## Place in the architecture
+- **Consent and pauses are hard gates:** without consent, or while the family has paused the camera, the webcam is closed and nothing is classified or buffered (CA-05.2, CA-22.1). Capture resumes on its own (CA-22.3).
+- **No event is lost:** events go to a SQLite outbox first and are sent with retries; `eventoId` (UUID v7) makes resending safe. Clips are deleted after upload.
+- **Offline:** the window shows «Sin internet · reintentando en N s»; events made offline arrive later.
 
-This repository implements the **Detection module** container of the C4 model. It maps to the **Video Processing Layer** of the logical architecture, except for the Live Streaming Service, which is separate.
+Details: [docs/architecture.md](docs/architecture.md). Formulas and sources: [docs/classification-spec.md](docs/classification-spec.md).
 
-| Logical architecture component | Folder |
+| Package | Contents |
 |---|---|
-| Video Ingestion Service | [`src/detection_worker/ingesta/`](src/detection_worker/ingesta) |
-| Pose Estimation Service | [`src/detection_worker/pose/`](src/detection_worker/pose) |
-| Kinematic Classification Service | [`src/detection_worker/clasificacion/`](src/detection_worker/clasificacion) |
-| Communication with the system's Backend API | [`src/detection_worker/eventos/`](src/detection_worker/eventos) |
-| Video clip persistence (write) | [`src/detection_worker/clips/`](src/detection_worker/clips) |
-
-```
-Capture Agent ──WSS (JPEG 480p, 5-10 fps)──► ingesta ──► pose (MediaPipe, separate process)
-                                                │                │ 33 landmarks
-                                                │                ▼
-                                                │          clasificacion ──events──► Backend API
-                                                └──clip 6 s + 6 s──► clips ──► object storage
-```
-
-The internal organization is explained in [docs/architecture.md](docs/architecture.md). The formulas and their sources are in [docs/classification-spec.md](docs/classification-spec.md).
+| [`src/te_tengo_deteccion/`](src/te_tengo_deteccion) | Validated detection core: classification, pose, clip buffer and MP4 encoding. Pure Python, no GUI, no network |
+| [`src/te_tengo_captura/`](src/te_tengo_captura) | The desktop agent: configuration, capture loop, backend client, outbox, heartbeat, window (pywebview) and tray (pystray) |
+| [`scripts/`](scripts) | Validation with datasets and the webcam test tool |
 
 ## Requirements
 
 | Tool | Version |
 |---|---|
-| Python | 3.11 (required by `mediapipe==0.10.35`, see [ADR 0003](docs/adr/0003-mediapipe-in-separate-process.md)) |
+| Python | 3.11 (required by `mediapipe==0.10.35`) |
 | [uv](https://docs.astral.sh/uv/) | 0.12 or later |
-| FFmpeg | Any recent version (builds the MP4 clips) |
-| Docker | 29 or later (optional, for the image) |
+| OS | Windows 10/11 for the pilot. It also runs on macOS and Linux (on Linux pywebview needs GTK or Qt, and pystray needs a tray) |
+
+No system FFmpeg is needed: clips are encoded with PyAV ([ADR 0008](docs/adr/0008-clip-encoding-with-pyav.md)).
 
 ## Getting started
 
 ```bash
-make instalar      # creates .venv with uv and installs the pre-commit hooks
-make modelo        # downloads pose_landmarker_lite.task into models/
-make env          # creates .env with local tokens (does not overwrite an existing one)
-make ejecutar      # http://localhost:8001/docs
+make instalar                          # uv sync + pre-commit hooks
+make modelo                            # downloads pose_landmarker_lite.task into models/
+uv run te-tengo-captura --backend-falso --config config.ejemplo.toml
 ```
+
+`--backend-falso` runs the agent against an in-memory backend that implements the whole contract, so the window shows «Enviando» without the API. Other options:
+
+| Option | Purpose |
+|---|---|
+| `--config <path>` | Installation file (default: `config.toml` in the platform config directory) |
+| `--backend-falso` | In-memory backend instead of `te-tengo-general-api` |
+| `--video <file>` | Play a video in a loop instead of the webcam (demos) |
+| `--modelo <path>` | MediaPipe model (default: `models/pose_landmarker_lite.task`, or the one bundled in the build) |
+| `--datos <dir>`, `--logs <dir>` | Data (outbox, pending clips) and log directories |
+| `--autoprueba` | Check the model, clip encoding and UI libraries, then exit (smoke test of a build) |
+| `--version` | Print the version |
+
+## Configuration
+
+The project team writes a fixed TOML file: `%APPDATA%\TeTengoCaptura\config.toml` on Windows (platform config directory, app name `TeTengoCaptura`), or `--config <path>`. Every field is documented in [config.ejemplo.toml](config.ejemplo.toml): API URL, installation credential, webcam index and name, household, room and installation date. Without a `[clasificacion]` table, the agent uses the calibrated thresholds of [docs/validation.md](docs/validation.md). A missing field stops the agent with a Spanish message naming it. The backend can adjust thresholds remotely (`GET /api/agente/configuracion`, hourly).
+
+Installing on a household PC (configuration, webcam position, autostart): [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `make instalar` | Installs the dependencies (`uv sync`) and the pre-commit hooks |
-| `make env` | Creates `.env` from `.env.example` with random local tokens |
 | `make modelo` | Downloads the MediaPipe model |
-| `make ejecutar` | Starts the service with auto-reload |
-| `make camara` | Tests the classifier with the webcam or a video, with an on-screen overlay |
-| `make agente` | Sends the webcam or a video to the worker, like the real agent |
-| `make datasets` | Downloads URFD and CAUCAFall |
-| `make validar` | Validates the classifier with the datasets and generates the report |
-| `make formatear` | Formats the code with Ruff |
 | `make revisar` | Lint (Ruff), formatting and types (mypy in strict mode) |
 | `make probar` | Tests with coverage (pytest) |
-| `make imagen` | Builds the Docker image |
+| `make formatear` | Formats the code with Ruff |
+| `make empaquetar` | Builds the one-folder app with PyInstaller into `dist/te-tengo-captura/` |
+| `make camara` | Tests the classifier with the webcam or a video, with an on-screen overlay |
+| `make datasets`, `make validar` | Downloads URFD and CAUCAFall and validates the classifier |
 
-## Testing with the camera or with videos
+## Packaging
 
-There are two tools in `scripts/`. Neither one needs the backend or the real agent.
+```bash
+uv sync --group empaquetado && make modelo
+uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
+dist/te-tengo-captura/te-tengo-captura --autoprueba --logs .
+```
 
-**1. Local classifier test** (`make camara`). Opens the webcam or a video and uses the same code as the worker. The window shows the video with the skeleton (colored by phase), the center line, the hip center (cyan) and the body bounding box. Next to it there is a panel with:
-- the state: normal, possible fall or on the floor, with the countdown to 30 s;
-- whether the person is detected and whether their key points are visible;
-- the three fall conditions, with their value, a bar and the threshold;
-- the progress toward "got up" and the list of events.
+The spec bundles the model, MediaPipe's data files and the web UI, and draws the icon from the brand. CI builds it on `windows-latest`, runs `--version` and `--autoprueba`, and uploads the folder as the `te-tengo-captura-windows` artifact. On Windows the agent registers itself to start when the user signs in, and a second launch only shows the running window.
 
-When an event occurs, a large notice appears over the video. Keys: `q` quit, `r` reset, `c` save screenshot.
+## Testing with the webcam or videos
+
+`make camara` opens the webcam or a video and runs the same classifier as the agent. It draws the skeleton, the center line, the hip center and the body box, plus a panel with the phase, the three fall conditions and the events. Keys: `q` quit, `r` reset, `c` screenshot.
 
 ```bash
 make camara ARGS="--camara 0"                        # webcam, with the calibrated threshold
-make camara ARGS="--solo-medir"                      # only shows the values, without classifying
+make camara ARGS="--listar-camaras"                  # saves a photo per camera to find the index
 make camara ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240 --csv mediciones.csv"
 ```
 
-- **URFD videos:** they have depth on the left and RGB on the right. Use `--recorte 320,0,320,240`.
-- **`--csv`:** saves the angle, the ratio and the speed of each frame; useful for calibration.
-- **`--sin-ventana`:** only prints the events, without opening a window.
-- **On macOS:** the first time, you must give camera permission to the terminal or the IDE (System Settings → Privacy & Security → Camera).
-- **iPhone as a camera (Continuity Camera):** with iOS 16 or later, macOS Ventura or later and the same Apple Account, the iPhone appears as one more camera. To see its index: `make camara ARGS="--listar-camaras"`; then use it with `--camara N`. Avoid "Desk View", which shows the desk from above.
-
-**2. Simulated agent** (`make agente`). Sends the webcam or a video to the worker over WebSocket, just as Te Tengo Captura will (480p, 8 fps and JPEG). It tests the full service:
-
-```bash
-make ejecutar                                    # in one terminal (requires the threshold in .env)
-make agente                                      # in another one: webcam
-make agente ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240"
-```
-
-The worker logs each event (`Evento detectado: caida en camara-local …`). Without the backend or SeaweedFS, it also logs a warning that it could not publish the event, but it keeps working.
+On macOS, give camera permission to the terminal the first time. An iPhone works as a camera through Continuity Camera.
 
 ## Validation with public datasets
 
-The classifier was validated with **URFD** (70 videos) and **CAUCAFall** (100 videos) under production conditions: 480p, 8 fps, JPEG and MediaPipe in VIDEO mode. To measure without bias, each group was left out during calibration:
+The classifier was validated with **URFD** (70 videos) and **CAUCAFall** (100 videos) under production conditions: 480p, 8 fps, JPEG and MediaPipe in VIDEO mode, leaving each group out during calibration:
 
 | Sensitivity | Specificity | Accuracy | False recoveries |
 |---|---|---|---|
 | **81.2%** | **81.1%** | **81.2%** | 0 of 30 |
 
-Protocol, results per activity, changes made and limitations: [docs/validation.md](docs/validation.md). To reproduce it:
+Protocol, results per activity and limitations: [docs/validation.md](docs/validation.md). The agent did not change the classifier; to reproduce: `make datasets && make validar`.
 
-```bash
-make datasets   # downloads the datasets into datos/ (not versioned)
-make validar    # generates resultados/reporte.md
-```
+## Tests
 
-## Interfaces
-
-| Interface | Details |
-|---|---|
-| `GET /health` | Liveness for Docker and the reverse proxy |
-| `WS /v1/ingesta/{camara_id}` | Video from the Capture Agent. Format in [docs/ingestion-protocol.md](docs/ingestion-protocol.md). |
-| Backend API → `POST /internal/v1/eventos` | Detected events (provisional contract) |
-| Backend API → `PUT /internal/v1/eventos/{id}/clip` | Key of the stored clip |
-
-## Configuration
-
-All variables have the `TT_` prefix. The full list is in [.env.example](.env.example).
-
-`TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN` has no default value in the code; `.env.example` has the calibrated value (0.01; see [docs/validation.md](docs/validation.md)). While it is empty, the service starts (`/health`, `/docs`), but ingestion closes the WebSocket with code 1011.
+`make revisar probar` runs everything without a webcam or a display: fake video sources, the fake backend on `httpx.MockTransport`, an injected clock, and stand-ins for the `webview` and `pystray` modules. Where Node.js, Playwright and Chromium are available, the tests also render the window and the splash and compare them pixel by pixel with the prototype screens in `docs/references/desktop-prototype/screens/`. What needs real hardware is in the local test checklist of [docs/WORK_PLAN.md](docs/WORK_PLAN.md).
 
 ## Status
 
-Version 0.2.0: classifier validated with URFD and CAUCAFall. Pending:
-- Validate the unstable movement rule with our own recordings (the datasets have no labeled stumbles).
-- Motion detection and frame quality control.
-- Drop late frames (backpressure).
-- Forward the video to the Live Streaming Service.
-
-Details are in [CHANGELOG.md](CHANGELOG.md).
+Version 0.2.0. The agent is complete except for what needs real hardware (webcam, display, Windows packaging run) and the live view, which waits for the transport decision. Open items: [docs/BLOCKERS.md](docs/BLOCKERS.md). Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 

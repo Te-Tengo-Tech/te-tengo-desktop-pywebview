@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
 
 permissions:
@@ -17,7 +17,7 @@ jobs:
         with:
           enable-cache: true
       - name: System libraries for MediaPipe on Linux (OpenGL ES and EGL, even on CPU)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgles2 libegl1 ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgles2 libegl1
       - name: Instalar dependencias
         run: uv sync --locked
       - name: Lint y formato
@@ -31,10 +31,34 @@ jobs:
       - name: Pruebas
         run: uv run pytest
 
-  imagen:
-    runs-on: ubuntu-latest
+  empaquetar:
+    # The packaged Windows app (PyInstaller one-folder build), with a smoke test.
+    runs-on: windows-latest
     needs: calidad
     steps:
       - uses: actions/checkout@v7
-      - name: Construir imagen Docker
-        run: docker build -t te-tengo-service-detection-worker .
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - name: Instalar dependencias
+        run: uv sync --locked --group empaquetado
+      - name: Descargar modelo de MediaPipe
+        shell: bash
+        run: ./scripts/descargar_modelo.sh
+      - name: Construir con PyInstaller
+        run: uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
+      - name: Prueba de humo
+        shell: pwsh
+        run: |
+          # A windowed exe does not block the shell: wait for it and check the exit code.
+          $exe = "dist/te-tengo-captura/te-tengo-captura.exe"
+          $version = Start-Process -FilePath $exe -ArgumentList "--version" -Wait -PassThru
+          if ($version.ExitCode -ne 0) { throw "--version terminó con $($version.ExitCode)" }
+          $prueba = Start-Process -FilePath $exe -ArgumentList "--autoprueba","--logs","logs" -Wait -PassThru
+          Get-Content logs/te-tengo-captura.log
+          if ($prueba.ExitCode -ne 0) { throw "--autoprueba terminó con $($prueba.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: te-tengo-captura-windows
+          path: dist/te-tengo-captura/
+          if-no-files-found: error

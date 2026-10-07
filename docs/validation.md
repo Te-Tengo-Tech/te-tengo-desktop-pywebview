@@ -20,7 +20,7 @@ Neither one includes older adults or real falls; this limitation is declared in 
 
 ## 2. Protocol
 
-1. **Same processing as in production.** Each video is downscaled to 480p and 8 fps (6 and 10 fps were also tested). It is compressed as JPEG with quality 80, as the agent does, and passed through MediaPipe Pose Landmarker *lite* in VIDEO mode. The poses are saved once and then replayed in **the same `ClasificadorCinematico` as the worker**.
+1. **Same processing as in production.** Each video is downscaled to 480p and 8 fps (6 and 10 fps were also tested). It is compressed as JPEG with quality 80, as the agent does, and passed through MediaPipe Pose Landmarker *lite* in VIDEO mode. The poses are saved once and then replayed in **the same `ClasificadorCinematico` as the agent**.
 2. **Per-video criterion.** A fall video is a true positive if the classifier emits at least one `caida` event. A daily activity video is a false positive if it emits any.
 3. **Metrics.** Sensitivity = TP/(TP+FN), specificity = TN/(TN+FP) and accuracy = (TP+TN)/total, the same definitions as Chen et al. (2020, eq. 6–8) and the charter.
 4. **Calibration.** The only calibrated threshold is the minimum descent speed (R1). 100 values (0.01–1.0) are tested and the one with the highest **Youden index** is chosen (J = sensitivity + specificity − 1; Youden, 1950). The angle (45°) and the ratio (1) are left at the published values: tuning them did not improve the cross-dataset validation.
@@ -77,7 +77,7 @@ The agent sends between 5 and 10 fps, per the architecture.
 **A threshold calibrated with a camera at body height (URFD) does not work for an elevated camera (CAUCAFall).** From above, the descent of the hip looks shorter in the image. The threshold must be calibrated with a camera placed as in the home: that is why the CAUCAFall and full-set value (0.01) is used.
 
 ### 3.4. Live service check
-24 videos (12 from URFD and 12 from CAUCAFall) were sent to the running worker, using the simulated agent over WebSocket. The fall events matched the offline evaluation in **24 of 24**.
+24 videos (12 from URFD and 12 from CAUCAFall) were sent to the running worker (the cloud service retired in ADR 0007), using the simulated agent over WebSocket. The fall events matched the offline evaluation in **24 of 24**.
 
 ## 4. Changes made based on the validation
 

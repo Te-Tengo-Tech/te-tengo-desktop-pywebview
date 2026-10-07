@@ -58,7 +58,8 @@ scripts/                  validation and camera test tools (keep them working)
 | `make revisar` | `ruff check`, `ruff format --check`, `mypy` (strict) |
 | `make probar` | `pytest` with coverage |
 | `make formatear` | Format and fix imports |
-| `uv run te-tengo-captura` | Run the agent (after T03; needs a display) |
+| `uv run te-tengo-captura --backend-falso --config config.ejemplo.toml` | Run the agent without the API (needs a display) |
+| `make empaquetar` | PyInstaller one-folder build |
 | `make camara`, `make validar` | Local tools: webcam test and dataset validation (need a webcam or the datasets) |
 
 ## Definition of done (every task)

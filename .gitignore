@@ -28,3 +28,4 @@ models/*.task
 # Validation datasets (downloaded with scripts/descargar_datasets.py)
 datos/
 resultados/
+config.local.toml

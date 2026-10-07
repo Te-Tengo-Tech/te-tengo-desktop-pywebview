@@ -9,28 +9,32 @@ authors = [
     { name = "Elmer Augusto Riva Rodriguez" },
 ]
 dependencies = [
-    "boto3>=1.43",
-    "fastapi>=0.142",
     "httpx>=0.28",
     # Pinned: 1.0.x fails on macOS (issue google-ai-edge/mediapipe#6356). See docs/adr/0003.
     "mediapipe==0.10.35",
     "numpy>=2.0",
     "pydantic>=2.13",
-    "pydantic-settings>=2.15",
-    "uvicorn[standard]>=0.54",
+    "platformdirs>=4",
+    "av>=18.1.0",
+    "pywebview>=6.2.1",
+    "pystray>=0.19.5",
+    "pillow>=12.3.0",
 ]
+
+[project.scripts]
+te-tengo-captura = "te_tengo_captura.__main__:main"
 
 [dependency-groups]
 dev = [
-    "httpx2>=2.13",
     "mypy>=2.4",
-    "pillow>=12",
     "pre-commit>=4.6",
     "pytest>=9.1",
     "pytest-asyncio>=1.4",
     "pytest-cov>=7.1",
     "ruff>=0.16",
-    "websockets>=17",
+]
+empaquetado = [
+    "pyinstaller>=6.22.3",
 ]
 
 [build-system]
@@ -38,7 +42,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/detection_worker"]
+packages = ["src/te_tengo_deteccion", "src/te_tengo_captura"]
 
 # ---------------------------------------------------------------- Ruff
 [tool.ruff]
@@ -51,8 +55,12 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "N", "ASYNC", "RUF", "PT"]
 # RUF001-003: identifiers and UI strings are Spanish (accents, «θ», dashes).
 ignore = ["RUF001", "RUF002", "RUF003"]
 
+[tool.ruff.lint.per-file-ignores]
+# Tests compare the Spanish copy verbatim; splitting it would hide what is asserted.
+"tests/**" = ["E501"]
+
 [tool.ruff.lint.isort]
-known-first-party = ["detection_worker"]
+known-first-party = ["te_tengo_deteccion", "te_tengo_captura"]
 
 # ---------------------------------------------------------------- Mypy
 [tool.mypy]
@@ -63,16 +71,16 @@ files = ["src", "tests", "scripts"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["mediapipe.*", "cv2.*", "boto3.*", "botocore.*"]
+module = ["mediapipe.*", "cv2.*", "pystray.*", "PyObjCTools.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- Pytest
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-ra --strict-markers --cov=detection_worker --cov-report=term-missing"
+addopts = "-ra --strict-markers --cov=te_tengo_deteccion --cov=te_tengo_captura --cov-report=term-missing"
 markers = ["integracion: requires the downloaded MediaPipe model"]
 
 [tool.coverage.run]
 branch = true
-source = ["detection_worker"]
+source = ["te_tengo_deteccion", "te_tengo_captura"]

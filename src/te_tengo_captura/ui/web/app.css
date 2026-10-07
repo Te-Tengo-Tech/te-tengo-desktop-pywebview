@@ -1,0 +1,200 @@
+/* Te Tengo Captura · window styles.
+   Tokens and components copied from the prototype (docs/references/desktop-prototype/src/app.css),
+   only what the status window and the splash use. The OS window is the .win frame itself. */
+
+@font-face{font-family:"Atkinson Hyperlegible Next";src:url("fonts/AtkinsonHyperlegibleNext.ttf") format("truetype");font-weight:200 800;font-display:block}
+@font-face{font-family:"Atkinson Hyperlegible Mono";src:url("fonts/AtkinsonHyperlegibleMono.ttf") format("truetype");font-weight:200 800;font-display:block}
+
+/* ---------- Te Tengo: tokens (heredados de la app móvil) ---------- */
+:root{
+  --ground:#EEF0F4;
+  --ground-2:#E4E6EC;
+  --card:#FFFFFF;
+  --ink:#221A38;
+  --ink-2:#4F4766;
+  --ink-3:#655D7A;
+  --line:#D9D7E1;
+  --line-2:#C7C3D3;
+  --morado:#4A2A85;
+  --morado-press:#3A1F6C;
+  --morado-soft:#ECE7F6;
+  --morado-ink:#3B2270;
+  --coral:#E8765A;      /* solo marca */
+  --durazno:#FFB59C;    /* solo marca */
+  --calma:#1C7A4C;
+  --calma-soft:#E2F2E9;
+  --calma-ink:#145C39;
+  --aviso:#8F5400;
+  --aviso-soft:#FBEFD9;
+  --pausa:#4E5B74;
+  --pausa-soft:#E6E9F0;
+  --focus:#4A2A85;
+  --shadow-1:0 1px 2px rgba(0,0,0,.05),0 4px 14px rgba(0,0,0,.05);
+  --shadow-2:0 8px 28px rgba(0,0,0,.16),0 2px 6px rgba(0,0,0,.08);
+  --font:"Atkinson Hyperlegible Next","Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"Atkinson Hyperlegible Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --ease:cubic-bezier(.16,1,.3,1);
+  --r-card:18px;
+  --r-ctl:12px;
+  --r-win:10px;
+  --tb-h:36px;
+}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--ground)}
+*{box-sizing:border-box}
+::selection{background:var(--morado-soft);color:var(--morado-ink)}
+h1,h2,h3,p,dl,dd,figure{margin:0}
+button{font:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:10px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.grow{flex:1;min-width:0}
+.mt4{margin-top:4px}
+
+/* ---------- Ventana ---------- */
+.win{position:relative;width:100%;height:100vh;overflow:hidden;background:var(--ground);color:var(--ink);
+  font-family:var(--font);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;isolation:isolate;caret-color:var(--morado)}
+.tb{height:var(--tb-h);flex:none;display:flex;align-items:center;background:#F8F8FA;box-shadow:0 1px 0 var(--line);user-select:none;position:relative;z-index:8}
+.tb-app{display:flex;align-items:center;gap:10px;padding-left:12px;flex:1;height:100%;font-size:13px;font-weight:600;color:var(--ink-2)}
+.tb-btns{display:flex;height:100%}
+.tb-btn{width:46px;height:100%;border:0;background:transparent;color:var(--ink);display:grid;place-items:center;cursor:default;border-radius:0;padding:0}
+.tb-btn svg{width:10px;height:10px}
+.tb-btn:hover{background:rgba(34,26,56,.07)}
+.tb-btn.close:hover{background:#C42B1C;color:#fff}
+.tb-btn[aria-disabled="true"]{color:#B9B4C6}
+.tb-btn[aria-disabled="true"]:hover{background:transparent}
+.tb-btn:focus-visible{outline-offset:-3px;border-radius:0}
+.wb{flex:1;position:relative;overflow:hidden;min-height:0}
+.scr{position:absolute;inset:0;display:flex;flex-direction:column}
+.scr.enter{animation:enter .22s var(--ease)}
+@keyframes enter{from{transform:translateX(18px);opacity:.2}}
+#scr-h:focus{outline:none}
+
+/* app icon */
+.appicon{width:40px;height:40px;border-radius:23.3%;display:block;flex:none}
+.appicon.xs{width:18px;height:18px}
+.appicon svg,.appicon.xs svg{display:block;width:100%;height:100%}
+
+/* ---------- Tipografía ---------- */
+.t-title{font-size:26px;line-height:1.15;font-weight:800;letter-spacing:-.015em;text-wrap:balance}
+.t-h2{font-size:18px;line-height:1.25;font-weight:800}
+.t-meta{font-size:13.5px;line-height:1.4;color:var(--ink-3)}
+
+/* ---------- Botones ---------- */
+.btn{appearance:none;border:0;font:inherit;font-size:15.5px;font-weight:700;height:44px;padding:0 18px;border-radius:var(--r-ctl);
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;white-space:nowrap;text-decoration:none;
+  transition:background .15s,box-shadow .15s,color .15s,transform .12s var(--ease)}
+.btn svg{width:20px;height:20px;flex:none}
+.btn-sm{height:38px;font-size:14.5px;padding:0 14px;border-radius:10px}
+.btn-sm svg{width:18px;height:18px}
+.btn:active{transform:scale(.98)}
+.btn-secondary{background:var(--card);color:var(--morado-ink);box-shadow:0 0 0 1.5px var(--line-2) inset}
+.btn-secondary:hover{background:var(--morado-soft);box-shadow:0 0 0 1.5px var(--morado) inset}
+.btn-ondark{background:rgba(255,255,255,.12);color:#fff;box-shadow:0 0 0 1.5px rgba(255,255,255,.4) inset}
+.btn-ondark:hover{background:rgba(255,255,255,.2)}
+.btn.loading{pointer-events:none}
+.spin{width:18px;height:18px;border-radius:50%;border:2.5px solid currentColor;border-right-color:transparent;animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- Cartas ---------- */
+.card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow-1)}
+.scr-foot{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink-3);padding:0 0 22px 64px;flex:none}
+.scr-foot svg{width:17px;height:17px;flex:none}
+.scr-foot .sep{width:1px;height:14px;background:var(--line-2);margin:0 8px}
+.grp-l{font-size:13px;font-weight:700;color:var(--ink-3);margin:0 0 8px 2px}
+.art{position:relative;overflow:hidden;background:#DCD8E6}
+.art svg.room{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+/* ---------- Estado ---------- */
+.cam-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex:none}
+.cam-head .t-meta{display:flex;align-items:center;gap:6px}
+.cam-head .t-meta svg{width:16px;height:16px;flex:none}
+.health{position:relative;display:flex;align-items:center;gap:14px;background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow-1);padding:18px 18px 14px;margin-top:18px;overflow:hidden;flex:none}
+.health::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:var(--calma)}
+.health.idle::before{background:repeating-linear-gradient(135deg,var(--pausa) 0 6px,#8C97AD 6px 12px)}
+.health .st{width:44px;height:44px;border-radius:13px}
+.health .st svg{width:24px;height:24px}
+.health b{display:block;font-size:17px;line-height:1.3}
+.health .grow>span{display:block;font-size:14px;color:var(--ink-3)}
+.health.warn{background:var(--aviso-soft)}
+.health.warn::before{background:repeating-linear-gradient(90deg,var(--aviso) 0 10px,transparent 10px 16px)}
+.health.warn b{color:#5E3700}
+.health.warn .grow>span{color:#6B4A12}
+.health.warn .st{background:#fff}
+.health.dark{background:var(--ink);color:#fff}
+.health.dark::before{display:none}
+.health.dark .grow>span{color:#D4CEE2}
+.health.dark .st{background:rgba(255,255,255,.1);color:#FFC76B}
+.thumb{width:84px;height:52px;border-radius:10px}
+.thumb.dim svg{filter:grayscale(1);opacity:.55}
+.cam-st{display:flex;align-items:center;gap:12px;min-width:0}
+.cam-st b{display:block;font-size:15px;line-height:1.3}
+.cam-st .t-meta{display:block}
+.st{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;flex:none}
+.st svg{width:20px;height:20px}
+.st.send{background:var(--calma-soft);color:var(--calma-ink)}
+.st.pause{background:repeating-linear-gradient(135deg,var(--pausa-soft) 0 5px,#D4D9E4 5px 10px);color:var(--pausa)}
+.st.consent{background:var(--aviso-soft);color:var(--aviso)}
+.st.off{background:var(--aviso-soft);color:var(--aviso);outline:2px dashed var(--aviso);outline-offset:-2px}
+.stx{font-weight:700}
+.stx.send{color:var(--calma-ink)}.stx.pause{color:var(--pausa)}.stx.consent,.stx.off{color:var(--aviso)}
+.health .st.send svg{animation:lift 1.8s var(--ease) infinite}
+@keyframes lift{0%{transform:translateY(3px);opacity:.35}45%,100%{transform:translateY(0);opacity:1}}
+
+/* aviso dentro de la ventana */
+.wtoast{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:20;background:var(--ink);color:#fff;border-radius:14px;padding:11px 16px 11px 12px;display:flex;gap:10px;align-items:center;
+  box-shadow:var(--shadow-2);font-size:14.5px;white-space:nowrap;animation:up .3s var(--ease)}
+.wtoast svg{width:20px;height:20px;flex:none}
+.wtoast.ok svg{color:#7FD9A8}.wtoast.warn svg{color:#FFC76B}
+@keyframes up{from{transform:translate(-50%,16px);opacity:0}}
+
+/* ---------- Prueba piloto: ventana de estado de una sola cámara ---------- */
+.estado{padding:24px 40px 0}
+.health.lost::before{background:repeating-linear-gradient(90deg,var(--aviso) 0 10px,transparent 10px 16px)}
+.health .btn{flex:none}
+.est-grid{display:grid;grid-template-columns:minmax(0,1fr) 372px;gap:16px;margin-top:14px;flex:none}
+.est-cam{padding:14px;display:flex;flex-direction:column;gap:14px}
+.est-cam .thumb{width:100%;height:150px;border-radius:12px}
+.est-cam-b .grp-l{margin:0 0 2px}
+.est-cam-b .t-h2{font-size:22px}
+.cam-dev{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--ink-3);margin-top:2px}
+.cam-dev svg{width:16px;height:16px;flex:none}
+.est-cam .cam-st{margin-top:12px}
+.est-conf{padding:18px 20px 16px;display:flex;flex-direction:column}
+.conf-h{display:flex;align-items:center;gap:8px;font-size:15.5px;font-weight:800;margin:0 0 6px}
+.conf-h svg{width:18px;height:18px;color:var(--ink-3);flex:none}
+.conf-kv{margin:0}
+.conf-kv>div{display:grid;grid-template-columns:96px 1fr;gap:10px;padding:9px 0;font-size:14.5px}
+.conf-kv>div+div{box-shadow:0 -1px 0 var(--line)}
+.conf-kv dt{color:var(--ink-3)}
+.conf-kv dd{font-weight:700;min-width:0}
+.conf-kv dd span{display:block;font-weight:400;font-size:13px;color:var(--ink-3)}
+.conf-note{display:flex;gap:8px;align-items:flex-start;margin-top:auto;padding-top:10px;font-size:13px;line-height:1.4;color:var(--ink-3)}
+.conf-note svg{width:16px;height:16px;flex:none;margin-top:1px}
+.estado .scr-foot{padding:0 0 18px;margin-top:auto}
+
+/* ---------- Arranque: ventana de inicio (480 × 300, sin marco) ---------- */
+html.arranque,body.arranque{background:var(--morado)}  /* no light flash before painting */
+.boot{position:relative;width:100%;height:100vh;background:var(--morado);color:#fff;
+  display:flex;flex-direction:column;align-items:center;padding:40px 32px 22px;font-family:var(--font);overflow:hidden}
+.boot-mark{width:84px;height:84px}
+.boot .sp-mark{display:block;width:84px;height:84px;overflow:visible}
+.boot .boot-wm{display:block;width:250px;height:auto;margin-top:22px}
+.boot-foot{margin-top:auto;width:100%}
+.boot-bar{height:4px;border-radius:2px;background:rgba(255,255,255,.2);overflow:hidden}
+.boot-bar i{display:block;height:100%;border-radius:2px;background:#fff;transform-origin:left center;transition:transform .55s var(--ease)}
+.boot-st{display:flex;justify-content:space-between;gap:16px;margin-top:10px;font-size:13px;line-height:1.3;color:#E4DAF4}
+.boot-v{font-size:12.5px;font-variant-numeric:tabular-nums;color:rgba(228,218,244,.8)}
+.boot.play{animation:bootIn .3s var(--ease) both}
+.boot.out{animation:bootOut .2s ease-in forwards}
+.boot.play .sp-arm{stroke-dasharray:1 1;animation:spDraw .42s cubic-bezier(.3,.7,.3,1) .12s both}
+.boot.play .sp-dot{animation:spDrop .42s cubic-bezier(.55,0,.85,.35) .38s both}
+.boot.play .sp-catch{animation:spCatch .42s .8s both}
+.boot.play .sp-stem{stroke-dasharray:1 1;animation:spDraw .32s cubic-bezier(.3,.7,.3,1) .98s both}
+.boot.play .boot-wm{animation:spUp .45s var(--ease) 1.05s both}
+@keyframes bootIn{from{opacity:0;transform:scale(.97)}}
+@keyframes bootOut{to{opacity:0;transform:scale(.98)}}
+@keyframes spDraw{0%{stroke-dashoffset:1;opacity:0}10%{opacity:1}100%{stroke-dashoffset:0;opacity:1}}
+@keyframes spDrop{0%{transform:translateY(-70px);opacity:0}30%{opacity:1}100%{transform:none;opacity:1}}
+@keyframes spCatch{0%{transform:none;animation-timing-function:cubic-bezier(.2,.7,.4,1)}32%{transform:translateY(5px);animation-timing-function:cubic-bezier(.4,0,.2,1)}100%{transform:none}}
+@keyframes spUp{from{opacity:0;transform:translateY(8px)}}
+
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
