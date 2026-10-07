@@ -128,3 +128,23 @@ def test_main_ejecuta_la_aplicacion(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         == 0
     )
     assert len(ejecutadas) == 1
+
+
+@pytest.mark.skipif(not MODELO.is_file(), reason="Falta el modelo: ejecuta `make modelo`")
+def test_sin_interfaz_no_abre_la_ventana_ni_registra_el_autoinicio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import te_tengo_captura.__main__ as principal
+
+    sin_ventana: list[object] = []
+    monkeypatch.setattr("te_tengo_captura.sin_interfaz.ejecutar", sin_ventana.append)
+    monkeypatch.setattr(
+        principal, "ejecutar_aplicacion", lambda agente, abrir: pytest.fail("abrió la ventana")
+    )
+    monkeypatch.setattr(
+        "te_tengo_captura.autoinicio.registrar", lambda: pytest.fail("registró el autoinicio")
+    )
+    ejemplo = Path(__file__).resolve().parents[2] / "config.ejemplo.toml"
+    argumentos_ = ["--config", str(ejemplo), "--backend-falso", "--sin-interfaz"]
+    assert main([*argumentos_, "--datos", str(tmp_path), "--logs", str(tmp_path)]) == 0
+    assert len(sin_ventana) == 1
