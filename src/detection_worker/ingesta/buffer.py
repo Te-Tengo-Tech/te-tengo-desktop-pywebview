@@ -1,6 +1,6 @@
-"""Búfer del clip del evento: guarda los fotogramas de 6 s antes y 6 s después del evento.
+"""Event clip buffer: keeps the frames from 6 s before to 6 s after the event.
 
-Así el familiar puede ver qué pasó justo antes y justo después de la alerta.
+This way the family member can see what happened right before and right after the alert.
 """
 
 from collections import deque
@@ -15,7 +15,7 @@ class Clip:
 
 
 class BufferClip:
-    """Guarda los fotogramas recientes y arma el clip cuando pasan los segundos posteriores."""
+    """Keeps the recent frames and builds the clip once the following seconds have passed."""
 
     def __init__(self, segundos_antes: float = 6.0, segundos_despues: float = 6.0) -> None:
         self._antes = segundos_antes
@@ -24,7 +24,7 @@ class BufferClip:
         self._pendientes: list[tuple[str, float]] = []
 
     def agregar(self, instante: float, jpeg: bytes) -> list[Clip]:
-        """Agrega un fotograma y devuelve los clips que quedaron completos."""
+        """Adds a frame and returns the clips that are now complete."""
         self._fotogramas.append((instante, jpeg))
         listos = [(eid, t) for eid, t in self._pendientes if instante >= t + self._despues]
         self._pendientes = [(eid, t) for eid, t in self._pendientes if instante < t + self._despues]
@@ -44,7 +44,7 @@ class BufferClip:
         )
 
     def _podar(self, instante: float) -> None:
-        # Conserva lo necesario para el clip pendiente más antiguo o, si no hay, los últimos
+        # Keeps what the oldest pending clip needs or, if there is none, the last
         # ``segundos_antes``.
         referencia = min([t for _, t in self._pendientes], default=instante)
         limite = referencia - self._antes

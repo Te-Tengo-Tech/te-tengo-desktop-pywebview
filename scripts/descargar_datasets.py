@@ -1,13 +1,13 @@
-"""Descarga los datasets públicos de caídas usados en la validación (no se versionan).
+"""Downloads the public fall datasets used in the validation (they are not versioned).
 
-* URFD (Kwolek y Kepski, 2014): 30 caídas y 40 actividades diarias. Se baja el video de la
-  cámara 0 (paralela al piso) y las etiquetas por fotograma. Licencia CC BY-NC-SA 4.0.
-  https://fenix.ur.edu.pl/~mkepski/ds/uf.html
-* CAUCAFall (Eraso Guerrero et al., 2022): 10 personas × (5 caídas + 5 actividades) en una
-  vivienda. Se baja solo el video .avi de cada actividad. Licencia CC BY 4.0.
+* URFD (Kwolek and Kepski, 2014): 30 falls and 40 activities of daily living. The video from
+  camera 0 (parallel to the floor) and the per-frame labels are downloaded. License CC BY-NC-SA
+  4.0. https://fenix.ur.edu.pl/~mkepski/ds/uf.html
+* CAUCAFall (Eraso Guerrero et al., 2022): 10 people × (5 falls + 5 activities) in a home.
+  Only the .avi video of each activity is downloaded. License CC BY 4.0.
   https://doi.org/10.17632/7w7fccy7ky.4
 
-Uso: uv run python scripts/descargar_datasets.py [--destino datos]
+Usage: uv run python scripts/descargar_datasets.py [--destino datos]
 """
 
 import argparse
@@ -63,7 +63,7 @@ def tareas_caucafall(raiz: Path) -> list[tuple[str, Path]]:
     for carpeta in carpetas:
         padre = por_id.get(str(carpeta.get("parent_id")))
         if padre is None or not str(padre["name"]).startswith("Subject"):
-            continue  # solo las carpetas de actividad dentro de cada sujeto
+            continue  # only the activity folders inside each subject
         archivos = leer_json(
             f"{MENDELEY}/files?folder_id={carpeta['id']}&version={VERSION_CAUCAFALL}"
         )

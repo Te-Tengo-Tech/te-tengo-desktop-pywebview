@@ -1,11 +1,12 @@
-"""Parámetros cinemáticos que se calculan en cada fotograma a partir de los landmarks.
+"""Kinematic parameters computed on every frame from the landmarks.
 
-Son funciones puras: no leen la cámara, la red ni el reloj, así que se prueban con poses
-sintéticas o grabadas. Cada función indica la regla que implementa; las fórmulas completas,
-sus fuentes y las adaptaciones están en ``docs/classification-spec.md``.
+They are pure functions: they do not read the camera, the network or the clock, so they are
+tested with synthetic or recorded poses. Each function states the rule it implements; the full
+formulas, their sources and the adaptations are in ``docs/classification-spec.md``.
 
-Antes de calcular, todo se pasa a píxeles (adaptación A1), porque MediaPipe normaliza ``x`` por
-el ancho e ``y`` por el alto, y en una imagen 640 × 480 eso deforma ángulos y proporciones.
+Before computing, everything is converted to pixels (adaptation A1), because MediaPipe
+normalizes ``x`` by the width and ``y`` by the height, and in a 640 × 480 image that distorts
+angles and proportions.
 """
 
 import math
@@ -16,7 +17,7 @@ from detection_worker.pose.schemas import Indice, Pose, Punto
 
 @dataclass(frozen=True, slots=True)
 class Parametros:
-    """Parámetros de un fotograma."""
+    """Parameters of one frame."""
 
     centro_cadera: Punto
     longitud_linea_central: float
@@ -26,7 +27,7 @@ class Parametros:
     puntos_visibles: bool
 
 
-# Landmarks que usan las fórmulas: nariz, caderas y tobillos.
+# Landmarks used by the formulas: nose, hips and ankles.
 PUNTOS_CLAVE = (
     Indice.NARIZ,
     Indice.CADERA_IZQUIERDA,
@@ -37,11 +38,11 @@ PUNTOS_CLAVE = (
 
 
 def puntos_clave_visibles(pose: Pose, visibilidad_min: float) -> bool:
-    """Indica si se ven bien los puntos que usan las fórmulas (adaptación A6).
+    """Tells whether the points used by the formulas are clearly visible (adaptation A6).
 
-    Si alguno no se ve bien, MediaPipe igual devuelve una posición estimada, pero poco fiable:
-    con ella una persona tendida y cortada por el borde de la imagen puede parecer de pie. Por
-    eso esas poses no pueden declarar que la persona se levantó.
+    If any of them is not clearly visible, MediaPipe still returns an estimated position, but an
+    unreliable one: with it, a lying person cut off by the edge of the image can look like they
+    are standing. That is why such poses cannot declare that the person got up.
     """
     return all(pose.landmarks[i].visibilidad >= visibilidad_min for i in PUNTOS_CLAVE)
 
@@ -51,10 +52,10 @@ def punto_medio(a: Punto, b: Punto) -> Punto:
 
 
 def centro_cadera(pose: Pose) -> Punto:
-    """Punto medio entre las dos caderas (regla R1).
+    """Midpoint between the two hips (rule R1).
 
-    Representa el centro de gravedad del cuerpo: cuando alguien cae, es el punto que baja de
-    forma brusca.
+    It represents the body's center of gravity: when someone falls, it is the point that drops
+    sharply.
     """
     return punto_medio(
         pose.en_pixeles(Indice.CADERA_DERECHA), pose.en_pixeles(Indice.CADERA_IZQUIERDA)
@@ -62,9 +63,9 @@ def centro_cadera(pose: Pose) -> Punto:
 
 
 def extremos_linea_central(pose: Pose) -> tuple[Punto, Punto]:
-    """Extremos de la línea central del cuerpo: la cabeza y el punto medio de los tobillos (R2).
+    """Ends of the body's center line: the head and the midpoint of the ankles (R2).
 
-    MediaPipe no tiene un punto «cabeza», así que se usa la nariz (adaptación A2).
+    MediaPipe has no "head" point, so the nose is used (adaptation A2).
     """
     cabeza = pose.en_pixeles(Indice.NARIZ)
     pies = punto_medio(
@@ -74,39 +75,41 @@ def extremos_linea_central(pose: Pose) -> tuple[Punto, Punto]:
 
 
 def angulo_linea_central(pose: Pose) -> float:
-    """Ángulo entre la línea central y el suelo, en grados (R2).
+    """Angle between the center line and the floor, in degrees (R2).
 
-    90° es una persona de pie y 0° una persona tendida. Al caer, el cuerpo pierde la vertical y
-    el ángulo baja. Se calcula con ``atan2`` sobre las diferencias absolutas, que equivale a
-    arctan(|Δy| / |Δx|) pero no falla cuando la persona está totalmente vertical (Δx = 0).
+    90° is a standing person and 0° a lying person. When falling, the body loses its vertical
+    alignment and the angle drops. It is computed with ``atan2`` on the absolute differences,
+    which is equivalent to arctan(|Δy| / |Δx|) but does not fail when the person is fully
+    vertical (Δx = 0).
     """
     cabeza, pies = extremos_linea_central(pose)
     return math.degrees(math.atan2(abs(cabeza.y - pies.y), abs(cabeza.x - pies.x)))
 
 
 def cabeza_bajo_pies(pose: Pose) -> bool:
-    """Indica si la cabeza quedó más abajo que los pies en la imagen (adaptación A7).
+    """Tells whether the head ended up lower than the feet in the image (adaptation A7).
 
-    Una persona de pie siempre tiene la cabeza arriba de los pies. Si cae hacia la cámara, el
-    cuerpo se ve acortado: el ángulo con valor absoluto sale «casi vertical» y la razón ancho/alto
-    no supera 1, pero la cabeza termina por debajo de los pies. Esta señal lo detecta.
+    A standing person always has the head above the feet. If they fall towards the camera, the
+    body appears foreshortened: the absolute-value angle comes out "almost vertical" and the
+    width/height ratio does not exceed 1, but the head ends up below the feet. This signal
+    detects that case.
     """
     cabeza, pies = extremos_linea_central(pose)
     return cabeza.y > pies.y
 
 
 def longitud_linea_central(pose: Pose) -> float:
-    """Largo de la línea central en píxeles; sirve de escala para la velocidad (adaptación A3)."""
+    """Length of the center line in pixels; used as the scale for the speed (adaptation A3)."""
     cabeza, pies = extremos_linea_central(pose)
     return math.hypot(cabeza.x - pies.x, cabeza.y - pies.y)
 
 
 def razon_ancho_alto(pose: Pose, visibilidad_min: float) -> float:
-    """Ancho dividido entre alto del rectángulo que encierra el cuerpo (R3).
+    """Width divided by height of the rectangle that encloses the body (R3).
 
-    De pie el rectángulo es angosto y alto (razón < 1); tendido en el suelo es ancho y bajo
-    (razón > 1). Solo se usan los landmarks suficientemente visibles (adaptación A5). Si el
-    rectángulo no tiene altura, el cuerpo está totalmente horizontal y se devuelve infinito.
+    When standing, the rectangle is narrow and tall (ratio < 1); when lying on the floor, it is
+    wide and low (ratio > 1). Only sufficiently visible landmarks are used (adaptation A5). If
+    the rectangle has no height, the body is fully horizontal and infinity is returned.
     """
     puntos = pose.visibles(visibilidad_min)
     if len(puntos) < 2:
@@ -117,12 +120,12 @@ def razon_ancho_alto(pose: Pose, visibilidad_min: float) -> float:
 
 
 def velocidad_descenso(y1: float, y2: float, dt: float, escala: float) -> float:
-    """Velocidad con que baja el centro de la cadera entre dos instantes (R1).
+    """Speed at which the hip center drops between two instants (R1).
 
-    Es positiva cuando la cadera baja y negativa cuando sube (adaptación A3): así, levantarse
-    rápido no se confunde con caer. Una sola cámara no mide metros, por eso se divide entre el
-    largo de la línea central y la unidad queda en «cuerpos por segundo», sin depender de la
-    distancia a la cámara.
+    It is positive when the hip drops and negative when it rises (adaptation A3): this way,
+    getting up quickly is not mistaken for falling. A single camera does not measure meters, so
+    the value is divided by the length of the center line and the unit becomes "bodies per
+    second", independent of the distance to the camera.
     """
     if dt <= 0:
         raise ValueError("Δt debe ser positivo")
@@ -132,7 +135,7 @@ def velocidad_descenso(y1: float, y2: float, dt: float, escala: float) -> float:
 
 
 def calcular(pose: Pose, visibilidad_min: float) -> Parametros:
-    """Calcula los parámetros de un fotograma."""
+    """Computes the parameters of one frame."""
     return Parametros(
         centro_cadera=centro_cadera(pose),
         longitud_linea_central=longitud_linea_central(pose),

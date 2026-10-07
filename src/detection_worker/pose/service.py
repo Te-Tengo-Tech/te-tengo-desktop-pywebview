@@ -1,8 +1,8 @@
-"""Servicio de estimación de pose con MediaPipe Pose Landmarker.
+"""Pose estimation service with MediaPipe Pose Landmarker.
 
-La inferencia es intensiva en CPU. Para no bloquear el bucle de eventos de FastAPI (que recibe
-el video por WebSocket), se ejecuta en un proceso aparte (ver docs/adr/0003). Se usa el modo
-VIDEO, que sigue a la persona entre fotogramas y la pierde menos durante una caída (docs/adr/0006).
+Inference is CPU-intensive. To avoid blocking the FastAPI event loop (which receives the video
+over WebSocket), it runs in a separate process (see docs/adr/0003). VIDEO mode is used, which
+tracks the person across frames and loses them less often during a fall (docs/adr/0006).
 """
 
 import asyncio
@@ -12,36 +12,36 @@ from typing import Any, Protocol
 
 from detection_worker.pose.schemas import Landmark, Pose
 
-# Estado del proceso hijo: un landmarker en modo VIDEO por cámara, con su última marca de tiempo.
+# Child process state: one VIDEO-mode landmarker per camera, with its last timestamp.
 _configuracion: tuple[str, float] = ("", 0.5)
 _landmarkers: dict[str, tuple[Any, int]] = {}
 
 
 class EstimadorPose(Protocol):
     async def estimar(self, jpeg: bytes, camara_id: str, instante_ms: int) -> Pose | None:
-        """Devuelve la pose de la persona o ``None`` si el fotograma no tiene a nadie visible."""
+        """Returns the person's pose, or ``None`` if nobody is visible in the frame."""
         ...
 
     async def liberar(self, camara_id: str) -> None:
-        """Libera el seguimiento de una cámara que se desconectó."""
+        """Releases the tracking state of a camera that disconnected."""
         ...
 
     def cerrar(self) -> None: ...
 
 
 def crear_landmarker(ruta_modelo: str, confianza_min: float = 0.5, modo: str = "imagen") -> Any:
-    """Crea el Pose Landmarker de MediaPipe (modelo en ``ruta_modelo``).
+    """Creates the MediaPipe Pose Landmarker (model at ``ruta_modelo``).
 
-    ``modo="imagen"`` analiza cada fotograma por separado; ``modo="video"`` sigue a la persona
-    entre fotogramas y exige marcas de tiempo crecientes.
+    ``modo="imagen"`` analyzes each frame separately; ``modo="video"`` tracks the person across
+    frames and requires increasing timestamps.
     """
     from mediapipe.tasks.python import vision
     from mediapipe.tasks.python.core.base_options import BaseOptions
 
     opciones = vision.PoseLandmarkerOptions(
         base_options=BaseOptions(model_asset_path=ruta_modelo, delegate=BaseOptions.Delegate.CPU),
-        # IMAGE: cada fotograma es independiente; tolera reconexiones del agente sin exigir
-        # marcas de tiempo crecientes como el modo VIDEO.
+        # IMAGE: each frame is independent; it tolerates agent reconnections without requiring
+        # increasing timestamps, unlike VIDEO mode.
         running_mode=vision.RunningMode.VIDEO if modo == "video" else vision.RunningMode.IMAGE,
         num_poses=1,
         min_pose_detection_confidence=confianza_min,
@@ -52,9 +52,9 @@ def crear_landmarker(ruta_modelo: str, confianza_min: float = 0.5, modo: str = "
 
 
 def detectar(landmarker: Any, imagen_bgr: Any, instante_ms: int | None = None) -> Pose | None:
-    """Estima la pose en una imagen BGR de OpenCV; ``None`` si no hay nadie visible.
+    """Estimates the pose in an OpenCV BGR image; ``None`` if nobody is visible.
 
-    Con un landmarker en modo video, ``instante_ms`` es obligatorio y debe crecer.
+    With a video-mode landmarker, ``instante_ms`` is required and must increase.
     """
     import cv2
     import mediapipe as mp
@@ -89,8 +89,8 @@ def _estimar(jpeg: bytes, camara_id: str, instante_ms: int) -> Pose | None:
         return None
     landmarker, ultimo_ms = _landmarkers.get(camara_id, (None, -1))
     if landmarker is None or instante_ms <= ultimo_ms:
-        # El modo VIDEO exige marcas de tiempo crecientes; si el agente se reconectó con un reloj
-        # anterior, se empieza un seguimiento nuevo.
+        # VIDEO mode requires increasing timestamps; if the agent reconnected with an earlier
+        # clock, new tracking is started.
         if landmarker is not None:
             landmarker.close()
         landmarker = crear_landmarker(*_configuracion, modo="video")
@@ -105,7 +105,7 @@ def _liberar(camara_id: str) -> None:
 
 
 class MediaPipeEstimador:
-    """Estimador que corre MediaPipe en un proceso dedicado."""
+    """Estimator that runs MediaPipe in a dedicated process."""
 
     def __init__(self, ruta_modelo: Path, confianza_min: float = 0.5) -> None:
         if not ruta_modelo.is_file():

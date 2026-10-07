@@ -15,10 +15,10 @@ def test_sin_historial_no_hay_velocidad() -> None:
 
 def test_velocidad_usa_la_mayor_bajada_de_la_ventana() -> None:
     m = medidor()
-    m.medir(0.0, fabricas.DE_PIE)  # cadera en y = 220
+    m.medir(0.0, fabricas.DE_PIE)  # hip at y = 220
     m.medir(0.5, fabricas.DE_PIE)
-    medicion = m.medir(1.0, fabricas.CAYENDO)  # cadera en y = 300
-    # Pares posibles: con t = 0,5 (Δt 0,5 s) y con t = 0,0 (Δt 1,0 s); gana la mayor bajada.
+    medicion = m.medir(1.0, fabricas.CAYENDO)  # hip at y = 300
+    # Possible pairs: with t = 0.5 (Δt 0.5 s) and with t = 0.0 (Δt 1.0 s); the largest drop wins.
     assert medicion.velocidad == pytest.approx(80 / 0.5 / 240)
 
 
@@ -28,5 +28,5 @@ def test_fotogramas_con_puntos_poco_visibles_no_miden_ni_cuentan() -> None:
     dudosa = list(fabricas.CAYENDO.landmarks)
     dudosa[0] = Landmark(dudosa[0].x, dudosa[0].y, 0.1)
     assert m.medir(0.5, Pose(tuple(dudosa), 640, 480)).velocidad is None
-    # La pose dudosa no entra al historial: la siguiente se compara solo con la de t = 0.
+    # The doubtful pose is not added to the history: the next one is compared only with t = 0.
     assert m.medir(0.6, fabricas.DE_PIE).velocidad == pytest.approx(0.0)

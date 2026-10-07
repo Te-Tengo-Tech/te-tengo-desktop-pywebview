@@ -1,25 +1,25 @@
-"""Máquina de estados que convierte la secuencia de poses de una cámara en eventos.
+"""State machine that turns the pose sequence of one camera into events.
 
-En cada fotograma se evalúan tres condiciones (reglas R1 a R3 de
+On every frame three conditions are evaluated (rules R1 to R3 of
 ``docs/classification-spec.md``):
 
-* **M1**: el centro de la cadera bajó rápido.
-* **M2**: el cuerpo perdió la vertical (ángulo con el suelo menor que el umbral).
-* **M3**: el cuerpo quedó más ancho que alto, como cuando alguien está tendido.
+* **M1**: the hip center dropped quickly.
+* **M2**: the body lost its vertical alignment (angle with the floor below the threshold).
+* **M3**: the body became wider than it is tall, as when someone is lying down.
 
-Las tres no ocurren en el mismo instante: primero baja la cadera y se inclina el cuerpo, y un
-momento después el cuerpo queda horizontal. Por eso hay tres fases:
+The three do not happen at the same instant: first the hip drops and the body tilts, and a
+moment later the body becomes horizontal. That is why there are three phases:
 
-``NORMAL`` → (M1 y M2) → ``INICIO_CAIDA`` → (M3 dentro de la ventana) → ``EN_EL_SUELO``
+``NORMAL`` → (M1 and M2) → ``INICIO_CAIDA`` → (M3 within the window) → ``EN_EL_SUELO``
 
-Eventos que se generan:
+Events emitted:
 
-* ``caida`` (R4): se llegó a ``EN_EL_SUELO``.
-* ``recuperacion`` (R5): estando en el suelo, la persona vuelve a estar erguida.
-* ``caida_confirmada`` (R6): sigue en el suelo el tiempo de confirmación.
-* ``movimiento_inestable`` (R7, propuesta pendiente de validación): empezó a caer, pero volvió
-  a estar erguida antes de quedar horizontal.
-* ``deteccion_no_confiable`` (R8): pasó demasiado tiempo sin ver a la persona.
+* ``caida`` (R4): ``EN_EL_SUELO`` was reached.
+* ``recuperacion`` (R5): while on the floor, the person is upright again.
+* ``caida_confirmada`` (R6): the person is still on the floor after the confirmation time.
+* ``movimiento_inestable`` (R7, proposal pending validation): a fall started, but the person
+  was upright again before becoming horizontal.
+* ``deteccion_no_confiable`` (R8): too much time passed without seeing the person.
 """
 
 from dataclasses import dataclass, field
@@ -31,7 +31,7 @@ from detection_worker.pose.schemas import Pose
 
 
 class UmbralSinCalibrarError(ValueError):
-    """Falta el umbral de velocidad (R1), que se obtiene calibrando con datasets."""
+    """The speed threshold (R1) is missing; it is obtained by calibrating with datasets."""
 
     def __init__(self) -> None:
         super().__init__(
@@ -63,7 +63,7 @@ class Evento:
 
 @dataclass(frozen=True, slots=True)
 class Tiempos:
-    """Segundos transcurridos en cada fase (``None`` si no aplica). Sirve para mostrar avance."""
+    """Seconds elapsed in each phase (``None`` if not applicable). Used to display progress."""
 
     desde_inicio_caida: float | None
     en_el_suelo: float | None
@@ -71,7 +71,7 @@ class Tiempos:
 
 
 class ClasificadorCinematico:
-    """Clasifica la secuencia de poses de UNA cámara. ``instante`` está en segundos."""
+    """Classifies the pose sequence of ONE camera. ``instante`` is in seconds."""
 
     def __init__(self, umbrales: Umbrales) -> None:
         if umbrales.velocidad_descenso_min is None:
@@ -110,11 +110,11 @@ class ClasificadorCinematico:
 
     @property
     def ultima_medicion(self) -> Medicion | None:
-        """Medición del último fotograma con pose (para mostrarla o registrarla)."""
+        """Measurement of the last frame with a pose (to display or log it)."""
         return self._ultima
 
     def actualizar(self, instante: float, pose: Pose | None) -> list[Evento]:
-        """Procesa un fotograma. ``pose`` es ``None`` si no se detectó a nadie."""
+        """Processes one frame. ``pose`` is ``None`` if nobody was detected."""
         if self._primer_instante is None:
             self._primer_instante = instante
         if pose is None:
@@ -126,21 +126,21 @@ class ClasificadorCinematico:
         p, velocidad = self._ultima.parametros, self._ultima.velocidad
 
         m1 = velocidad is not None and velocidad >= self._velocidad_min
-        # Con la cabeza bajo los pies (caída hacia la cámara) el cuerpo no está vertical ni
-        # erguido aunque el ángulo y la razón no lo muestren (A7).
+        # With the head below the feet (a fall towards the camera) the body is neither vertical
+        # nor upright, even if the angle and the ratio do not show it (A7).
         m2 = p.angulo_grados < self._u.angulo_linea_central_max_grados or p.cabeza_bajo_pies
         m3 = p.razon_ancho_alto >= self._u.razon_ancho_alto_min or p.cabeza_bajo_pies
-        # «Erguido» apaga una alerta (recuperación) o la rebaja (movimiento inestable), así que
-        # solo se acepta con los puntos clave bien visibles (A6). Las condiciones de caída sí
-        # usan poses dudosas: es preferible una falsa alarma a perder una caída.
+        # "Upright" clears an alert (recovery) or downgrades it (unstable movement), so it is
+        # only accepted with the key points clearly visible (A6). The fall conditions do use
+        # doubtful poses: a false alarm is preferable to missing a fall.
         erguido = (
             p.puntos_visibles
             and not p.cabeza_bajo_pies
             and p.angulo_grados > self._u.angulo_linea_central_max_grados
             and p.razon_ancho_alto < self._u.razon_ancho_alto_min
         )
-        # La recuperación exige verse erguido un tiempo mínimo: MediaPipe a veces estima «de pie»
-        # a una persona tendida durante un fotograma suelto (A8).
+        # Recovery requires being seen upright for a minimum time: MediaPipe sometimes estimates
+        # a lying person as "standing" for a single isolated frame (A8).
         if not erguido:
             self._erguido_desde = None
         elif self._erguido_desde is None:
@@ -177,7 +177,7 @@ class ClasificadorCinematico:
 
         return []
 
-    # ------------------------------------------------------------------ internos
+    # ------------------------------------------------------------------ internals
 
     def _entrar_al_suelo(self, instante: float, datos: dict[str, float]) -> Evento:
         self._fase = Fase.EN_EL_SUELO
@@ -196,8 +196,8 @@ class ClasificadorCinematico:
         return []
 
     def _sin_pose(self, instante: float) -> list[Evento]:
-        # Si la persona quedó en el suelo fuera de la vista (por ejemplo, detrás de un mueble),
-        # la confirmación sigue contando: no verla no significa que se haya levantado.
+        # If the person ended up on the floor out of view (for example, behind furniture), the
+        # confirmation keeps counting: not seeing them does not mean they got up.
         eventos = self._revisar_confirmacion(instante, {})
         referencia = (
             self._ultimo_valido if self._ultimo_valido is not None else self._primer_instante

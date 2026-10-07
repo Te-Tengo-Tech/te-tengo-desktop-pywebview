@@ -1,7 +1,7 @@
-"""Ventana de la prueba local: video con el esqueleto y panel de indicadores a la derecha.
+"""Local test window: video with the skeleton and an indicator panel on the right.
 
-El texto se dibuja con Pillow y una fuente del sistema (SF Pro en macOS, DejaVu en Linux, Segoe
-en Windows), porque las fuentes de OpenCV no tienen tildes y se ven pixeladas.
+Text is drawn with Pillow and a system font (SF Pro on macOS, DejaVu on Linux, Segoe on
+Windows), because OpenCV fonts have no accented characters and look pixelated.
 """
 
 import contextlib
@@ -23,7 +23,7 @@ ALTO_VIDEO = 560
 ANCHO_PANEL = 400
 MARGEN = 22
 
-# Paleta (RGB). Morado de la marca Te Tengo y colores de estado.
+# Palette (RGB). Te Tengo brand purple and status colors.
 FONDO = (19, 16, 29)
 TARJETA = (31, 26, 47)
 LINEA = (52, 45, 74)
@@ -50,7 +50,7 @@ NOMBRE_EVENTO = {
     "deteccion_no_confiable": ("Detección no confiable", AMBAR),
 }
 
-# Conexiones del esqueleto de MediaPipe Pose (pares de índices de landmarks).
+# MediaPipe Pose skeleton connections (pairs of landmark indices).
 CONEXIONES = (
     (11, 12), (11, 13), (13, 15), (12, 14), (14, 16), (11, 23), (12, 24), (23, 24),
     (23, 25), (25, 27), (24, 26), (26, 28), (27, 29), (28, 30), (29, 31), (30, 32),
@@ -71,7 +71,7 @@ def _fuente(tamano: int, peso: str = "Regular") -> Any:
             try:
                 fuente = ImageFont.truetype(ruta, tamano)
                 with contextlib.suppress(OSError, ValueError):
-                    fuente.set_variation_by_name(peso)  # SF Pro es una fuente variable
+                    fuente.set_variation_by_name(peso)  # SF Pro is a variable font
                 return fuente
             except OSError:
                 continue
@@ -80,11 +80,11 @@ def _fuente(tamano: int, peso: str = "Regular") -> Any:
 
 @dataclass
 class Estado:
-    """Lo que se muestra en un fotograma."""
+    """What is displayed for one frame."""
 
     pose: Pose | None
     medicion: Medicion | None
-    fase: Fase | None  # None: modo solo medición
+    fase: Fase | None  # None: measurement-only mode
     tiempos: Tiempos | None
     instante: float
     fps: float
@@ -105,7 +105,7 @@ class Visor:
             "banner": _fuente(26, "Bold"),
         }
 
-    # ------------------------------------------------------------------ composición
+    # ------------------------------------------------------------------ composition
 
     def componer(self, imagen_bgr: Any, estado: Estado) -> Any:
         video = self._video(imagen_bgr, estado)
@@ -189,7 +189,7 @@ class Visor:
         x, ancho = x0 + MARGEN, ANCHO_PANEL - 2 * MARGEN
         d.line((x0, 0, x0, alto), fill=LINEA, width=1)
 
-        # Encabezado
+        # Header
         d.text((x, 20), "Te Tengo", font=self._f["marca"], fill=MORADO)
         d.text((x, 50), "Prueba del clasificador", font=self._f["chico"], fill=SUAVE)
         d.text(
@@ -282,7 +282,7 @@ class Visor:
         marca: float,
         cumple: bool | None,
     ) -> int:
-        # Ámbar = la condición se cumple; el rojo queda reservado para la caída.
+        # Amber = the condition is met; red is reserved for the fall.
         color = SUAVE if cumple is None else (AMBAR if cumple else VERDE)
         d.text((x, y), codigo, font=self._f["medio"], fill=color)
         d.text((x + 34, y), nombre, font=self._f["normal"], fill=TEXTO)

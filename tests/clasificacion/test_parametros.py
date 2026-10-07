@@ -41,7 +41,7 @@ def test_razon_ancho_alto() -> None:
 def test_razon_ignora_landmarks_poco_visibles() -> None:
     base = fabricas.DE_PIE
     oculto = list(base.landmarks)
-    oculto[15] = Landmark(0.99, 0.5, 0.1)  # muñeca lejana pero poco visible
+    oculto[15] = Landmark(0.99, 0.5, 0.1)  # distant but poorly visible wrist
     pose = Pose(tuple(oculto), base.ancho, base.alto)
     assert parametros.razon_ancho_alto(pose, 0.5) == parametros.razon_ancho_alto(base, 0.5)
 
@@ -71,5 +71,5 @@ def test_en_pixeles_respeta_imagen_no_cuadrada() -> None:
 def test_puntos_clave_visibles() -> None:
     assert parametros.puntos_clave_visibles(fabricas.DE_PIE, 0.5)
     oculto = list(fabricas.DE_PIE.landmarks)
-    oculto[0] = Landmark(oculto[0].x, oculto[0].y, 0.2)  # nariz poco visible
+    oculto[0] = Landmark(oculto[0].x, oculto[0].y, 0.2)  # poorly visible nose
     assert not parametros.puntos_clave_visibles(Pose(tuple(oculto), 640, 480), 0.5)

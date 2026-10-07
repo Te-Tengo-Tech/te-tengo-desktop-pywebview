@@ -55,7 +55,7 @@ def test_levantarse_tras_la_caida_genera_recuperacion(umbrales: Umbrales) -> Non
         (5.0, fabricas.TENDIDA),
         (9.0, fabricas.DE_PIE),
         (9.5, fabricas.DE_PIE),
-        (10.0, fabricas.DE_PIE),  # erguida durante 1 s
+        (10.0, fabricas.DE_PIE),  # upright for 1 s
     ]
     assert reproducir(c, secuencia) == [(1.1, TipoEvento.CAIDA), (10.0, TipoEvento.RECUPERACION)]
     assert c.fase is Fase.NORMAL
@@ -81,13 +81,13 @@ def test_inicio_sin_desenlace_vuelve_a_normal_sin_evento(umbrales: Umbrales) -> 
 
 
 def test_agacharse_no_genera_eventos(umbrales: Umbrales) -> None:
-    # Solo M1: la cadera baja rápido, pero el cuerpo sigue vertical.
+    # Only M1: the hip drops quickly, but the body stays vertical.
     c = ClasificadorCinematico(umbrales)
     assert reproducir(c, [*de_pie(0, 1.0), (1.1, fabricas.AGACHADA), (1.5, fabricas.DE_PIE)]) == []
 
 
 def test_inclinarse_no_genera_eventos(umbrales: Umbrales) -> None:
-    # Solo M2: el cuerpo se inclina, pero la cadera no baja.
+    # Only M2: the body tilts, but the hip does not drop.
     c = ClasificadorCinematico(umbrales)
     assert reproducir(c, [*de_pie(0, 1.0), (1.1, fabricas.INCLINADA), (1.5, fabricas.DE_PIE)]) == []
 
@@ -123,8 +123,8 @@ def test_clasificador_exige_el_umbral_de_velocidad() -> None:
 
 
 def test_pose_dudosa_no_declara_recuperacion(umbrales: Umbrales) -> None:
-    # Persona tendida con los tobillos poco visibles: MediaPipe los «inventa» en una posición
-    # que la haría parecer de pie. No debe tomarse como recuperación.
+    # Lying person with poorly visible ankles: MediaPipe "invents" them in a position that
+    # would make the person look standing. This must not be taken as a recovery.
     c = ClasificadorCinematico(umbrales)
     reproducir(c, [*de_pie(0, 1.0), (1.1, fabricas.CAYENDO)])
     falsa = list(fabricas.DE_PIE.landmarks)
@@ -135,8 +135,8 @@ def test_pose_dudosa_no_declara_recuperacion(umbrales: Umbrales) -> None:
 
 
 def test_pose_dudosa_puede_completar_una_caida(umbrales: Umbrales) -> None:
-    # La velocidad solo se mide con puntos visibles, pero la postura final (M3) sí puede venir
-    # de una pose dudosa: es preferible una falsa alarma a perder una caída.
+    # The speed is only measured with visible points, but the final posture (M3) may come
+    # from a doubtful pose: a false alarm is preferable to missing a fall.
     c = ClasificadorCinematico(umbrales)
     dudosa = list(fabricas.TENDIDA.landmarks)
     dudosa[27] = dudosa[28] = Landmark(dudosa[27].x, dudosa[27].y, 0.4)
@@ -154,7 +154,7 @@ def test_un_fotograma_erguido_suelto_no_es_recuperacion(umbrales: Umbrales) -> N
     secuencia: list[tuple[float, Pose | None]] = [
         *de_pie(0, 1.0),
         (1.1, fabricas.CAYENDO),
-        (3.0, fabricas.DE_PIE),  # error de un solo fotograma
+        (3.0, fabricas.DE_PIE),  # single-frame error
         (3.1, fabricas.TENDIDA),
     ]
     assert reproducir(c, secuencia) == [(1.1, TipoEvento.CAIDA)]
@@ -162,8 +162,8 @@ def test_un_fotograma_erguido_suelto_no_es_recuperacion(umbrales: Umbrales) -> N
 
 
 def test_caida_hacia_la_camara_con_cabeza_bajo_los_pies(umbrales: Umbrales) -> None:
-    # Vista desde arriba: al caer hacia la cámara el cuerpo se ve acortado y casi vertical,
-    # pero la cabeza queda más abajo que los pies en la imagen.
+    # Top-down view: when falling towards the camera the body appears foreshortened and almost
+    # vertical, but the head ends up lower than the feet in the image.
     c = ClasificadorCinematico(umbrales)
     hacia_camara = fabricas.pose(cabeza=(320, 420), cadera=(320, 360), tobillos=(320, 300))
     eventos = reproducir(c, [*de_pie(0, 1.0), (1.2, hacia_camara)])

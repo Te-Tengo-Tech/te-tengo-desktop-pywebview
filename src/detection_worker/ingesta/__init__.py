@@ -1,1 +1,1 @@
-"""Servicio de ingesta de video: recepción, búfer del clip y orquestación por cámara."""
+"""Video ingestion service: reception, clip buffer and per-camera orchestration."""

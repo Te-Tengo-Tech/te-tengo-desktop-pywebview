@@ -1,6 +1,6 @@
-"""Procesamiento de los fotogramas de una cámara.
+"""Processing of the frames of one camera.
 
-Flujo: ingesta → pose → clasificación → eventos y clips.
+Flow: ingestion → pose → classification → events and clips.
 """
 
 import asyncio
@@ -22,12 +22,12 @@ from detection_worker.pose.service import EstimadorPose
 
 logger = logging.getLogger(__name__)
 
-# Eventos que se envían como alerta y llevan clip; los demás son avisos sin video.
+# Events that are sent as alerts and carry a clip; the others are notices without video.
 EVENTOS_CON_CLIP = frozenset({TipoEvento.CAIDA, TipoEvento.MOVIMIENTO_INESTABLE})
 
 
 class ProcesadorCamara:
-    """Atiende la conexión de un Agente de captura (una cámara)."""
+    """Handles the connection of one Capture Agent (one camera)."""
 
     def __init__(
         self,
@@ -47,7 +47,7 @@ class ProcesadorCamara:
         self._tareas: set[asyncio.Task[None]] = set()
 
     async def procesar(self, mensaje: bytes) -> list[EventoDetectado]:
-        """Procesa un mensaje del agente y devuelve los eventos publicados."""
+        """Processes a message from the agent and returns the published events."""
         instante_ms, jpeg = protocolo.decodificar(mensaje)
         instante = instante_ms / 1000
         for clip in self._buffer.agregar(instante, jpeg):
@@ -84,7 +84,7 @@ class ProcesadorCamara:
         try:
             await self._publicador.publicar(evento)
         except httpx.HTTPError as error:
-            # Sin traza completa: con el backend caído el log se llenaría de ruido.
+            # No full traceback: with the backend down, the log would fill up with noise.
             logger.warning(
                 "No se pudo publicar el evento %s (%s): %s",
                 evento.tipo.value,

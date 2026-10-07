@@ -1,4 +1,4 @@
-"""Configuración global leída de variables de entorno con prefijo ``TT_`` (ver ``.env.example``)."""
+"""Global settings read from ``TT_``-prefixed environment variables (see ``.env.example``)."""
 
 from pathlib import Path
 from typing import Literal
@@ -14,24 +14,24 @@ class Settings(BaseSettings):
         env_prefix="TT_",
         env_file=".env",
         env_nested_delimiter="__",
-        env_ignore_empty=True,  # una variable vacía en .env cuenta como «sin definir»
+        env_ignore_empty=True,  # an empty variable in .env counts as "not defined"
         extra="ignore",
     )
 
     entorno: Literal["local", "produccion"] = "local"
     nivel_log: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
-    # Token que presenta el Agente de captura al abrir el WebSocket de ingesta.
+    # Token the Capture Agent presents when opening the ingestion WebSocket.
     ingesta_token: SecretStr
 
-    # Backend API del sistema (Spring Boot).
+    # The system's Backend API (Spring Boot).
     backend_url: str
     backend_token: SecretStr
 
-    # Estimación de pose.
+    # Pose estimation.
     modelo_pose_ruta: Path = Path("models/pose_landmarker_lite.task")
 
-    # Almacenamiento de clips (Amazon S3; en local, SeaweedFS con ``s3_endpoint_url``).
+    # Clip storage (Amazon S3; locally, SeaweedFS with ``s3_endpoint_url``).
     clips_bucket: str
     aws_region: str = "us-east-1"
     s3_endpoint_url: str | None = None
@@ -40,13 +40,13 @@ class Settings(BaseSettings):
 
 
 class ConfiguracionInvalidaError(RuntimeError):
-    """La configuración del entorno está incompleta o tiene valores inválidos."""
+    """The environment configuration is incomplete or has invalid values."""
 
 
 def cargar_settings() -> Settings:
-    """Lee la configuración y, si falla, explica qué variable revisar."""
+    """Reads the configuration and, if it fails, explains which variable to check."""
     try:
-        return Settings()  # los valores vienen del entorno
+        return Settings()  # the values come from the environment
     except ValidationError as error:
         problemas = []
         for detalle in error.errors():

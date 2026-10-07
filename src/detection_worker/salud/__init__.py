@@ -1,1 +1,1 @@
-"""Endpoints de salud."""
+"""Health endpoints."""

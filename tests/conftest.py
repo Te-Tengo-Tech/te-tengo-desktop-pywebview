@@ -13,7 +13,7 @@ TOKEN_INGESTA = "token-de-prueba"
 
 @pytest.fixture
 def umbrales() -> Umbrales:
-    # La velocidad mínima es solo para las pruebas: el valor real se calibra (ver especificación).
+    # The minimum speed is only for the tests: the real value is calibrated (see the spec).
     return Umbrales(velocidad_descenso_min=0.5)
 
 
@@ -30,7 +30,7 @@ def settings(umbrales: Umbrales) -> Settings:
 
 
 class EstimadorFalso:
-    """Devuelve las poses de una lista, en orden; ``None`` simula un fotograma descartado."""
+    """Returns the poses from a list, in order; ``None`` simulates a discarded frame."""
 
     def __init__(self, poses: list[Pose | None] | None = None) -> None:
         self._poses: Iterator[Pose | None] = iter(poses or [])

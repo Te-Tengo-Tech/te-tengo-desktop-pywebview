@@ -1,1 +1,1 @@
-"""Servicio de clasificación cinemática: parámetros, umbrales y estados (núcleo sin I/O)."""
+"""Kinematic classification service: parameters, thresholds and states (I/O-free core)."""

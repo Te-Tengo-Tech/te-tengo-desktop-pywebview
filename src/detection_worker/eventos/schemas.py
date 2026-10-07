@@ -6,7 +6,7 @@ from detection_worker.clasificacion.estados import TipoEvento
 
 
 class EventoDetectado(BaseModel):
-    """Evento que se reporta al Backend API del sistema (contrato provisional)."""
+    """Event reported to the system's Backend API (provisional contract)."""
 
     evento_id: str
     camara_id: str

@@ -1,4 +1,4 @@
-"""Prueba de integración con el modelo real de MediaPipe (``make modelo`` para descargarlo)."""
+"""Integration test with the real MediaPipe model (``make modelo`` downloads it)."""
 
 from pathlib import Path
 
@@ -24,7 +24,7 @@ async def test_imagen_sin_personas_no_devuelve_pose() -> None:
         assert ok
         assert await estimador.estimar(jpeg.tobytes(), "camara-1", 0) is None
         assert await estimador.estimar(jpeg.tobytes(), "camara-1", 100) is None
-        # Una reconexión con marcas de tiempo anteriores reinicia el seguimiento sin fallar.
+        # A reconnection with earlier timestamps restarts tracking without failing.
         assert await estimador.estimar(jpeg.tobytes(), "camara-1", 50) is None
         await estimador.liberar("camara-1")
     finally:

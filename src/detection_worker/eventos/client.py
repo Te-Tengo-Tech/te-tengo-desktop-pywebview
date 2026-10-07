@@ -1,4 +1,4 @@
-"""Adaptador hacia el Backend API del sistema (Spring Boot)."""
+"""Adapter towards the system's Backend API (Spring Boot)."""
 
 import logging
 from typing import Protocol

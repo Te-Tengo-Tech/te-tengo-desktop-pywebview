@@ -1,12 +1,13 @@
-"""Agente de captura simulado: envía la webcam (o un video) al worker por WebSocket.
+"""Simulated Capture Agent: sends the webcam (or a video) to the worker over WebSocket.
 
-Hace lo mismo que hará Te Tengo Captura: baja el video a 480p y a 5-10 fps, lo comprime en
-JPEG y lo envía con el protocolo de docs/ingestion-protocol.md. El token se lee de tu .env.
+It does what Te Tengo Captura will do: downscales the video to 480p and 5-10 fps, compresses
+it as JPEG and sends it with the protocol in docs/ingestion-protocol.md. The token is read from
+your .env.
 
-Requisitos: el worker levantado (make ejecutar) y TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN
-definido en .env; si no, el worker cierra la conexión con el código 1011.
+Requirements: the worker running (make ejecutar) and TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN
+defined in .env; otherwise, the worker closes the connection with code 1011.
 
-Ejemplos:
+Examples:
     uv run python scripts/agente_simulado.py
     uv run python scripts/agente_simulado.py --video caida.mp4 --recorte 320,0,320,240
 """
@@ -27,7 +28,7 @@ ALTO_MAX = 480
 
 
 def leer_recorte(texto: str | None) -> tuple[int, int, int, int] | None:
-    """Convierte «x,y,ancho,alto» en una tupla."""
+    """Converts an "x,y,width,height" string into a tuple."""
     if not texto:
         return None
     x, y, ancho, alto = (int(n) for n in texto.split(","))
@@ -71,8 +72,8 @@ def main() -> int:
                 if not ok:
                     break
                 if args.video:
-                    # Igual que la validación: se toma el fotograma cuando el tiempo del video
-                    # alcanza el siguiente instante a 1/fps, y se usa ese tiempo como marca.
+                    # Same as the validation: the frame is taken when the video time reaches
+                    # the next 1/fps instant, and that time is used as the timestamp.
                     t_video = indice / fps_video
                     indice += 1
                     if t_video + 1e-9 < siguiente:

@@ -1,1 +1,1 @@
-"""Persistencia de clips de video."""
+"""Video clip persistence."""

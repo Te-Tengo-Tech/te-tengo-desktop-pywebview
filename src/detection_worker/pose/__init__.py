@@ -1,1 +1,1 @@
-"""Servicio de estimación de pose: landmarks corporales con MediaPipe."""
+"""Pose estimation service: body landmarks with MediaPipe."""

@@ -1,20 +1,20 @@
-"""Prueba local del clasificador con la webcam o con un video, sin backend ni agente.
+"""Local test of the classifier with the webcam or a video, without the backend or the agent.
 
-Usa el mismo código del worker (MediaPipe + parámetros + máquina de estados) y dibuja en
-pantalla el esqueleto, la línea central, el rectángulo del cuerpo y los valores medidos.
+It uses the same worker code (MediaPipe + parameters + state machine) and draws on screen the
+skeleton, the center line, the body rectangle and the measured values.
 
-Ejemplos:
-    # Webcam con el umbral calibrado (0,01 cuerpos/s)
+Examples:
+    # Webcam with the calibrated threshold (0.01 bodies/s)
     uv run python scripts/probar_camara.py --camara 0
 
-    # Solo medir, sin clasificar
+    # Measure only, without classifying
     uv run python scripts/probar_camara.py --solo-medir
 
-    # Video de URFD (la mitad derecha es RGB) guardando las mediciones
+    # URFD video (the right half is RGB), saving the measurements
     uv run python scripts/probar_camara.py --video fall-01-cam0.mp4 --recorte 320,0,320,240 \
         --csv mediciones.csv --sin-ventana
 
-Teclas: q salir · r reiniciar el clasificador · c guardar una captura en resultados/capturas/.
+Keys: q quit · r reset the classifier · c save a screenshot to resultados/capturas/.
 """
 
 import argparse
@@ -32,7 +32,7 @@ from detection_worker.clasificacion.medicion import MedidorCinematico
 from detection_worker.clasificacion.umbrales import Umbrales
 from detection_worker.pose.service import crear_landmarker, detectar
 
-ALTO_MAX = 480  # el agente envía 480p
+ALTO_MAX = 480  # the agent sends 480p
 VELOCIDAD_CALIBRADA = 0.01  # docs/validation.md
 
 
@@ -77,7 +77,7 @@ def preparar(imagen: Any, recorte: tuple[int, int, int, int] | None) -> Any:
 
 
 def leer_recorte(texto: str | None) -> tuple[int, int, int, int] | None:
-    """Convierte «x,y,ancho,alto» en una tupla."""
+    """Converts an "x,y,width,height" string into a tuple."""
     if not texto:
         return None
     x, y, ancho, alto = (int(n) for n in texto.split(","))
@@ -85,16 +85,16 @@ def leer_recorte(texto: str | None) -> tuple[int, int, int, int] | None:
 
 
 def listar_camaras(maximo: int = 6) -> None:
-    """Guarda una foto de cada cámara para reconocerla, porque OpenCV no da sus nombres."""
+    """Saves a photo from each camera to identify it, because OpenCV does not give names."""
     carpeta = Path("resultados/camaras")
     carpeta.mkdir(parents=True, exist_ok=True)
     for indice in range(maximo):
         captura = cv2.VideoCapture(indice)
         if not captura.isOpened():
             captura.release()
-            break  # no hay más cámaras
+            break  # no more cameras
         imagen = None
-        for _ in range(15):  # las primeras lecturas pueden venir vacías mientras la cámara arranca
+        for _ in range(15):  # the first reads may be empty while the camera starts
             ok, imagen = captura.read()
             if ok and imagen is not None and imagen.any():
                 break

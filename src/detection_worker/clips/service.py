@@ -1,4 +1,4 @@
-"""Persistencia de clips: arma el MP4 con FFmpeg y lo guarda cifrado en S3."""
+"""Clip persistence: builds the MP4 with FFmpeg and stores it encrypted in S3."""
 
 import asyncio
 import subprocess
@@ -8,17 +8,17 @@ from detection_worker.ingesta.buffer import Clip
 
 
 class ErrorCodificacionError(RuntimeError):
-    """FFmpeg no pudo armar el MP4 del clip."""
+    """FFmpeg could not build the clip's MP4."""
 
 
 class AlmacenClips(Protocol):
     async def guardar(self, camara_id: str, clip: Clip) -> str:
-        """Guarda el clip y devuelve su clave en el almacenamiento."""
+        """Stores the clip and returns its key in the storage."""
         ...
 
 
 def codificar_mp4(fotogramas: list[tuple[float, bytes]]) -> bytes:
-    """Convierte fotogramas JPEG en un MP4 H.264 usando FFmpeg (debe estar instalado)."""
+    """Converts JPEG frames into an H.264 MP4 using FFmpeg (it must be installed)."""
     if len(fotogramas) < 2:
         raise ValueError("Se necesitan al menos dos fotogramas")
     duracion = fotogramas[-1][0] - fotogramas[0][0]
@@ -26,7 +26,7 @@ def codificar_mp4(fotogramas: list[tuple[float, bytes]]) -> bytes:
     comando = [
         "ffmpeg", "-loglevel", "error",
         "-f", "image2pipe", "-framerate", f"{fps:.2f}", "-c:v", "mjpeg", "-i", "pipe:0",
-        # H.264 con yuv420p exige ancho y alto pares (una webcam 16:9 a 480p da 853 px).
+        # H.264 with yuv420p requires an even width and height (a 16:9 webcam at 480p gives 853 px).
         "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         "-movflags", "frag_keyframe+empty_moov",
@@ -41,7 +41,7 @@ def codificar_mp4(fotogramas: list[tuple[float, bytes]]) -> bytes:
 
 
 class S3AlmacenClips:
-    """Almacenamiento de clips en Amazon S3 (o compatible, como SeaweedFS en local)."""
+    """Clip storage in Amazon S3 (or a compatible service, such as SeaweedFS locally)."""
 
     def __init__(self, bucket: str, region: str, endpoint_url: str | None = None) -> None:
         import boto3

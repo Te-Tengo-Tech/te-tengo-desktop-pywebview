@@ -1,7 +1,7 @@
-"""Medición por fotograma: parámetros (R1 a R3) y velocidad de bajada de la cadera.
+"""Per-frame measurement: parameters (R1 to R3) and hip descent speed.
 
-Está separada de la máquina de estados para poder medir sin clasificar; por ejemplo, para ver
-los valores en vivo con la cámara mientras se calibran los umbrales.
+It is kept separate from the state machine so that measuring is possible without classifying;
+for example, to watch the values live with the camera while the thresholds are calibrated.
 """
 
 import statistics
@@ -16,7 +16,7 @@ from detection_worker.pose.schemas import Pose
 class Medicion:
     instante: float
     parametros: parametros.Parametros
-    velocidad: float | None  # None si el fotograma no sirve para medirla
+    velocidad: float | None  # None if the frame cannot be used to measure it
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,14 +27,14 @@ class _Muestra:
 
 
 class MedidorCinematico:
-    """Calcula los parámetros de cada fotograma y la velocidad de bajada de la cadera (R1).
+    """Computes the parameters of each frame and the hip descent speed (R1).
 
-    La velocidad es la mayor bajada por segundo entre el fotograma actual y cada fotograma de la
-    ventana anterior (de ``ventana_s`` hasta ``separacion_min_s`` atrás). Así tolera los
-    fotogramas que MediaPipe pierde justo durante la caída (adaptación A3). Solo se usan
-    fotogramas con los puntos clave visibles (A6): con puntos dudosos la cadera «salta» y genera
-    velocidades imposibles. La escala es la mediana del largo de la línea central de los últimos
-    segundos, más estable que el de un solo fotograma.
+    The speed is the largest drop per second between the current frame and each frame in the
+    preceding window (from ``ventana_s`` back to ``separacion_min_s`` back). This tolerates the
+    frames that MediaPipe loses right during the fall (adaptation A3). Only frames with the key
+    points visible are used (A6): with doubtful points the hip "jumps" and produces impossible
+    speeds. The scale is the median length of the center line over the last few seconds, which
+    is more stable than that of a single frame.
     """
 
     def __init__(self, separacion_min_s: float, ventana_s: float, visibilidad_min: float) -> None:

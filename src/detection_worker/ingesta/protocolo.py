@@ -1,8 +1,8 @@
-"""Formato de los mensajes que envía el Agente de captura (ver docs/ingestion-protocol.md).
+"""Format of the messages sent by the Capture Agent (see docs/ingestion-protocol.md).
 
-Cada fotograma viaja en un mensaje binario de WebSocket:
+Each frame travels in a binary WebSocket message:
 
-    [8 bytes: instante de captura en milisegundos, entero sin signo big-endian][JPEG]
+    [8 bytes: capture instant in milliseconds, unsigned big-endian integer][JPEG]
 """
 
 import struct
@@ -12,7 +12,7 @@ _INICIO_JPEG = b"\xff\xd8"
 
 
 class MensajeInvalidoError(ValueError):
-    """El mensaje no respeta el protocolo de ingesta."""
+    """The message does not follow the ingestion protocol."""
 
 
 def codificar(instante_ms: int, jpeg: bytes) -> bytes:
@@ -20,7 +20,7 @@ def codificar(instante_ms: int, jpeg: bytes) -> bytes:
 
 
 def decodificar(mensaje: bytes) -> tuple[int, bytes]:
-    """Devuelve ``(instante_ms, jpeg)``."""
+    """Returns ``(instante_ms, jpeg)``."""
     if len(mensaje) <= _CABECERA.size:
         raise MensajeInvalidoError("Mensaje demasiado corto")
     (instante_ms,) = _CABECERA.unpack_from(mensaje)

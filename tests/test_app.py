@@ -52,7 +52,7 @@ def test_ingesta_acepta_fotogramas_con_token_valido(
     ):
         for i in range(5):
             ws.send_bytes(protocolo.codificar(i * 100, b"\xff\xd8\xff\xe0contenido"))
-        ws.send_bytes(b"mensaje-invalido")  # se descarta sin cerrar la conexión
+        ws.send_bytes(b"mensaje-invalido")  # discarded without closing the connection
     assert publicador.eventos == []
 
 
@@ -85,7 +85,7 @@ def test_variable_vacia_cuenta_como_no_definida(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_configuracion_incompleta_explica_que_falta(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir("/")  # sin .env
+    monkeypatch.chdir("/")  # no .env
     for variable in ("TT_INGESTA_TOKEN", "TT_BACKEND_TOKEN", "TT_BACKEND_URL", "TT_CLIPS_BUCKET"):
         monkeypatch.delenv(variable, raising=False)
     with pytest.raises(ConfiguracionInvalidaError, match="TT_INGESTA_TOKEN"):

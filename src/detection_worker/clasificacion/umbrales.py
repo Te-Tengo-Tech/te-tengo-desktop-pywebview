@@ -1,7 +1,7 @@
-"""Umbrales de la clasificación cinemática.
+"""Thresholds of the kinematic classification.
 
-Se configuran por variable de entorno (``TT_CLASIFICACION__<CAMPO>``). El origen de cada valor
-está en la tabla de umbrales de ``docs/classification-spec.md``.
+They are configured through environment variables (``TT_CLASIFICACION__<CAMPO>``). The origin
+of each value is given in the thresholds table of ``docs/classification-spec.md``.
 """
 
 from pydantic import BaseModel, Field

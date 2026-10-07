@@ -1,6 +1,6 @@
-"""Crea .env a partir de .env.example con tokens aleatorios para desarrollo local.
+"""Creates .env from .env.example with random tokens for local development.
 
-No sobrescribe un .env existente. Los tokens generados solo sirven en tu máquina.
+It does not overwrite an existing .env. The generated tokens only work on your machine.
 """
 
 import secrets

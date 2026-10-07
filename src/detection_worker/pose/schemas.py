@@ -1,8 +1,8 @@
-"""Tipos de datos de la estimación de pose.
+"""Data types of the pose estimation.
 
-MediaPipe Pose Landmarker entrega 33 landmarks por persona. Sus coordenadas ``x`` e ``y`` van
-de 0 a 1 (divididas entre el ancho y el alto de la imagen) e ``y`` crece hacia abajo. Detalle y
-fuente en ``docs/classification-spec.md`` (sección 1).
+MediaPipe Pose Landmarker returns 33 landmarks per person. Their ``x`` and ``y`` coordinates
+range from 0 to 1 (divided by the image width and height) and ``y`` grows downwards. Details
+and source in ``docs/classification-spec.md`` (section 1).
 """
 
 from dataclasses import dataclass
@@ -10,7 +10,7 @@ from enum import IntEnum
 
 
 class Indice(IntEnum):
-    """Índices de MediaPipe usados por la clasificación cinemática."""
+    """MediaPipe indices used by the kinematic classification."""
 
     NARIZ = 0
     HOMBRO_IZQUIERDO = 11
@@ -28,7 +28,7 @@ TOTAL_LANDMARKS = 33
 
 @dataclass(frozen=True, slots=True)
 class Punto:
-    """Punto en píxeles de la imagen (``y`` crece hacia abajo)."""
+    """Point in image pixels (``y`` grows downwards)."""
 
     x: float
     y: float
@@ -36,7 +36,7 @@ class Punto:
 
 @dataclass(frozen=True, slots=True)
 class Landmark:
-    """Landmark normalizado (0-1) con su probabilidad de estar visible."""
+    """Normalized landmark (0-1) with its probability of being visible."""
 
     x: float
     y: float
@@ -45,7 +45,7 @@ class Landmark:
 
 @dataclass(frozen=True, slots=True)
 class Pose:
-    """Pose de una persona en un fotograma, con el tamaño de la imagen en píxeles."""
+    """Pose of one person in a frame, with the image size in pixels."""
 
     landmarks: tuple[Landmark, ...]
     ancho: int
@@ -60,16 +60,17 @@ class Pose:
             raise ValueError("El tamaño de la imagen debe ser positivo")
 
     def en_pixeles(self, indice: int) -> Punto:
-        """Convierte un landmark normalizado a píxeles.
+        """Converts a normalized landmark to pixels.
 
-        Hace falta porque MediaPipe normaliza ``x`` por el ancho e ``y`` por el alto: sin esta
-        conversión, distancias y proporciones salen deformadas cuando la imagen no es cuadrada.
+        This is needed because MediaPipe normalizes ``x`` by the width and ``y`` by the height:
+        without this conversion, distances and proportions come out distorted when the image is
+        not square.
         """
         lm = self.landmarks[indice]
         return Punto(lm.x * self.ancho, lm.y * self.alto)
 
     def visibles(self, visibilidad_min: float) -> list[Punto]:
-        """Landmarks en píxeles cuya visibilidad alcanza el mínimo."""
+        """Landmarks in pixels whose visibility reaches the minimum."""
         return [
             Punto(lm.x * self.ancho, lm.y * self.alto)
             for lm in self.landmarks

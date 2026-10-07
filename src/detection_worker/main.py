@@ -1,4 +1,4 @@
-"""Punto de entrada: ``uvicorn detection_worker.main:create_app --factory``."""
+"""Entry point: ``uvicorn detection_worker.main:create_app --factory``."""
 
 import logging
 from collections.abc import AsyncIterator
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class Componentes:
-    """Adaptadores externos. En las pruebas se reemplazan por dobles."""
+    """External adapters. The tests replace them with test doubles."""
 
     estimador: EstimadorPose
     publicador: PublicadorEventos

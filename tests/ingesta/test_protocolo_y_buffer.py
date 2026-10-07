@@ -22,7 +22,7 @@ def test_protocolo_rechaza_mensajes_invalidos(mensaje: bytes) -> None:
 def test_clip_incluye_6_s_antes_y_6_s_despues() -> None:
     buffer = BufferClip()
     clips = []
-    for i in range(41):  # 0 a 20 s, cada 0,5 s
+    for i in range(41):  # 0 to 20 s, every 0.5 s
         t = i * 0.5
         if t == 10.0:
             buffer.marcar_evento("evento-1", t)

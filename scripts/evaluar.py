@@ -1,22 +1,22 @@
-"""Validación del clasificador con los datasets públicos URFD y CAUCAFall.
+"""Validation of the classifier with the public URFD and CAUCAFall datasets.
 
-Dos pasos:
+Two steps:
 
-1. ``extraer``: pasa cada video por MediaPipe como lo haría el worker (480p, ``--fps``, modo
-   VIDEO) y guarda las poses en ``resultados/poses/``. Es lo lento y se hace una sola vez.
-2. ``evaluar``: reproduce las poses guardadas en el MISMO clasificador del worker y calcula
-   sensibilidad, especificidad y exactitud. Con ``--barrer`` calibra el umbral de velocidad
-   (máximo índice de Youden) y valida:
+1. ``extraer``: runs each video through MediaPipe as the worker would (480p, ``--fps``, VIDEO
+   mode) and stores the poses in ``resultados/poses/``. This is the slow part and runs only once.
+2. ``evaluar``: replays the stored poses through the SAME classifier as the worker and computes
+   sensitivity, specificity and accuracy. With ``--barrer`` it calibrates the speed threshold
+   (maximum Youden index) and validates:
 
-   * **entre datasets**: calibra con uno y mide en el otro;
-   * **dejando un grupo fuera**: cada sujeto de CAUCAFall y URFD completo se evalúa con el
-     umbral calibrado sin ese grupo (11 grupos).
+   * **across datasets**: calibrates with one and measures on the other;
+   * **leaving one group out**: each CAUCAFall subject and the whole of URFD are evaluated with
+     the threshold calibrated without that group (11 groups).
 
-Un video cuenta como «caída detectada» si hay al menos un evento ``caida``. Además se cuentan
-las recuperaciones falsas (en URFD ninguna persona se levanta después de caer, según sus
-etiquetas por fotograma) y los movimientos inestables emitidos en actividades diarias.
+A video counts as a "detected fall" if there is at least one ``caida`` event. False recoveries
+are also counted (in URFD no person gets up after falling, according to its per-frame labels),
+as well as the unstable movements emitted in activities of daily living.
 
-Ejemplos:
+Examples:
     uv run python scripts/evaluar.py extraer
     uv run python scripts/evaluar.py evaluar --velocidad-min 0.2
     uv run python scripts/evaluar.py evaluar --barrer 0.05 2.0 0.05
@@ -38,7 +38,7 @@ from detection_worker.pose.schemas import Landmark, Pose
 
 DATOS, RESULTADOS = Path("datos"), Path("resultados")
 ALTO_MAX = 480
-CALIDAD_JPEG = 80  # la misma del agente simulado
+CALIDAD_JPEG = 80  # the same as the simulated agent
 Secuencia = list[tuple[float, Pose | None]]
 
 
@@ -49,7 +49,7 @@ class Video:
     ruta: Path
     es_caida: bool
     actividad: str
-    grupo: str  # sujeto en CAUCAFall; «urfd» en URFD (no publica el sujeto de cada video)
+    grupo: str  # subject in CAUCAFall; "urfd" in URFD (it does not publish each video's subject)
     recorte: tuple[int, int, int, int] | None = None
 
     def cache(self, variante: str) -> Path:
@@ -62,7 +62,7 @@ def listar_videos(datos: Path = DATOS) -> list[Video]:
         nombre = ruta.name.removesuffix("-cam0.mp4")
         es_caida = nombre.startswith("fall")
         actividad = "caída" if es_caida else "actividad diaria"
-        # Los MP4 de URFD tienen la profundidad a la izquierda y el RGB a la derecha.
+        # URFD MP4 files have the depth image on the left and the RGB image on the right.
         videos.append(Video("urfd", nombre, ruta, es_caida, actividad, "urfd", (320, 0, 320, 240)))
     for ruta in sorted((datos / "caucafall").glob("Subject.*/*.avi")):
         sujeto, actividad = ruta.parent.name, ruta.stem
@@ -73,7 +73,7 @@ def listar_videos(datos: Path = DATOS) -> list[Video]:
     return videos
 
 
-# ------------------------------------------------------------------------------ extraer
+# ------------------------------------------------------------------------------ extraction
 
 
 def _extraer(video: Video, fps: float, modelo: str, modo: str, variante: str, jpeg: bool) -> str:
@@ -81,7 +81,7 @@ def _extraer(video: Video, fps: float, modelo: str, modo: str, variante: str, jp
 
     from detection_worker.pose.service import crear_landmarker, detectar
 
-    # Un landmarker por video: en modo VIDEO las marcas de tiempo deben crecer dentro del video.
+    # One landmarker per video: in VIDEO mode, timestamps must increase within the video.
     landmarker = crear_landmarker(modelo, modo=modo)
     captura = cv2.VideoCapture(str(video.ruta))
     fps_fuente = captura.get(cv2.CAP_PROP_FPS) or 30.0
@@ -103,7 +103,7 @@ def _extraer(video: Video, fps: float, modelo: str, modo: str, variante: str, jp
         if alto > ALTO_MAX:
             imagen = cv2.resize(imagen, (round(ancho * ALTO_MAX / alto / 2) * 2, ALTO_MAX))
             alto, ancho = imagen.shape[:2]
-        if jpeg:  # igual que el agente: JPEG de calidad 80
+        if jpeg:  # same as the agent: JPEG at quality 80
             _, comprimida = cv2.imencode(".jpg", imagen, [cv2.IMWRITE_JPEG_QUALITY, CALIDAD_JPEG])
             imagen = cv2.imdecode(comprimida, cv2.IMREAD_COLOR)  # type: ignore[assignment]
         pose = detectar(landmarker, imagen, round(instante * 1000) if modo == "video" else None)
@@ -156,7 +156,7 @@ def extraer(
             print(f"  [{i}/{n}] {nombre}")
 
 
-# ------------------------------------------------------------------------------ evaluar
+# ------------------------------------------------------------------------------ evaluation
 
 
 def cargar_poses(video: Video, variante: str) -> Secuencia:
@@ -225,7 +225,7 @@ def evaluar(
 def calibrar(
     poses: dict[str, Secuencia], videos: list[Video], base: Umbrales, valores: list[float]
 ) -> float:
-    """Umbral de velocidad con máximo índice de Youden; ante empate, el más bajo."""
+    """Speed threshold with the maximum Youden index; on a tie, the lowest one."""
     curva = []
     for valor in valores:
         umbrales = base.model_copy(update={"velocidad_descenso_min": valor})
@@ -233,7 +233,7 @@ def calibrar(
     return max(curva, key=lambda par: (round(par[1].youden, 6), -par[0]))[0]
 
 
-# ------------------------------------------------------------------------------ reporte
+# ------------------------------------------------------------------------------ report
 
 ENCABEZADO = [
     "| Grupo | Caídas | No caídas | VP | FN | VN | FP | Sensibilidad | Especificidad | Exactitud |",
@@ -243,7 +243,7 @@ ENCABEZADO = [
 
 def fila(nombre: str, m: Metricas) -> str:
     def pct(x: float) -> str:
-        return "—" if x != x else f"{x:.1%}"  # x != x solo para NaN
+        return "—" if x != x else f"{x:.1%}"  # x != x only for NaN
 
     return (
         f"| {nombre} | {m.vp + m.fn} | {m.vn + m.fp} | {m.vp} | {m.fn} | {m.vn} | {m.fp} | "

@@ -1,1 +1,1 @@
-"""Adaptador de eventos hacia el Backend API del sistema."""
+"""Event adapter towards the system's Backend API."""
