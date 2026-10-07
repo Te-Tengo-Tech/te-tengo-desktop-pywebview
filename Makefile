@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := ayuda
-.PHONY: ayuda instalar env modelo camara datasets validar formatear revisar probar
+.PHONY: ayuda instalar modelo camara datasets validar formatear revisar probar
 
 ayuda: ## Lists the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -7,9 +7,6 @@ ayuda: ## Lists the available commands
 instalar: ## Installs dependencies and pre-commit hooks
 	uv sync
 	uv run pre-commit install --hook-type pre-commit --hook-type commit-msg
-
-env: ## Creates .env from .env.example with local tokens
-	uv run python scripts/crear_env.py
 
 modelo: ## Downloads the MediaPipe model into models/
 	./scripts/descargar_modelo.sh

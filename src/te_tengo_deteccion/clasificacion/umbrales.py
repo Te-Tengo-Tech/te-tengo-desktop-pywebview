@@ -1,6 +1,6 @@
 """Thresholds of the kinematic classification.
 
-They are configured through environment variables (``TT_CLASIFICACION__<CAMPO>``). The origin
+The agent reads them from the ``[clasificacion]`` table of its installation file. The origin
 of each value is given in the thresholds table of ``docs/classification-spec.md``.
 """
 

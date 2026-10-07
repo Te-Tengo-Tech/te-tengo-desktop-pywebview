@@ -54,7 +54,6 @@ make camara        # tests the classifier with the webcam
 | Command | What it does |
 |---|---|
 | `make instalar` | Installs the dependencies (`uv sync`) and the pre-commit hooks |
-| `make env` | Creates `.env` from `.env.example` with random local tokens |
 | `make modelo` | Downloads the MediaPipe model |
 | `make camara` | Tests the classifier with the webcam or a video, with an on-screen overlay |
 | `make datasets` | Downloads URFD and CAUCAFall |
@@ -108,9 +107,7 @@ The agent talks to `te-tengo-general-api` through the contract in [docs/AGENT_CO
 
 ## Configuration
 
-All variables have the `TT_` prefix. The full list is in [.env.example](.env.example).
-
-`TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN` has no default value in the code; `.env.example` has the calibrated value (0.01; see [docs/validation.md](docs/validation.md)). While it is empty, the service starts (`/health`, `/docs`), but ingestion closes the WebSocket with code 1011.
+The project team installs a fixed TOML file (`config.toml` in the platform config directory, or `--config <path>`). Every field is documented in [config.ejemplo.toml](config.ejemplo.toml). Without a `[clasificacion]` table the agent uses the calibrated thresholds of [docs/validation.md](docs/validation.md) (speed 0.01 bodies/s).
 
 ## Status
 
