@@ -2,10 +2,10 @@
 
 ## Workflow
 
-1. Create a branch from `main` with the type and a short name: `feat/captura-contrapresion`, `fix/angulo-vertical`, `docs/protocolo`.
+1. Create a branch from `develop` (`main` only receives releases merged from `develop`) with the type and a short name: `feat/captura-contrapresion`, `fix/angulo-vertical`, `docs/protocolo`.
 2. Set up the environment with `make instalar`. This also installs the pre-commit hooks.
 3. Before pushing, `make revisar` and `make probar` must pass.
-4. Open a *pull request* to `main`. CI runs the same checks again.
+4. Open a *pull request* to `develop`. CI runs the same checks again.
 
 ## Commit messages
 
