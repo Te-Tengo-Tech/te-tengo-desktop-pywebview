@@ -91,7 +91,7 @@ The agent is built task by task from this checklist. An agent working autonomous
 - [x] **T15 Logging and crash recovery.** Rotating log files in the platform log directory (no secrets, no frames); unhandled errors in the capture thread restart the loop and are shown as the "problem" state.
 
 ### Delivery
-- [ ] **T16 Packaging.**
+- [x] **T16 Packaging.**
   - PyInstaller spec (`packaging/te-tengo-captura.spec`) including the MediaPipe model, `ui/web/` and the MediaPipe data files; one-folder build.
   - CI job on `windows-latest` that builds the app and uploads it as an artifact; a smoke test that runs the built exe with `--version`.
 - [ ] **T17 Remote thresholds** (`GET /api/agente/configuracion`). Applied at startup and every hour (implementation choice); invalid values are ignored and logged.

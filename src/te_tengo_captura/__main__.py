@@ -36,6 +36,11 @@ def argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--modelo", type=Path, help="MediaPipe pose model (.task)")
     parser.add_argument("--datos", type=Path, help="data directory (outbox and pending clips)")
     parser.add_argument("--logs", type=Path, help="log directory")
+    parser.add_argument(
+        "--autoprueba",
+        action="store_true",
+        help="check the model, clip encoding and UI libraries, then exit (packaging smoke test)",
+    )
     return parser.parse_args(argv)
 
 
@@ -87,6 +92,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.logs or rutas.logs(), lambda: [s for fuente in secretos for s in fuente()]
     )
     logger.info("Te Tengo Captura %s; registro en %s", __version__, ruta_log)
+    if args.autoprueba:
+        from te_tengo_captura import autoprueba
+
+        return autoprueba.ejecutar(args.modelo or ruta_modelo_predeterminada())
     # A second launch shows the running agent's window instead of starting another agent.
     instancia = Instancia(args.datos or rutas.datos())
     abrir: dict[str, Callable[[], None]] = {}
