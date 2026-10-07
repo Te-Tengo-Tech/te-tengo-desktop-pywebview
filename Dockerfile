@@ -26,8 +26,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ---------- Etapa 2: ejecución
 FROM python:3.11-slim-bookworm
 # libgl1 y libglib2.0-0: los necesita opencv-contrib-python (dependencia de MediaPipe).
+# libgles2 y libegl1: MediaPipe las carga en Linux aunque corra en CPU.
 # ffmpeg: arma los clips MP4.
-RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 ffmpeg \
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgles2 libegl1 ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 app
 
