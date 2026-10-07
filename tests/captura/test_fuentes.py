@@ -78,7 +78,7 @@ def test_captador_entrega_fotogramas_muestreados() -> None:
     reloj, fuente = Reloj(), FuenteFalsa(paso=1 / 30)
     c = captador(fuente, reloj)
     fotogramas = [f for _ in range(60) if (f := c.leer()) is not None]
-    assert c.conectada
+    assert c.conectada is True
     assert len(fotogramas) == 16  # 2 s at 8 fps
     assert fotogramas[1].instante == pytest.approx(4 / 30)
 
@@ -87,16 +87,16 @@ def test_detecta_desconexion_tras_n_segundos_y_reconecta_sola() -> None:
     reloj, fuente = Reloj(), FuenteFalsa()
     c = captador(fuente, reloj)
     c.leer()
-    assert c.conectada
+    assert c.conectada is True
 
     fuente.conectada = False
     for t in (0.5, 1.0, 2.0, 3.0):
         reloj.ahora = t
         assert c.leer() is None
-        assert c.conectada  # a few failed reads are not a disconnection
+        assert c.conectada is True  # a few failed reads are not a disconnection
     reloj.ahora = 3.5
     c.leer()
-    assert not c.conectada
+    assert c.conectada is False
     assert c.espera() == 2.0
     assert fuente.aperturas == 1
 
@@ -107,7 +107,7 @@ def test_detecta_desconexion_tras_n_segundos_y_reconecta_sola() -> None:
     reloj.ahora = 5.5
     c.leer()
     assert fuente.aperturas == 2
-    assert c.conectada
+    assert c.conectada is True
 
 
 def test_webcam_que_no_abre_queda_desconectada_y_reintenta() -> None:
@@ -115,7 +115,7 @@ def test_webcam_que_no_abre_queda_desconectada_y_reintenta() -> None:
     fuente.conectada = False
     c = captador(fuente, reloj)
     assert c.leer() is None
-    assert not c.conectada
+    assert c.conectada is False
     reloj.ahora = 2.0
     c.leer()
     assert fuente.aperturas == 2
@@ -131,7 +131,7 @@ def test_buscar_de_nuevo_fuerza_la_reapertura() -> None:
     assert c.espera() == 0.0
     c.leer()
     assert fuente.aperturas == 2
-    assert c.conectada
+    assert c.conectada is True
     c.cerrar()
     assert not fuente.abierta
 
@@ -178,3 +178,19 @@ def test_webcam_inexistente_no_abre() -> None:
     assert not fuente.abrir()
     assert fuente.leer() is None
     fuente.cerrar()
+
+
+def test_estado_desconocido_hasta_abrir_la_webcam() -> None:
+    c = captador(FuenteFalsa(), Reloj())
+    assert c.conectada is None
+
+
+def test_fuente_archivo_en_tiempo_real_no_se_adelanta(video: Path) -> None:
+    import time
+
+    fuente = FuenteArchivo(video, tiempo_real=True)
+    assert fuente.abrir()
+    inicio = time.monotonic()
+    for _ in range(3):
+        fuente.leer()
+    assert time.monotonic() - inicio >= 0.1  # third frame at 0.10 s

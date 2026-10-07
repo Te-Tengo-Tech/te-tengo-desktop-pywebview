@@ -75,6 +75,7 @@ class BucleCaptura:
         self._clasificador = ClasificadorCinematico(umbrales)
         self._buffer = BufferClip()
         self._activa = False
+        self._buscar = threading.Event()
         self.deteccion_confiable = True
 
     @property
@@ -84,7 +85,8 @@ class BucleCaptura:
 
     @property
     def webcam_conectada(self) -> bool:
-        return self._captador.conectada
+        """Last known state; a webcam not opened yet (capture not allowed) is not «lost»."""
+        return self._captador.conectada is not False
 
     def actualizar_umbrales(self, umbrales: Umbrales) -> None:
         """New thresholds (remote configuration): applied with a fresh classifier."""
@@ -92,7 +94,8 @@ class BucleCaptura:
         self._clasificador = ClasificadorCinematico(umbrales)
 
     def buscar_webcam(self) -> None:
-        self._captador.buscar_de_nuevo()
+        """«Buscar de nuevo» from another thread: the reopen happens on the capture thread."""
+        self._buscar.set()
 
     def paso(self) -> list[EventoAgente]:
         """Processes at most one frame and returns the events queued for it."""
@@ -103,6 +106,9 @@ class BucleCaptura:
         if not self._activa:
             logger.info("Captura permitida: se abre la webcam")
             self._activa = True
+        if self._buscar.is_set():
+            self._buscar.clear()
+            self._captador.buscar_de_nuevo()
         fotograma = self._captador.leer()
         if fotograma is None:
             return []

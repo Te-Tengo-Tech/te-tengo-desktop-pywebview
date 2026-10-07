@@ -16,6 +16,7 @@ dependencies = [
     "pydantic>=2.13",
     "platformdirs>=4",
     "av>=18.1.0",
+    "pywebview>=6.2.1",
 ]
 
 [project.scripts]

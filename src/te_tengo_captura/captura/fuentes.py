@@ -91,11 +91,17 @@ class FuenteWebcam:
 
 
 class FuenteArchivo:
-    """Video file. With ``repetir`` it loops, shifting the instants so they keep increasing."""
+    """Video file. With ``repetir`` it loops, shifting the instants so they keep increasing.
 
-    def __init__(self, ruta: Path, repetir: bool = False) -> None:
+    With ``tiempo_real`` (demos with ``--video``) each frame waits until its instant, like a
+    webcam; tests leave it off and read as fast as possible.
+    """
+
+    def __init__(self, ruta: Path, repetir: bool = False, tiempo_real: bool = False) -> None:
         self._ruta = ruta
         self._repetir = repetir
+        self._tiempo_real = tiempo_real
+        self._inicio: float | None = None
         self._captura: Any = None
         self._fps = 30.0
         self._indice = 0
@@ -132,6 +138,11 @@ class FuenteArchivo:
                 return None
         instante = self._desfase + self._indice / self._fps
         self._indice += 1
+        if self._tiempo_real:
+            ahora = time.monotonic()
+            self._inicio = ahora if self._inicio is None else self._inicio
+            if (adelanto := self._inicio + instante - ahora) > 0:
+                time.sleep(adelanto)
         return instante, imagen
 
     def cerrar(self) -> None:
@@ -229,7 +240,8 @@ class Captador:
         self._abierta = False
         self._proxima_apertura = 0.0
         self._fallando_desde: float | None = None
-        self.conectada = False
+        # None until the webcam is first opened (capture may not be allowed yet).
+        self.conectada: bool | None = None
 
     def leer(self) -> Fotograma | None:
         """One read. ``None`` when there is no frame to process yet (skipped, failed or closed)."""
@@ -252,7 +264,7 @@ class Captador:
                 self._marcar_desconectada(ahora)
             return None
         self._fallando_desde = None
-        if not self.conectada:
+        if self.conectada is not True:
             logger.info("Webcam conectada")
             self.conectada = True
         instante, imagen = lectura
@@ -278,7 +290,7 @@ class Captador:
         self._abierta = False
 
     def _marcar_desconectada(self, ahora: float) -> None:
-        if self.conectada:
+        if self.conectada is not False:
             logger.warning("Webcam desconectada")
         self.conectada = False
         self._proxima_apertura = ahora + self._reapertura

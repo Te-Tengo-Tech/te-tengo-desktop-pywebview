@@ -5,12 +5,20 @@ timestamps. In the desktop agent MediaPipe runs in the capture worker thread (AG
 "Threads"); the separate process of ADR 0003 belonged to the retired server.
 """
 
+import sys
 from pathlib import Path
 from typing import Any, Protocol
 
 from te_tengo_captura.captura.fuentes import Imagen
 from te_tengo_deteccion.pose.schemas import Pose
 from te_tengo_deteccion.pose.service import crear_landmarker, detectar
+
+
+def ruta_modelo_predeterminada() -> Path:
+    """``models/pose_landmarker_lite.task`` in the PyInstaller bundle or the repository."""
+    base = getattr(sys, "_MEIPASS", None)
+    raiz = Path(base) if base else Path(__file__).resolve().parents[3]
+    return raiz / "models" / "pose_landmarker_lite.task"
 
 
 class Estimador(Protocol):
