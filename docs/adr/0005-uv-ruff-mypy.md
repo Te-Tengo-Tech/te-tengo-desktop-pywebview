@@ -1,20 +1,20 @@
-# 0005. uv, Ruff y mypy como herramientas del proyecto
+# 0005. uv, Ruff and mypy as the project tools
 
-**Estado:** aceptada (2026-10-03)
+**Status:** accepted (2026-10-03)
 
-## Contexto
-Se necesita un entorno reproducible y una calidad de código uniforme entre los dos autores y en CI.
+## Context
+A reproducible environment and uniform code quality are needed between the two authors and in CI.
 
-## Decisión
-- **uv:** gestiona Python, las dependencias y `uv.lock`, que va versionado.
-- **Ruff:** lint y formato.
-- **mypy** en modo estricto.
-- **pytest** con cobertura.
-- **pre-commit:** ejecuta Ruff y valida Conventional Commits antes de cada commit.
-- **GitHub Actions** repite todo en cada *pull request*.
+## Decision
+- **uv:** manages Python, the dependencies and `uv.lock`, which is versioned.
+- **Ruff:** linting and formatting.
+- **mypy** in strict mode.
+- **pytest** with coverage.
+- **pre-commit:** runs Ruff and validates Conventional Commits before each commit.
+- **GitHub Actions** runs everything again on each *pull request*.
 
-## Consecuencias
-- `make revisar` y `make probar` dan el mismo resultado en local y en CI.
-- El Dockerfile usa la imagen oficial de uv con el patrón multietapa (Astral, s.f.).
+## Consequences
+- `make revisar` and `make probar` give the same result locally and in CI.
+- The Dockerfile uses the official uv image with the multi-stage pattern (Astral, s.f.).
 
 Astral. (s.f.). *Using uv in Docker*. https://docs.astral.sh/uv/guides/integration/docker/

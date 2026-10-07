@@ -1,149 +1,149 @@
 # te-tengo-desktop-pywebview
 
-**Te Tengo Captura**, el agente de la vivienda. Hoy contiene el **módulo de detección validado** (MediaPipe, clasificación cinemática y clips) y sus herramientas de validación. Ahí se construirá la aplicación de escritorio (pywebview), que **procesará el video en la PC** y enviará solo eventos y clips al backend.
+**Te Tengo Captura**, the household agent. Today it holds the **validated detection module** (MediaPipe, kinematic classification and clips) and its validation tools. The desktop application (pywebview) will be built here. It will **process the video on the PC** and send only events and clips to the backend.
 
-> **Estado de la migración (ADR 0007):** el código nació como servicio en la nube (`te-tengo-service-detection-worker`, con FastAPI e ingesta por WebSocket). El núcleo (`clasificacion/`, `pose/`, búfer y codificación del clip, `eventos/`) se reutiliza tal cual dentro del agente; el servidor de ingesta se retirará cuando el agente esté listo. La solicitud de cambio al charter está pendiente.
+> **Migration status (ADR 0007):** the code started as a cloud service (`te-tengo-service-detection-worker`, with FastAPI and WebSocket ingestion). The core (`clasificacion/`, `pose/`, the clip buffer and encoding, `eventos/`) is reused as is inside the agent; the ingestion server will be retired when the agent is ready. The change request to the charter is pending.
 
 
-**Módulo de detección** de Te Tengo, el sistema basado en estimación de pose para la detección de caídas en adultos mayores en su vivienda.
+**Detection module** of Te Tengo, the pose-estimation-based system for detecting falls of older adults in their homes.
 
-Recibe el video del Agente de captura, estima la pose de la persona con MediaPipe y clasifica el movimiento con **umbrales cinemáticos, sin entrenar modelos**. Detecta caídas, caídas confirmadas, recuperaciones, movimientos inestables y periodos de detección no confiable. Reporta cada evento al Backend API del sistema y guarda el clip de 6 s antes y 6 s después del evento.
+It receives the video from the Capture Agent, estimates the person's pose with MediaPipe and classifies the movement with **kinematic thresholds, without training models**. It detects falls, confirmed falls, recoveries, unstable movements and periods of unreliable detection. It reports each event to the system's Backend API and stores the clip from 6 s before to 6 s after the event.
 
-## Lugar en la arquitectura
+## Place in the architecture
 
-Este repositorio implementa el contenedor **Módulo de detección** del modelo C4. Corresponde a la **Capa de Procesamiento de Video** de la arquitectura lógica, salvo el Servicio de transmisión en vivo, que va aparte.
+This repository implements the **Detection module** container of the C4 model. It maps to the **Video Processing Layer** of the logical architecture, except for the Live Streaming Service, which is separate.
 
-| Componente de la arquitectura lógica | Carpeta |
+| Logical architecture component | Folder |
 |---|---|
-| Servicio de ingesta de video | [`src/detection_worker/ingesta/`](src/detection_worker/ingesta) |
-| Servicio de estimación de pose | [`src/detection_worker/pose/`](src/detection_worker/pose) |
-| Servicio de clasificación cinemática | [`src/detection_worker/clasificacion/`](src/detection_worker/clasificacion) |
-| Comunicación con el Backend API del sistema | [`src/detection_worker/eventos/`](src/detection_worker/eventos) |
-| Persistencia de clips de video (escritura) | [`src/detection_worker/clips/`](src/detection_worker/clips) |
+| Video Ingestion Service | [`src/detection_worker/ingesta/`](src/detection_worker/ingesta) |
+| Pose Estimation Service | [`src/detection_worker/pose/`](src/detection_worker/pose) |
+| Kinematic Classification Service | [`src/detection_worker/clasificacion/`](src/detection_worker/clasificacion) |
+| Communication with the system's Backend API | [`src/detection_worker/eventos/`](src/detection_worker/eventos) |
+| Video clip persistence (write) | [`src/detection_worker/clips/`](src/detection_worker/clips) |
 
 ```
-Agente de captura ──WSS (JPEG 480p, 5-10 fps)──► ingesta ──► pose (MediaPipe, proceso aparte)
-                                                    │                │ 33 landmarks
-                                                    │                ▼
-                                                    │          clasificacion ──eventos──► Backend API
-                                                    └──clip 6 s + 6 s──► clips ──► almacenamiento de objetos
+Capture Agent ──WSS (JPEG 480p, 5-10 fps)──► ingesta ──► pose (MediaPipe, separate process)
+                                                │                │ 33 landmarks
+                                                │                ▼
+                                                │          clasificacion ──events──► Backend API
+                                                └──clip 6 s + 6 s──► clips ──► object storage
 ```
 
-La organización interna se explica en [docs/arquitectura.md](docs/arquitectura.md). Las fórmulas y su origen están en [docs/especificacion-clasificacion.md](docs/especificacion-clasificacion.md).
+The internal organization is explained in [docs/architecture.md](docs/architecture.md). The formulas and their sources are in [docs/classification-spec.md](docs/classification-spec.md).
 
-## Requisitos
+## Requirements
 
-| Herramienta | Versión |
+| Tool | Version |
 |---|---|
-| Python | 3.11 (lo exige `mediapipe==0.10.35`, ver [ADR 0003](docs/adr/0003-mediapipe-en-proceso-aparte.md)) |
-| [uv](https://docs.astral.sh/uv/) | 0.12 o superior |
-| FFmpeg | Cualquiera reciente (arma los clips MP4) |
-| Docker | 29 o superior (opcional, para la imagen) |
+| Python | 3.11 (required by `mediapipe==0.10.35`, see [ADR 0003](docs/adr/0003-mediapipe-in-separate-process.md)) |
+| [uv](https://docs.astral.sh/uv/) | 0.12 or later |
+| FFmpeg | Any recent version (builds the MP4 clips) |
+| Docker | 29 or later (optional, for the image) |
 
-## Puesta en marcha
+## Getting started
 
 ```bash
-make instalar      # crea .venv con uv e instala los hooks de pre-commit
-make modelo        # descarga pose_landmarker_lite.task en models/
-make env          # crea .env con tokens locales (no sobrescribe uno existente)
+make instalar      # creates .venv with uv and installs the pre-commit hooks
+make modelo        # downloads pose_landmarker_lite.task into models/
+make env          # creates .env with local tokens (does not overwrite an existing one)
 make ejecutar      # http://localhost:8001/docs
 ```
 
-## Comandos
+## Commands
 
-| Comando | Qué hace |
+| Command | What it does |
 |---|---|
-| `make instalar` | Instala las dependencias (`uv sync`) y los hooks de pre-commit |
-| `make env` | Crea `.env` desde `.env.example` con tokens locales aleatorios |
-| `make modelo` | Descarga el modelo de MediaPipe |
-| `make ejecutar` | Levanta el servicio con recarga automática |
-| `make camara` | Prueba el clasificador con la webcam o un video, con dibujo en pantalla |
-| `make agente` | Envía la webcam o un video al worker como el agente real |
-| `make datasets` | Descarga URFD y CAUCAFall |
-| `make validar` | Valida el clasificador con los datasets y genera el reporte |
-| `make formatear` | Formatea el código con Ruff |
-| `make revisar` | Lint (Ruff), formato y tipos (mypy en modo estricto) |
-| `make probar` | Pruebas con cobertura (pytest) |
-| `make imagen` | Construye la imagen Docker |
+| `make instalar` | Installs the dependencies (`uv sync`) and the pre-commit hooks |
+| `make env` | Creates `.env` from `.env.example` with random local tokens |
+| `make modelo` | Downloads the MediaPipe model |
+| `make ejecutar` | Starts the service with auto-reload |
+| `make camara` | Tests the classifier with the webcam or a video, with an on-screen overlay |
+| `make agente` | Sends the webcam or a video to the worker, like the real agent |
+| `make datasets` | Downloads URFD and CAUCAFall |
+| `make validar` | Validates the classifier with the datasets and generates the report |
+| `make formatear` | Formats the code with Ruff |
+| `make revisar` | Lint (Ruff), formatting and types (mypy in strict mode) |
+| `make probar` | Tests with coverage (pytest) |
+| `make imagen` | Builds the Docker image |
 
-## Probar con la cámara o con videos
+## Testing with the camera or with videos
 
-Hay dos herramientas en `scripts/`. Ninguna necesita el backend ni el agente real.
+There are two tools in `scripts/`. Neither one needs the backend or the real agent.
 
-**1. Prueba local del clasificador** (`make camara`). Abre la webcam o un video y usa el mismo código del worker. La ventana muestra el video con el esqueleto (color según la fase), la línea central y el centro de la cadera (cian) y el rectángulo del cuerpo. Al lado hay un panel con:
-- el estado: normal, posible caída o en el suelo, con la cuenta hasta los 30 s;
-- si se detecta a la persona y si sus puntos clave son visibles;
-- las tres condiciones de caída, con su valor, una barra y el umbral;
-- el avance hacia «se levantó» y la lista de eventos.
+**1. Local classifier test** (`make camara`). Opens the webcam or a video and uses the same code as the worker. The window shows the video with the skeleton (colored by phase), the center line, the hip center (cyan) and the body bounding box. Next to it there is a panel with:
+- the state: normal, possible fall or on the floor, with the countdown to 30 s;
+- whether the person is detected and whether their key points are visible;
+- the three fall conditions, with their value, a bar and the threshold;
+- the progress toward "got up" and the list of events.
 
-Cuando ocurre un evento aparece un aviso grande sobre el video. Teclas: `q` salir, `r` reiniciar, `c` guardar captura.
+When an event occurs, a large notice appears over the video. Keys: `q` quit, `r` reset, `c` save screenshot.
 
 ```bash
-make camara ARGS="--camara 0"                        # webcam, con el umbral calibrado
-make camara ARGS="--solo-medir"                      # solo muestra los valores, sin clasificar
+make camara ARGS="--camara 0"                        # webcam, with the calibrated threshold
+make camara ARGS="--solo-medir"                      # only shows the values, without classifying
 make camara ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240 --csv mediciones.csv"
 ```
 
-- **Videos de URFD:** traen la profundidad a la izquierda y el RGB a la derecha. Usa `--recorte 320,0,320,240`.
-- **`--csv`:** guarda el ángulo, la razón y la velocidad de cada fotograma; sirve para calibrar.
-- **`--sin-ventana`:** solo imprime los eventos, sin abrir ventana.
-- **En macOS:** la primera vez hay que dar permiso de cámara a la terminal o al IDE (Ajustes del Sistema → Privacidad y seguridad → Cámara).
-- **iPhone como cámara (Cámara de Continuidad):** con iOS 16 o superior, macOS Ventura o superior y la misma cuenta de Apple, el iPhone aparece como una cámara más. Para ver su índice: `make camara ARGS="--listar-camaras"`; después úsalo con `--camara N`. Evita la «Desk View», que muestra el escritorio desde arriba.
+- **URFD videos:** they have depth on the left and RGB on the right. Use `--recorte 320,0,320,240`.
+- **`--csv`:** saves the angle, the ratio and the speed of each frame; useful for calibration.
+- **`--sin-ventana`:** only prints the events, without opening a window.
+- **On macOS:** the first time, you must give camera permission to the terminal or the IDE (System Settings → Privacy & Security → Camera).
+- **iPhone as a camera (Continuity Camera):** with iOS 16 or later, macOS Ventura or later and the same Apple Account, the iPhone appears as one more camera. To see its index: `make camara ARGS="--listar-camaras"`; then use it with `--camara N`. Avoid "Desk View", which shows the desk from above.
 
-**2. Agente simulado** (`make agente`). Envía la webcam o un video al worker por WebSocket, igual que lo hará Te Tengo Captura (480p, 8 fps y JPEG). Prueba el servicio completo:
+**2. Simulated agent** (`make agente`). Sends the webcam or a video to the worker over WebSocket, just as Te Tengo Captura will (480p, 8 fps and JPEG). It tests the full service:
 
 ```bash
-make ejecutar                                    # en una terminal (requiere el umbral en .env)
-make agente                                      # en otra: webcam
+make ejecutar                                    # in one terminal (requires the threshold in .env)
+make agente                                      # in another one: webcam
 make agente ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240"
 ```
 
-El worker registra cada evento en su log (`Evento detectado: caida en camara-local …`). Sin backend ni SeaweedFS, también registra un aviso de que no pudo publicarlo, pero sigue funcionando.
+The worker logs each event (`Evento detectado: caida en camara-local …`). Without the backend or SeaweedFS, it also logs a warning that it could not publish the event, but it keeps working.
 
-## Validación con datasets públicos
+## Validation with public datasets
 
-El clasificador se validó con **URFD** (70 videos) y **CAUCAFall** (100 videos) en las condiciones de producción: 480p, 8 fps, JPEG y MediaPipe en modo VIDEO. Para medir sin sesgo se dejó fuera cada grupo al calibrar:
+The classifier was validated with **URFD** (70 videos) and **CAUCAFall** (100 videos) under production conditions: 480p, 8 fps, JPEG and MediaPipe in VIDEO mode. To measure without bias, each group was left out during calibration:
 
-| Sensibilidad | Especificidad | Exactitud | Recuperaciones falsas |
+| Sensitivity | Specificity | Accuracy | False recoveries |
 |---|---|---|---|
-| **81,2 %** | **81,1 %** | **81,2 %** | 0 de 30 |
+| **81.2%** | **81.1%** | **81.2%** | 0 of 30 |
 
-Protocolo, resultados por actividad, cambios hechos y límites: [docs/validacion.md](docs/validacion.md). Para reproducirlo:
+Protocol, results per activity, changes made and limitations: [docs/validation.md](docs/validation.md). To reproduce it:
 
 ```bash
-make datasets   # descarga los datasets en datos/ (no se versionan)
-make validar    # genera resultados/reporte.md
+make datasets   # downloads the datasets into datos/ (not versioned)
+make validar    # generates resultados/reporte.md
 ```
 
 ## Interfaces
 
-| Interfaz | Detalle |
+| Interface | Details |
 |---|---|
-| `GET /health` | Liveness para Docker y el proxy inverso |
-| `WS /v1/ingesta/{camara_id}` | Video del Agente de captura. Formato en [docs/protocolo-ingesta.md](docs/protocolo-ingesta.md). |
-| Backend API → `POST /internal/v1/eventos` | Eventos detectados (contrato provisional) |
-| Backend API → `PUT /internal/v1/eventos/{id}/clip` | Clave del clip guardado |
+| `GET /health` | Liveness for Docker and the reverse proxy |
+| `WS /v1/ingesta/{camara_id}` | Video from the Capture Agent. Format in [docs/ingestion-protocol.md](docs/ingestion-protocol.md). |
+| Backend API → `POST /internal/v1/eventos` | Detected events (provisional contract) |
+| Backend API → `PUT /internal/v1/eventos/{id}/clip` | Key of the stored clip |
 
-## Configuración
+## Configuration
 
-Todas las variables llevan el prefijo `TT_`. La lista completa está en [.env.example](.env.example).
+All variables have the `TT_` prefix. The full list is in [.env.example](.env.example).
 
-`TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN` no tiene valor por defecto en el código; `.env.example` trae el valor calibrado (0,01; ver [docs/validacion.md](docs/validacion.md)). Mientras esté vacío, el servicio arranca (`/health`, `/docs`), pero la ingesta cierra el WebSocket con el código 1011.
+`TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN` has no default value in the code; `.env.example` has the calibrated value (0.01; see [docs/validation.md](docs/validation.md)). While it is empty, the service starts (`/health`, `/docs`), but ingestion closes the WebSocket with code 1011.
 
-## Estado
+## Status
 
-Versión 0.2.0: clasificador validado con URFD y CAUCAFall. Pendiente:
-- Validar la regla de movimiento inestable con grabaciones propias (los datasets no tienen tambaleos etiquetados).
-- Detección de movimiento y control de calidad de fotogramas.
-- Descartar fotogramas atrasados (contrapresión).
-- Reenviar el video al Servicio de transmisión en vivo.
+Version 0.2.0: classifier validated with URFD and CAUCAFall. Pending:
+- Validate the unstable movement rule with our own recordings (the datasets have no labeled stumbles).
+- Motion detection and frame quality control.
+- Drop late frames (backpressure).
+- Forward the video to the Live Streaming Service.
 
-El detalle está en [CHANGELOG.md](CHANGELOG.md).
+Details are in [CHANGELOG.md](CHANGELOG.md).
 
-## Contribuir
+## Contributing
 
-Consulta [CONTRIBUTING.md](CONTRIBUTING.md): Conventional Commits, ramas y revisión antes de integrar.
+See [CONTRIBUTING.md](CONTRIBUTING.md): Conventional Commits, branches and review before merging.
 
 ---
 
-Proyecto de tesis, Ingeniería de Software, Universidad Peruana de Ciencias Aplicadas (UPC). Autores: Jhosepmyr Gutierrez Soto y Elmer Riva Rodriguez.
+Thesis project, Software Engineering, Universidad Peruana de Ciencias Aplicadas (UPC). Authors: Jhosepmyr Gutierrez Soto and Elmer Riva Rodriguez.

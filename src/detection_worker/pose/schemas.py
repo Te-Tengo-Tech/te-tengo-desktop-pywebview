@@ -2,7 +2,7 @@
 
 MediaPipe Pose Landmarker entrega 33 landmarks por persona. Sus coordenadas ``x`` e ``y`` van
 de 0 a 1 (divididas entre el ancho y el alto de la imagen) e ``y`` crece hacia abajo. Detalle y
-fuente en ``docs/especificacion-clasificacion.md`` (sección 1).
+fuente en ``docs/classification-spec.md`` (sección 1).
 """
 
 from dataclasses import dataclass

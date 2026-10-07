@@ -2,7 +2,7 @@
 
 Son funciones puras: no leen la cámara, la red ni el reloj, así que se prueban con poses
 sintéticas o grabadas. Cada función indica la regla que implementa; las fórmulas completas,
-sus fuentes y las adaptaciones están en ``docs/especificacion-clasificacion.md``.
+sus fuentes y las adaptaciones están en ``docs/classification-spec.md``.
 
 Antes de calcular, todo se pasa a píxeles (adaptación A1), porque MediaPipe normaliza ``x`` por
 el ancho e ``y`` por el alto, y en una imagen 640 × 480 eso deforma ángulos y proporciones.

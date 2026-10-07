@@ -1,20 +1,20 @@
-# 0003. MediaPipe 0.10.35 en un proceso aparte
+# 0003. MediaPipe 0.10.35 in a separate process
 
-**Estado:** aceptada (2026-10-03). El modo `IMAGE` fue reemplazado por el modo `VIDEO` en el [ADR 0006](0006-mediapipe-modo-video.md).
+**Status:** accepted (2026-10-03). `IMAGE` mode was replaced by `VIDEO` mode in [ADR 0006](0006-mediapipe-video-mode.md).
 
-## Contexto
-- La estimación de pose es intensiva en CPU (la EC2 t3.small no tiene GPU). Esperarla dentro de una ruta `async`, o mandarla a un hilo, no ayuda por el GIL; hay que usar otro proceso (Zhanymkanov, s.f.).
-- MediaPipe 1.0.1 falla al construir el grafo en macOS con CPU (google-ai-edge/mediapipe#6356). La 0.10.35 funciona y tiene instaladores para Linux x86_64 y Windows.
+## Context
+- Pose estimation is CPU-intensive (the EC2 t3.small has no GPU). Awaiting it inside an `async` route, or sending it to a thread, does not help due to the GIL; another process must be used (Zhanymkanov, s.f.).
+- MediaPipe 1.0.1 fails when building the graph on macOS with CPU (google-ai-edge/mediapipe#6356). Version 0.10.35 works and has installers for Linux x86_64 and Windows.
 
-## Decisión
-- Fijar `mediapipe==0.10.35` y Python 3.11.
-- Ejecutar el Pose Landmarker (modelo *lite*) en un `ProcessPoolExecutor` con un solo proceso, que crea el modelo una vez al iniciar.
-- Usar el modo `IMAGE`: cada fotograma es independiente, así que tolera las reconexiones del agente sin exigir marcas de tiempo crecientes como el modo `VIDEO`.
+## Decision
+- Pin `mediapipe==0.10.35` and Python 3.11.
+- Run the Pose Landmarker (*lite* model) in a `ProcessPoolExecutor` with a single process, which creates the model once at startup.
+- Use `IMAGE` mode: each frame is independent, so it tolerates agent reconnections without requiring increasing timestamps like `VIDEO` mode does.
 
-## Consecuencias
-- El WebSocket sigue recibiendo mientras se infiere.
-- El modo `IMAGE` no usa el seguimiento entre fotogramas. Si la precisión lo requiere, se evaluará el modo `VIDEO` con un landmarker por cámara.
-- Para actualizar MediaPipe hay que comprobar antes que el bug de macOS esté resuelto.
+## Consequences
+- The WebSocket keeps receiving while inference runs.
+- `IMAGE` mode does not use tracking between frames. If accuracy requires it, `VIDEO` mode with one landmarker per camera will be evaluated.
+- Before updating MediaPipe, check first that the macOS bug is fixed.
 
 Google AI Edge. (2026). *Tasks Vision graphs with TensorsToDetectionsCalculator abort at graph build on macOS CPU* (Issue 6356). GitHub. https://github.com/google-ai-edge/mediapipe/issues/6356
 Zhanymkanov, Y. (s.f.). *FastAPI best practices: CPU intensive tasks*. https://github.com/zhanymkanov/fastapi-best-practices

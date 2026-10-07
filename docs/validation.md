@@ -1,108 +1,108 @@
-# Validación del clasificador con datasets públicos
+# Classifier validation with public datasets
 
-Este documento reporta cómo se validó el Servicio de clasificación cinemática con los dos datasets públicos que nombra el project charter (URFD y CAUCAFall), qué se cambió a partir de los resultados y qué límites quedan. Es la base técnica del indicador OE4-I1 («exactitud, sensibilidad y especificidad en conjuntos de datos públicos»).
+This document reports how the Kinematic Classification Service was validated with the two public datasets named in the project charter (URFD and CAUCAFall), what was changed based on the results, and which limitations remain. It is the technical basis for indicator OE4-I1 ("accuracy, sensitivity and specificity on public datasets").
 
-Se reproduce con:
+To reproduce it:
 
 ```bash
-make datasets   # descarga URFD y CAUCAFall en datos/ (unos 220 MB)
-make validar    # extrae poses y genera resultados/reporte.md
+make datasets   # downloads URFD and CAUCAFall into datos/ (about 220 MB)
+make validar    # extracts poses and generates resultados/reporte.md
 ```
 
-## 1. Datos
+## 1. Data
 
-| Dataset | Videos | Cámara | Uso |
+| Dataset | Videos | Camera | Use |
 |---|---|---|---|
-| **URFD** (Kwolek y Kepski, 2014) | 30 caídas y 40 actividades diarias, de las cuales **16 terminan con la persona acostada en el piso a propósito**, según las etiquetas por fotograma del dataset | Kinect paralela al piso, a la altura del cuerpo; se usa la mitad RGB del MP4 (320 × 240) | CC BY-NC-SA 4.0 |
-| **CAUCAFall** (Eraso Guerrero et al., 2022) | 10 personas × (5 caídas: adelante, atrás, izquierda, derecha y desde sentado + 5 actividades: caminar, saltar, recoger un objeto, sentarse y arrodillarse) = 100 videos | Cámara de vigilancia **elevada en una esquina** de una vivienda (720 × 480), con oclusiones y cambios de luz | CC BY 4.0 |
+| **URFD** (Kwolek and Kepski, 2014) | 30 falls and 40 daily activities, of which **16 end with the person lying on the floor on purpose**, according to the dataset's per-frame labels | Kinect parallel to the floor, at body height; the RGB half of the MP4 is used (320 × 240) | CC BY-NC-SA 4.0 |
+| **CAUCAFall** (Eraso Guerrero et al., 2022) | 10 people × (5 falls: forward, backward, left, right and from sitting + 5 activities: walking, jumping, picking up an object, sitting down and kneeling) = 100 videos | Surveillance camera **elevated in a corner** of a home (720 × 480), with occlusions and lighting changes | CC BY 4.0 |
 
-Ninguno incluye adultos mayores ni caídas reales; esta limitación está declarada en el charter (riesgo 9).
+Neither one includes older adults or real falls; this limitation is declared in the charter (risk 9).
 
-## 2. Protocolo
+## 2. Protocol
 
-1. **Mismo procesamiento que en producción.** Cada video se baja a 480p y a 8 fps (también se probó con 6 y 10 fps). Se comprime en JPEG de calidad 80, como hace el agente, y se pasa por MediaPipe Pose Landmarker *lite* en modo VIDEO. Las poses se guardan una vez y luego se reproducen en **el mismo `ClasificadorCinematico` del worker**.
-2. **Criterio por video.** Un video de caída es un verdadero positivo si el clasificador emite al menos un evento `caida`. Un video de actividad diaria es un falso positivo si emite alguno.
-3. **Métricas.** Sensibilidad = VP/(VP+FN), especificidad = VN/(VN+FP) y exactitud = (VP+VN)/total, las mismas definiciones de Chen et al. (2020, ec. 6–8) y del charter.
-4. **Calibración.** El único umbral calibrado es la velocidad mínima de bajada (R1). Se prueban 100 valores (0,01–1,0) y se elige el de mayor **índice de Youden** (J = sensibilidad + especificidad − 1; Youden, 1950). El ángulo (45°) y la razón (1) se dejan en los valores publicados: ajustarlos no mejoró la validación entre datasets.
-5. **Estimación honesta del desempeño:**
-   - **Dejando un grupo fuera.** Hay 11 grupos: cada sujeto de CAUCAFall y URFD completo, porque URFD no publica el sujeto de cada video. Cada grupo se evalúa con el umbral calibrado **sin** sus videos.
-   - **Entre datasets.** Se calibra con uno y se mide en el otro.
+1. **Same processing as in production.** Each video is downscaled to 480p and 8 fps (6 and 10 fps were also tested). It is compressed as JPEG with quality 80, as the agent does, and passed through MediaPipe Pose Landmarker *lite* in VIDEO mode. The poses are saved once and then replayed in **the same `ClasificadorCinematico` as the worker**.
+2. **Per-video criterion.** A fall video is a true positive if the classifier emits at least one `caida` event. A daily activity video is a false positive if it emits any.
+3. **Metrics.** Sensitivity = TP/(TP+FN), specificity = TN/(TN+FP) and accuracy = (TP+TN)/total, the same definitions as Chen et al. (2020, eq. 6–8) and the charter.
+4. **Calibration.** The only calibrated threshold is the minimum descent speed (R1). 100 values (0.01–1.0) are tested and the one with the highest **Youden index** is chosen (J = sensitivity + specificity − 1; Youden, 1950). The angle (45°) and the ratio (1) are left at the published values: tuning them did not improve the cross-dataset validation.
+5. **Honest performance estimate:**
+   - **Leaving one group out.** There are 11 groups: each CAUCAFall subject and the whole of URFD, because URFD does not publish the subject of each video. Each group is evaluated with the threshold calibrated **without** its videos.
+   - **Cross-dataset.** Calibrate with one and measure on the other.
 
-## 3. Resultados
+## 3. Results
 
-### 3.1. Desempeño principal: 8 fps, JPEG, dejando un grupo fuera
+### 3.1. Main performance: 8 fps, JPEG, leaving one group out
 
-| Grupo | Caídas | No caídas | VP | FN | VN | FP | Sensibilidad | Especificidad | Exactitud |
+| Group | Falls | Non-falls | TP | FN | TN | FP | Sensitivity | Specificity | Accuracy |
 |---|---|---|---|---|---|---|---|---|---|
-| **Total** | 80 | 90 | 65 | 15 | 73 | 17 | **81,2 %** | **81,1 %** | **81,2 %** |
-| URFD | 30 | 40 | 23 | 7 | 31 | 9 | 76,7 % | 77,5 % | 77,1 % |
-| CAUCAFall | 50 | 50 | 42 | 8 | 42 | 8 | 84,0 % | 84,0 % | 84,0 % |
+| **Total** | 80 | 90 | 65 | 15 | 73 | 17 | **81.2%** | **81.1%** | **81.2%** |
+| URFD | 30 | 40 | 23 | 7 | 31 | 9 | 76.7% | 77.5% | 77.1% |
+| CAUCAFall | 50 | 50 | 42 | 8 | 42 | 8 | 84.0% | 84.0% | 84.0% |
 
-**Por actividad** (las cifras de la tabla anterior agregadas por tipo):
+**By activity** (the figures of the previous table grouped by type):
 
-| Actividad | Resultado |
+| Activity | Result |
 |---|---|
-| CAUCAFall · caída hacia atrás | 10/10 detectadas |
-| CAUCAFall · caída a la izquierda | 9/10 |
-| CAUCAFall · caída hacia adelante | 8/10 |
-| CAUCAFall · caída a la derecha | 8/10 |
-| CAUCAFall · caída desde sentado | 7/10 |
-| CAUCAFall · saltar | 0/10 falsas alarmas |
-| CAUCAFall · caminar · sentarse | 1/10 falsa alarma cada una |
-| CAUCAFall · arrodillarse · recoger un objeto | 3/10 falsas alarmas cada una |
-| URFD · caídas | 23/30 detectadas |
-| URFD · actividades diarias | 9/40 falsas alarmas; **6 de ellas al acostarse a propósito en el piso** |
+| CAUCAFall · backward fall | 10/10 detected |
+| CAUCAFall · fall to the left | 9/10 |
+| CAUCAFall · forward fall | 8/10 |
+| CAUCAFall · fall to the right | 8/10 |
+| CAUCAFall · fall from sitting | 7/10 |
+| CAUCAFall · jumping | 0/10 false alarms |
+| CAUCAFall · walking · sitting down | 1/10 false alarm each |
+| CAUCAFall · kneeling · picking up an object | 3/10 false alarms each |
+| URFD · falls | 23/30 detected |
+| URFD · daily activities | 9/40 false alarms; **6 of them when lying down on the floor on purpose** |
 
-**Otros eventos:**
-- **0 recuperaciones falsas** en las 30 caídas de URFD, en las que nadie se levanta.
-- **2 de 90** actividades diarias generaron un `movimiento_inestable`.
+**Other events:**
+- **0 false recoveries** in the 30 URFD falls, in which nobody gets up.
+- **2 of 90** daily activities produced a `movimiento_inestable`.
 
-### 3.2. Robustez a la tasa de fotogramas (dejando un grupo fuera)
+### 3.2. Robustness to the frame rate (leaving one group out)
 
-El agente envía entre 5 y 10 fps, según la arquitectura.
+The agent sends between 5 and 10 fps, per the architecture.
 
-| fps | Sensibilidad | Especificidad | Exactitud | Recuperaciones falsas |
+| fps | Sensitivity | Specificity | Accuracy | False recoveries |
 |---|---|---|---|---|
-| 6 | 76,2 % | 83,3 % | 80,0 % | 0/30 |
-| **8** | **81,2 %** | **81,1 %** | **81,2 %** | 0/30 |
-| 10 | 81,2 % | 84,4 % | 82,9 % | 0/30 |
+| 6 | 76.2% | 83.3% | 80.0% | 0/30 |
+| **8** | **81.2%** | **81.1%** | **81.2%** | 0/30 |
+| 10 | 81.2% | 84.4% | 82.9% | 0/30 |
 
-### 3.3. Validación entre datasets (8 fps)
+### 3.3. Cross-dataset validation (8 fps)
 
-| Calibración → prueba | Umbral | Sensibilidad | Especificidad | Exactitud |
+| Calibration → test | Threshold | Sensitivity | Specificity | Accuracy |
 |---|---|---|---|---|
-| URFD → CAUCAFall | 0,45 | 28,0 % | 94,0 % | 61,0 % |
-| CAUCAFall → URFD | 0,01 | 76,7 % | 77,5 % | 77,1 % |
+| URFD → CAUCAFall | 0.45 | 28.0% | 94.0% | 61.0% |
+| CAUCAFall → URFD | 0.01 | 76.7% | 77.5% | 77.1% |
 
-**Un umbral calibrado con una cámara a la altura del cuerpo (URFD) no sirve para una cámara elevada (CAUCAFall).** Desde arriba, la bajada de la cadera se ve más corta en la imagen. El umbral debe calibrarse con una cámara ubicada como en la vivienda: por eso se usa el de CAUCAFall y el conjunto completo (0,01).
+**A threshold calibrated with a camera at body height (URFD) does not work for an elevated camera (CAUCAFall).** From above, the descent of the hip looks shorter in the image. The threshold must be calibrated with a camera placed as in the home: that is why the CAUCAFall and full-set value (0.01) is used.
 
-### 3.4. Comprobación del servicio en vivo
-Se enviaron 24 videos (12 de URFD y 12 de CAUCAFall) al worker levantado, usando el agente simulado por WebSocket. Los eventos de caída coincidieron con la evaluación sin conexión en **24 de 24**.
+### 3.4. Live service check
+24 videos (12 from URFD and 12 from CAUCAFall) were sent to the running worker, using the simulated agent over WebSocket. The fall events matched the offline evaluation in **24 of 24**.
 
-## 4. Cambios hechos a partir de la validación
+## 4. Changes made based on the validation
 
-Las cifras de esta sección están **calibradas con todos los videos**, así que son optimistas y solo sirven para comparar las etapas entre sí.
+The figures in this section are **calibrated with all the videos**, so they are optimistic and are only useful to compare the stages with each other.
 
-| Etapa | Sensibilidad | Especificidad | Qué se cambió y por qué |
+| Stage | Sensitivity | Specificity | What was changed and why |
 |---|---|---|---|
-| Método de referencia adaptado (modo IMAGE) | 80,0 % | 65,6 % | Punto de partida. MediaPipe perdía a la persona en el 43 % de los fotogramas de caídas de CAUCAFall. |
-| + MediaPipe en modo VIDEO | 80,0 % | 68,9 % | El seguimiento entre fotogramas subió la cobertura de CAUCAFall-caídas del 57 % al 82 %. El modelo *full* no mejoró frente al *lite* (ADR 0006). |
-| + velocidad con signo, ventana de 1 s y solo con puntos visibles (A3, A6); cabeza bajo los pies (A7); 0,5 s erguido para la recuperación (A8) | 83,8 % | 82,2 % | **Velocidad:** con poses dudosas, en URFD, «acostarse a propósito» daba velocidades **mayores** que las caídas (mediana 1,78 frente a 1,01 cuerpos/s), lo que es físicamente imposible; con puntos visibles se separan (mediana 0 frente a 0,88). La ventana de 1 s cubre la duración del descenso de una caída real de un adulto mayor (583 ± 255 ms hasta el impacto de la pelvis; Choi et al., 2015, como se citó en Traverso et al., 2024). **Cabeza bajo los pies:** en las caídas hacia adelante con cámara elevada, el ángulo y la razón no cambian (solo 3/10 cumplían M2 y M3), pero la cabeza queda por debajo de los pies en la imagen; con esta señal se detectaron 7/10. **Recuperación:** 0,5 s erguido redujo las recuperaciones falsas de 2 a 0 de 30. |
-| + JPEG como en producción y 1 s erguido (configuración final) | 81,2 % | 81,1 % | Con JPEG cambia qué fotogramas detecta MediaPipe, así que la validación debe reproducirlo; el desempeño baja un poco, pero es el realista. Con JPEG, 0,5 s erguido dejaba 1 recuperación falsa de 30; con 1 s, ninguna. |
+| Adapted reference method (IMAGE mode) | 80.0% | 65.6% | Starting point. MediaPipe lost the person in 43% of the frames of CAUCAFall falls. |
+| + MediaPipe in VIDEO mode | 80.0% | 68.9% | Tracking between frames raised the coverage of CAUCAFall falls from 57% to 82%. The *full* model did not improve over the *lite* model (ADR 0006). |
+| + signed speed, 1 s window and only with visible points (A3, A6); head below the feet (A7); 0.5 s upright for recovery (A8) | 83.8% | 82.2% | **Speed:** with doubtful poses, in URFD, "lying down on purpose" gave **higher** speeds than the falls (median 1.78 vs. 1.01 bodies/s), which is physically impossible; with visible points they separate (median 0 vs. 0.88). The 1 s window covers the duration of the descent in a real fall of an older adult (583 ± 255 ms until pelvis impact; Choi et al., 2015, as cited in Traverso et al., 2024). **Head below the feet:** in forward falls with an elevated camera, the angle and the ratio do not change (only 3/10 met M2 and M3), but the head ends up below the feet in the image; with this signal 7/10 were detected. **Recovery:** 0.5 s upright reduced the false recoveries from 2 to 0 of 30. |
+| + JPEG as in production and 1 s upright (final configuration) | 81.2% | 81.1% | With JPEG, the frames that MediaPipe detects change, so the validation must reproduce it; performance drops a little, but it is the realistic one. With JPEG, 0.5 s upright left 1 false recovery of 30; with 1 s, none. |
 
-**Probado y descartado:** exigir que la postura horizontal se mantenga entre 0,25 y 1 s antes de declarar la caída. Bajó la sensibilidad al 61–70 %, porque MediaPipe pierde a la persona tendida.
+**Tested and discarded:** requiring the horizontal posture to hold for 0.25 to 1 s before declaring the fall. It lowered sensitivity to 61–70%, because MediaPipe loses the person lying down.
 
-**Sobre el umbral de velocidad:** el valor calibrado (0,01 cuerpos/s) es casi «la cadera bajó algo». En estos datasets, a 8 fps y en 2D, la velocidad aporta poco por sí sola: las caídas son tan rápidas que MediaPipe pierde parte de los fotogramas del descenso, justo los que tendrían la velocidad más alta. El trabajo de distinguir lo hacen sobre todo el ángulo, la razón y la cabeza bajo los pies.
+**About the speed threshold:** the calibrated value (0.01 bodies/s) almost means "the hip went down somewhat". In these datasets, at 8 fps and in 2D, speed contributes little on its own: falls are so fast that MediaPipe loses part of the descent frames, exactly the ones that would have the highest speed. The work of telling cases apart is done mostly by the angle, the ratio and the head below the feet.
 
-## 5. Límites conocidos
+## 5. Known limitations
 
-1. **Acostarse a propósito en el piso** se confunde con una caída en 6 de 16 casos de URFD. En una vivienda, eso equivale a una falsa alarma cuando el adulto mayor se tiende en el suelo por voluntad propia.
-2. **Recoger un objeto y arrodillarse** generan falsas alarmas en 3 de cada 10 casos con cámara elevada.
-3. **La calibración depende de la ubicación de la cámara** (sección 3.3). Debe repetirse con las grabaciones del piloto, tal como indica el charter (riesgos 2, 3 y 6).
-4. **No hay adultos mayores ni caídas reales** en los datos (riesgo 9 del charter). La tasa de falsas alarmas real se medirá en la vivienda (OE4-I2).
-5. **La validación es por video,** no por instante. No mide la latencia de la alerta, cuyo requisito es menos de 10 s; el clasificador emite la caída en cuanto se cumple M3.
+1. **Lying down on the floor on purpose** is confused with a fall in 6 of 16 URFD cases. In a home, this means a false alarm when the older adult lies down on the floor by choice.
+2. **Picking up an object and kneeling** produce false alarms in 3 of every 10 cases with an elevated camera.
+3. **Calibration depends on the camera location** (section 3.3). It must be repeated with the pilot recordings, as the charter states (risks 2, 3 and 6).
+4. **There are no older adults or real falls** in the data (charter risk 9). The real false alarm rate will be measured in the home (OE4-I2).
+5. **The validation is per video,** not per instant. It does not measure the alert latency, whose requirement is under 10 s; the classifier emits the fall as soon as M3 is met.
 
-## Referencias
+## References
 
 Chen, W., Jiang, Z., Guo, H., & Ni, X. (2020). Fall detection based on key points of human-skeleton using OpenPose. *Symmetry, 12*(5), 744. https://doi.org/10.3390/sym12050744
 

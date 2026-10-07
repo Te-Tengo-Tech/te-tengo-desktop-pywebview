@@ -33,7 +33,7 @@ from detection_worker.clasificacion.umbrales import Umbrales
 from detection_worker.pose.service import crear_landmarker, detectar
 
 ALTO_MAX = 480  # el agente envía 480p
-VELOCIDAD_CALIBRADA = 0.01  # docs/validacion.md
+VELOCIDAD_CALIBRADA = 0.01  # docs/validation.md
 
 
 def argumentos() -> argparse.Namespace:

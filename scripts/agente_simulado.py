@@ -1,7 +1,7 @@
 """Agente de captura simulado: envía la webcam (o un video) al worker por WebSocket.
 
 Hace lo mismo que hará Te Tengo Captura: baja el video a 480p y a 5-10 fps, lo comprime en
-JPEG y lo envía con el protocolo de docs/protocolo-ingesta.md. El token se lee de tu .env.
+JPEG y lo envía con el protocolo de docs/ingestion-protocol.md. El token se lee de tu .env.
 
 Requisitos: el worker levantado (make ejecutar) y TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN
 definido en .env; si no, el worker cierra la conexión con el código 1011.

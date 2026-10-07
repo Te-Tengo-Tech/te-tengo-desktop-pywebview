@@ -1,60 +1,60 @@
-# Arquitectura interna
+# Internal architecture
 
-## Principios
+## Principles
 
-1. **Los mismos nombres que la arquitectura del sistema.** Cada carpeta de `src/detection_worker/` corresponde a un componente de la arquitectura lógica (ver la tabla del [README](../README.md)).
-2. **Organización por dominio, no por tipo de archivo.** Cada módulo agrupa su `router.py`, `service.py`, `schemas.py`, etc. Es la estructura que recomienda *FastAPI Best Practices* (Zhanymkanov, s.f.), inspirada en *Dispatch* de Netflix. La división en routers sigue la guía oficial *Bigger Applications* (FastAPI, s.f.).
-3. **Núcleo puro y adaptadores** (arquitectura hexagonal, Cockburn, 2005):
-   - `clasificacion/` no importa nada de red, cámara ni AWS: recibe poses y devuelve eventos, y se prueba con secuencias sintéticas o grabadas.
-   - Lo externo entra por **puertos** (`typing.Protocol`): `EstimadorPose`, `PublicadorEventos` y `AlmacenClips`. En las pruebas, esos puertos se reemplazan por dobles.
-4. **La CPU, en otro proceso.** MediaPipe corre en un `ProcessPoolExecutor`, porque esperar una tarea de CPU dentro de una ruta `async`, o mandarla a un hilo, no ayuda por el GIL (Zhanymkanov, s.f.). Ver [ADR 0003](adr/0003-mediapipe-en-proceso-aparte.md).
-5. **Disposición `src/`** (PyPA, s.f.): las pruebas usan el paquete instalado y no los archivos sueltos.
+1. **The same names as the system architecture.** Each folder in `src/detection_worker/` maps to a component of the logical architecture (see the table in the [README](../README.md)).
+2. **Organization by domain, not by file type.** Each module groups its `router.py`, `service.py`, `schemas.py`, etc. This is the structure recommended by *FastAPI Best Practices* (Zhanymkanov, s.f.), inspired by Netflix's *Dispatch*. The split into routers follows the official *Bigger Applications* guide (FastAPI, s.f.).
+3. **Pure core and adapters** (hexagonal architecture, Cockburn, 2005):
+   - `clasificacion/` imports nothing related to the network, the camera or AWS: it receives poses and returns events, and it is tested with synthetic or recorded sequences.
+   - External dependencies come in through **ports** (`typing.Protocol`): `EstimadorPose`, `PublicadorEventos` and `AlmacenClips`. In tests, these ports are replaced with test doubles.
+4. **CPU work in another process.** MediaPipe runs in a `ProcessPoolExecutor`, because awaiting a CPU task inside an `async` route, or sending it to a thread, does not help due to the GIL (Zhanymkanov, s.f.). See [ADR 0003](adr/0003-mediapipe-in-separate-process.md).
+5. **`src/` layout** (PyPA, s.f.): tests use the installed package and not the loose files.
 
-## Módulos
+## Modules
 
 ```
 src/detection_worker/
-├── main.py              create_app(): arma FastAPI, monta routers y adaptadores (lifespan)
-├── config.py            Settings (pydantic-settings, prefijo TT_)
+├── main.py              create_app(): builds FastAPI, mounts routers and adapters (lifespan)
+├── config.py            Settings (pydantic-settings, prefix TT_)
 ├── ingesta/
-│   ├── router.py        WS /v1/ingesta/{camara_id}: autenticación y bucle de recepción
-│   ├── protocolo.py     formato binario [instante][JPEG]
-│   ├── buffer.py        búfer del clip: 6 s antes y 6 s después
-│   └── service.py       ProcesadorCamara: orquesta pose → clasificación → eventos → clips
+│   ├── router.py        WS /v1/ingesta/{camara_id}: authentication and receive loop
+│   ├── protocolo.py     binary format [instante][JPEG]
+│   ├── buffer.py        clip buffer: 6 s before and 6 s after
+│   └── service.py       ProcesadorCamara: orchestrates pose → classification → events → clips
 ├── pose/
-│   ├── schemas.py       Landmark, Pose, índices de MediaPipe
-│   └── service.py       puerto EstimadorPose + MediaPipeEstimador (proceso aparte)
-├── clasificacion/       NÚCLEO PURO
-│   ├── parametros.py    fórmulas de Chen et al. (2020)
-│   ├── umbrales.py      valores configurables con su fuente
-│   └── estados.py       máquina de estados y eventos
+│   ├── schemas.py       Landmark, Pose, MediaPipe indices
+│   └── service.py       EstimadorPose port + MediaPipeEstimador (separate process)
+├── clasificacion/       PURE CORE
+│   ├── parametros.py    formulas from Chen et al. (2020)
+│   ├── umbrales.py      configurable values with their source
+│   └── estados.py       state machine and events
 ├── eventos/
-│   ├── schemas.py       EventoDetectado (contrato con el Backend API)
-│   └── client.py        puerto PublicadorEventos + BackendPublicador (httpx)
+│   ├── schemas.py       EventoDetectado (contract with the Backend API)
+│   └── client.py        PublicadorEventos port + BackendPublicador (httpx)
 ├── clips/
-│   └── service.py       puerto AlmacenClips + S3AlmacenClips (FFmpeg + boto3)
+│   └── service.py       AlmacenClips port + S3AlmacenClips (FFmpeg + boto3)
 └── salud/router.py      GET /health
 ```
 
-## Flujo de un fotograma
+## Flow of a frame
 
-1. `ingesta/router.py` recibe el mensaje binario y se lo entrega al `ProcesadorCamara` de esa conexión.
-2. `protocolo.decodificar` separa el instante y el JPEG, y el búfer del clip guarda el fotograma.
-3. `MediaPipeEstimador.estimar` devuelve una `Pose`, o `None` si no hay nadie visible.
-4. `ClasificadorCinematico.actualizar` calcula M₁, M₂ y M₃, actualiza la fase y devuelve los eventos.
-5. Cada evento se publica en el Backend API. Si es una caída o un movimiento inestable, se marca para armar su clip.
-6. Cuando pasan 6 s, el clip se codifica en MP4, se sube cifrado al almacenamiento y su clave se asocia al evento.
+1. `ingesta/router.py` receives the binary message and hands it to the `ProcesadorCamara` of that connection.
+2. `protocolo.decodificar` separates the timestamp and the JPEG, and the clip buffer stores the frame.
+3. `MediaPipeEstimador.estimar` returns a `Pose`, or `None` if nobody is visible.
+4. `ClasificadorCinematico.actualizar` computes M₁, M₂ and M₃, updates the phase and returns the events.
+5. Each event is published to the Backend API. If it is a fall or an unstable movement, it is marked so that its clip is built.
+6. After 6 s, the clip is encoded as MP4, uploaded encrypted to storage, and its key is linked to the event.
 
-## Pendiente
+## Pending
 
-| Tema | Detalle |
+| Topic | Details |
 |---|---|
-| Control de calidad y detección de movimiento | Definir criterios con fuente antes de fijar umbrales |
-| Contrapresión | Descartar fotogramas atrasados si la inferencia no da abasto, para cumplir la alerta en menos de 10 s |
-| Vista en vivo | Reenviar el video al Servicio de transmisión en vivo (WebSocket o MediaMTX, por decidir) |
-| Contrato con el Backend API | Acordar las rutas `/internal/v1/eventos` con `te-tengo-general-api` |
+| Quality control and motion detection | Define criteria with a source before setting thresholds |
+| Backpressure | Drop late frames if inference cannot keep up, to meet the alert in under 10 s |
+| Live view | Forward the video to the Live Streaming Service (WebSocket or MediaMTX, to be decided) |
+| Contract with the Backend API | Agree on the `/internal/v1/eventos` routes with `te-tengo-general-api` |
 
-## Referencias
+## References
 
 Cockburn, A. (2005). *Hexagonal architecture*. https://alistair.cockburn.us/hexagonal-architecture/
 

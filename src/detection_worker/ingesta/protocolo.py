@@ -1,4 +1,4 @@
-"""Formato de los mensajes que envía el Agente de captura (ver docs/protocolo-ingesta.md).
+"""Formato de los mensajes que envía el Agente de captura (ver docs/ingestion-protocol.md).
 
 Cada fotograma viaja en un mensaje binario de WebSocket:
 

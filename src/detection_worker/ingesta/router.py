@@ -1,6 +1,6 @@
 """Endpoint WebSocket por el que el Agente de captura envía el video.
 
-Formato de los mensajes: docs/protocolo-ingesta.md.
+Formato de los mensajes: docs/ingestion-protocol.md.
 """
 
 import logging

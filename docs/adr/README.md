@@ -1,15 +1,15 @@
-# Registro de decisiones de arquitectura (ADR)
+# Architecture decision records (ADR)
 
-Cada decisión importante se registra en un archivo corto con el formato de Michael Nygard: **contexto, decisión, estado y consecuencias** (Nygard, 2011). Los ADR no se editan después de aceptados: si una decisión cambia, se escribe un ADR nuevo que reemplaza al anterior.
+Each important decision is recorded in a short file using Michael Nygard's format: **context, decision, status and consequences** (Nygard, 2011). ADRs are not edited after they are accepted: if a decision changes, a new ADR is written that supersedes the previous one.
 
-| N.° | Decisión | Estado |
+| No. | Decision | Status |
 |---|---|---|
-| [0001](0001-fastapi-y-uvicorn.md) | FastAPI y Uvicorn para el servicio | Aceptada |
-| [0002](0002-estructura-por-dominio.md) | Estructura por dominio con núcleo puro y adaptadores | Aceptada |
-| [0003](0003-mediapipe-en-proceso-aparte.md) | MediaPipe 0.10.35 en un proceso aparte | Aceptada |
-| [0004](0004-umbrales-de-chen.md) | Clasificación por umbrales de Chen et al. (2020) | Aceptada |
-| [0005](0005-uv-ruff-mypy.md) | uv, Ruff y mypy como herramientas del proyecto | Aceptada |
-| [0006](0006-mediapipe-modo-video.md) | MediaPipe en modo VIDEO, un seguimiento por cámara | Aceptada (reemplaza el modo de 0003) |
-| [0007](0007-procesamiento-en-la-vivienda.md) | Procesar el video en la PC de la vivienda (este repositorio pasa a ser el agente de escritorio) | Aceptada por el equipo; solicitud de cambio al charter pendiente |
+| [0001](0001-fastapi-and-uvicorn.md) | FastAPI and Uvicorn for the service | Accepted |
+| [0002](0002-domain-structure.md) | Structure by domain with a pure core and adapters | Accepted |
+| [0003](0003-mediapipe-in-separate-process.md) | MediaPipe 0.10.35 in a separate process | Accepted |
+| [0004](0004-chen-thresholds.md) | Classification with the thresholds of Chen et al. (2020) | Accepted |
+| [0005](0005-uv-ruff-mypy.md) | uv, Ruff and mypy as the project tools | Accepted |
+| [0006](0006-mediapipe-video-mode.md) | MediaPipe in VIDEO mode, one tracker per camera | Accepted (replaces the mode of 0003) |
+| [0007](0007-processing-on-household-pc.md) | Process the video on the household PC (this repository becomes the desktop agent) | Accepted by the team; change request to the charter pending |
 
 Nygard, M. (2011, 15 de noviembre). *Documenting architecture decisions*. Cognitect. https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions

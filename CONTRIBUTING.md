@@ -1,43 +1,43 @@
-# Cómo contribuir
+# How to contribute
 
-## Flujo de trabajo
+## Workflow
 
-1. Crea una rama desde `main` con el tipo y un nombre corto: `feat/ingesta-contrapresion`, `fix/angulo-vertical`, `docs/protocolo`.
-2. Instala el entorno con `make instalar`. Esto también instala los hooks de pre-commit.
-3. Antes de subir, `make revisar` y `make probar` deben pasar.
-4. Abre un *pull request* hacia `main`. La CI repite las mismas revisiones.
+1. Create a branch from `main` with the type and a short name: `feat/ingesta-contrapresion`, `fix/angulo-vertical`, `docs/protocolo`.
+2. Set up the environment with `make instalar`. This also installs the pre-commit hooks.
+3. Before pushing, `make revisar` and `make probar` must pass.
+4. Open a *pull request* to `main`. CI runs the same checks again.
 
-## Mensajes de commit
+## Commit messages
 
-Siguen **Conventional Commits 1.0.0**: `tipo(ámbito): descripción en imperativo`.
+They follow **Conventional Commits 1.0.0**: `type(scope): description in the imperative mood`.
 
-| Tipo | Uso |
+| Type | Use |
 |---|---|
-| `feat` | Nueva funcionalidad |
-| `fix` | Corrección de un error |
-| `docs` | Solo documentación |
-| `test` | Pruebas |
-| `refactor` | Cambio de código sin cambiar el comportamiento |
-| `build` / `ci` / `chore` | Dependencias, Docker, CI y mantenimiento |
+| `feat` | New functionality |
+| `fix` | Bug fix |
+| `docs` | Documentation only |
+| `test` | Tests |
+| `refactor` | Code change that does not change behavior |
+| `build` / `ci` / `chore` | Dependencies, Docker, CI and maintenance |
 
-Ejemplos:
+Examples:
 
 ```
-feat(clasificacion): agregar regla de movimiento inestable
-fix(pose): convertir landmarks a píxeles antes de calcular la razón
-docs(adr): registrar decisión sobre el modo VIDEO
+feat(clasificacion): add unstable movement rule
+fix(pose): convert landmarks to pixels before computing the ratio
+docs(adr): record decision on VIDEO mode
 ```
 
-El hook `conventional-pre-commit` rechaza los mensajes que no cumplen el formato.
+The `conventional-pre-commit` hook rejects messages that do not follow the format.
 
-## Reglas del código
+## Code rules
 
-- Los nombres de módulos y clases siguen los componentes de la arquitectura lógica ([docs/arquitectura.md](docs/arquitectura.md)).
-- `clasificacion/` no hace I/O.
-- **Cada fórmula o umbral nuevo** se documenta en [docs/especificacion-clasificacion.md](docs/especificacion-clasificacion.md), con su fuente o marcado como *[Adaptación]*.
-- **Las decisiones de arquitectura** se registran como ADR en [docs/adr/](docs/adr/).
-- **Nunca se suben secretos:** `.env` está en `.gitignore`, y pre-commit revisa que no haya claves privadas.
+- Module and class names follow the components of the logical architecture ([docs/architecture.md](docs/architecture.md)).
+- `clasificacion/` does no I/O.
+- **Every new formula or threshold** is documented in [docs/classification-spec.md](docs/classification-spec.md), with its source or marked as *[Adaptation]*.
+- **Architecture decisions** are recorded as ADRs in [docs/adr/](docs/adr/).
+- **Secrets are never pushed:** `.env` is in `.gitignore`, and pre-commit checks that there are no private keys.
 
-## Referencias
+## References
 
 Conventional Commits. (s.f.). *Conventional Commits 1.0.0*. https://www.conventionalcommits.org/es/v1.0.0/

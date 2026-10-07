@@ -1,4 +1,4 @@
-# Se instala con `make instalar`. Documentación: https://pre-commit.com
+# Installed with `make instalar`. Documentation: https://pre-commit.com
 default_stages: [pre-commit]
 
 repos:
@@ -19,7 +19,7 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  # Valida que el mensaje siga Conventional Commits 1.0.0.
+  # Checks that the message follows Conventional Commits 1.0.0.
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0
     hooks:

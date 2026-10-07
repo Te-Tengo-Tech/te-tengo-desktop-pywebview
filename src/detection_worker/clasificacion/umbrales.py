@@ -1,7 +1,7 @@
 """Umbrales de la clasificación cinemática.
 
 Se configuran por variable de entorno (``TT_CLASIFICACION__<CAMPO>``). El origen de cada valor
-está en la tabla de umbrales de ``docs/especificacion-clasificacion.md``.
+está en la tabla de umbrales de ``docs/classification-spec.md``.
 """
 
 from pydantic import BaseModel, Field

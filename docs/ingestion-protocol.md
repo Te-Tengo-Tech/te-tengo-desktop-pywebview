@@ -1,26 +1,26 @@
-# Protocolo de ingesta (Agente de captura → Módulo de detección)
+# Ingestion protocol (Capture Agent → Detection Module)
 
-## Conexión
+## Connection
 
 ```
 WSS  /v1/ingesta/{camara_id}
 Authorization: Bearer <TT_INGESTA_TOKEN>
 ```
 
-- **Siempre por TLS.** En producción, el proxy inverso (Nginx) termina el TLS y reenvía el WebSocket al contenedor.
-- **Token incorrecto:** el servidor cierra la conexión con el código **1008** (*policy violation*).
-- **`camara_id`:** es el identificador que el Backend API asignó a la cámara cuando el agente la registró al iniciar.
+- **Always over TLS.** In production, the reverse proxy (Nginx) terminates TLS and forwards the WebSocket to the container.
+- **Wrong token:** the server closes the connection with code **1008** (*policy violation*).
+- **`camara_id`:** the identifier that the Backend API assigned to the camera when the agent registered it at startup.
 
-## Mensajes
+## Messages
 
-Un **mensaje binario por fotograma**:
+One **binary message per frame**:
 
-| Bytes | Contenido |
+| Bytes | Content |
 |---|---|
-| 0–7 | Instante de captura en **milisegundos desde la época Unix**, entero sin signo de 64 bits, *big-endian* |
-| 8–… | Imagen **JPEG** (480p, 5–10 fps, según la arquitectura) |
+| 0–7 | Capture timestamp in **milliseconds since the Unix epoch**, 64-bit unsigned integer, *big-endian* |
+| 8–… | **JPEG** image (480p, 5–10 fps, per the architecture) |
 
-Ejemplo en Python, del lado del agente:
+Python example, on the agent side:
 
 ```python
 import struct, time
@@ -29,9 +29,9 @@ mensaje = struct.pack(">Q", int(time.time() * 1000)) + jpeg_bytes
 await websocket.send(mensaje)
 ```
 
-**Mensaje inválido** (muy corto o sin un JPEG): se descarta y se registra en el log, sin cerrar la conexión.
+**Invalid message** (too short or without a JPEG): it is dropped and logged, without closing the connection.
 
-## Por qué así
+## Why this design
 
-- **La marca de tiempo la pone el agente,** en el momento de la captura. Así, las velocidades y los tiempos (30 s, 5 min) no dependen de la latencia de la red.
-- **JPEG por fotograma:** es simple de producir con OpenCV en el agente (`cv2.imencode`) y de leer en el servidor (`cv2.imdecode`), sin un servidor de medios.
+- **The agent sets the timestamp,** at capture time. This way, speeds and timers (30 s, 5 min) do not depend on network latency.
+- **One JPEG per frame:** it is simple to produce with OpenCV on the agent (`cv2.imencode`) and to read on the server (`cv2.imdecode`), without a media server.

@@ -1,7 +1,7 @@
 """Máquina de estados que convierte la secuencia de poses de una cámara en eventos.
 
 En cada fotograma se evalúan tres condiciones (reglas R1 a R3 de
-``docs/especificacion-clasificacion.md``):
+``docs/classification-spec.md``):
 
 * **M1**: el centro de la cadera bajó rápido.
 * **M2**: el cuerpo perdió la vertical (ángulo con el suelo menor que el umbral).
@@ -36,7 +36,7 @@ class UmbralSinCalibrarError(ValueError):
     def __init__(self) -> None:
         super().__init__(
             "Falta TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN: el umbral de velocidad aún no está "
-            "calibrado (ver docs/especificacion-clasificacion.md, regla R1)."
+            "calibrado (ver docs/classification-spec.md, regla R1)."
         )
 
 

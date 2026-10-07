@@ -1,22 +1,22 @@
-# 0006. MediaPipe en modo VIDEO, un seguimiento por cámara
+# 0006. MediaPipe in VIDEO mode, one tracker per camera
 
-**Estado:** aceptada (2026-10-03). Reemplaza la decisión de modo `IMAGE` del ADR 0003; el resto de ese ADR sigue vigente.
+**Status:** accepted (2026-10-03). Replaces the `IMAGE` mode decision of ADR 0003; the rest of that ADR remains in force.
 
-## Contexto
-En la validación con URFD y CAUCAFall ([validacion.md](../validacion.md)), el modo `IMAGE` perdía a la persona en el **43 %** de los fotogramas de las caídas de CAUCAFall, justo durante el descenso. El modo `VIDEO` sigue a la persona entre fotogramas y exige marcas de tiempo crecientes.
+## Context
+In the validation with URFD and CAUCAFall ([validation.md](../validation.md)), `IMAGE` mode lost the person in **43%** of the frames of the CAUCAFall falls, right during the descent. `VIDEO` mode tracks the person between frames and requires increasing timestamps.
 
-| Variante (8 fps) | Cobertura en caídas de CAUCAFall | Cobertura en caídas de URFD |
+| Variant (8 fps) | Coverage in CAUCAFall falls | Coverage in URFD falls |
 |---|---|---|
-| lite · IMAGE | 57 % | 86 % |
-| **lite · VIDEO** | **82 %** | **88 %** |
-| full · IMAGE | 57 % | 83 % |
-| full · VIDEO | 82 % | 89 % |
+| lite · IMAGE | 57% | 86% |
+| **lite · VIDEO** | **82%** | **88%** |
+| full · IMAGE | 57% | 83% |
+| full · VIDEO | 82% | 89% |
 
-## Decisión
-- Usar el modo `VIDEO` con el modelo *lite*. El *full* no mejora la cobertura y consume más CPU.
-- El proceso de inferencia mantiene **un landmarker por cámara** con su última marca de tiempo. Si llega una marca anterior (el agente se reconectó), se crea uno nuevo.
-- Cuando la cámara se desconecta, se libera su landmarker.
+## Decision
+- Use `VIDEO` mode with the *lite* model. The *full* model does not improve coverage and uses more CPU.
+- The inference process keeps **one landmarker per camera** with its last timestamp. If an earlier timestamp arrives (the agent reconnected), a new one is created.
+- When the camera disconnects, its landmarker is released.
 
-## Consecuencias
-- El worker recibe el `camara_id` y la marca de tiempo del agente en cada inferencia.
-- La validación (`scripts/evaluar.py`) y el worker usan el mismo modo, así que sus resultados coinciden: 24 de 24 videos reproducidos en vivo.
+## Consequences
+- The worker receives the `camara_id` and the agent's timestamp on each inference.
+- The validation (`scripts/evaluar.py`) and the worker use the same mode, so their results match: 24 of 24 videos replayed live.
