@@ -3,8 +3,10 @@
 The progress follows the real startup (``BOOT_STEPS`` of the prototype): «Iniciando…» while
 the agent's threads start, «Abriendo la webcam configurada…» until the webcam answers (or capture
 turns out not to be allowed yet), «Conectando con Te Tengo…» until the first heartbeat answers.
-Each step has a time limit so a missing webcam or internet never blocks the window, and the
-splash lasts at least ``DURACION_MINIMA_S`` like the prototype's animation.
+Each step has a time limit so a missing webcam or internet never blocks the window. Steps keep
+the prototype's cadence as a minimum (``proto.js``: 22 % at 0.08 s, 54 % at 0.72 s, 86 % at
+1.34 s, 100 % at 1.82 s, fade out at 2.06 s), so the symbol finishes assembling before the
+status window appears even when the real steps are instant.
 """
 
 import json
@@ -18,7 +20,7 @@ from te_tengo_captura.agente import Agente
 from te_tengo_captura.ui.ventana import FONDO_ARRANQUE, WEB
 
 ANCHO, ALTO = 480, 300
-DURACION_MINIMA_S = 2.2
+DURACION_MINIMA_S = 2.06  # fade out starts; the splash is gone at about 2.2 s
 SALIDA_S = 0.2  # .boot.out animation
 LIMITE_PASO_S = 5.0
 
@@ -28,6 +30,7 @@ class Paso:
     porcentaje: int
     indice_texto: int  # index in BOOT_STEPS
     listo: Callable[[], bool]
+    desde_s: float = 0.0  # not shown before this time since the start (prototype cadence)
     limite_s: float = LIMITE_PASO_S
 
 
@@ -39,10 +42,10 @@ def pasos(agente: Agente) -> list[Paso]:
         return agente.captador.conectada is not None or no_permitida
 
     return [
-        Paso(22, 0, lambda: True),
-        Paso(54, 1, webcam_resuelta),
-        Paso(86, 2, lambda: agente.latido.en_linea is not None),
-        Paso(100, 2, lambda: True),
+        Paso(22, 0, lambda: True, desde_s=0.08),
+        Paso(54, 1, webcam_resuelta, desde_s=0.72),
+        Paso(86, 2, lambda: agente.latido.en_linea is not None, desde_s=1.34),
+        Paso(100, 2, lambda: True, desde_s=1.82),
     ]
 
 
@@ -53,9 +56,12 @@ def recorrer(
     esperar: Callable[[float], None] = time.sleep,
     intervalo_s: float = 0.1,
 ) -> None:
-    """Shows each step and waits until it is ready (or its limit); at least the minimum time."""
+    """Shows each step once the previous one is ready (or hit its limit) and not before its
+    time in the prototype's cadence; returns after at least the minimum time."""
     inicio = reloj()
     for paso in pasos_:
+        if (antes := inicio + paso.desde_s - reloj()) > 0:
+            esperar(antes)
         mostrar(paso.porcentaje, paso.indice_texto)
         limite = reloj() + paso.limite_s
         while not paso.listo() and reloj() < limite:

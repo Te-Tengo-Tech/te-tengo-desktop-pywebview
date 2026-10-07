@@ -46,7 +46,21 @@ def test_muestra_cada_paso_cuando_el_anterior_esta_listo() -> None:
     recorrer(pasos, mostrar, reloj, reloj.esperar)
     assert [(p, t) for p, t, _ in mostrados] == [(22, 0), (54, 1), (86, 2), (100, 2)]
     assert mostrados[2][2] == pytest.approx(1.0, abs=0.1)  # within one polling interval
-    assert reloj.ahora == pytest.approx(DURACION_MINIMA_S)  # about 2.2 s at least
+    assert reloj.ahora == pytest.approx(DURACION_MINIMA_S)  # the fade out starts at 2.06 s
+
+
+def test_conserva_el_ritmo_del_prototipo_aunque_todo_este_listo() -> None:
+    reloj = Reloj()
+    momentos: list[float] = []
+    pasos = [
+        Paso(22, 0, lambda: True, desde_s=0.08),
+        Paso(54, 1, lambda: True, desde_s=0.72),
+        Paso(86, 2, lambda: True, desde_s=1.34),
+        Paso(100, 2, lambda: True, desde_s=1.82),
+    ]
+    recorrer(pasos, lambda p, t: momentos.append(reloj.ahora), reloj, reloj.esperar)
+    assert momentos == pytest.approx([0.08, 0.72, 1.34, 1.82])
+    assert reloj.ahora == pytest.approx(2.06)
 
 
 def test_un_paso_que_no_termina_no_bloquea_el_arranque() -> None:
@@ -58,7 +72,12 @@ def test_un_paso_que_no_termina_no_bloquea_el_arranque() -> None:
 def test_pasos_reales_del_agente(tmp_path: Path, configuracion: object) -> None:
     e = Escenario(tmp_path, configuracion)  # type: ignore[arg-type]
     pasos = arranque.pasos(e.agente)
-    assert [(p.porcentaje, p.indice_texto) for p in pasos] == [(22, 0), (54, 1), (86, 2), (100, 2)]
+    assert [(p.porcentaje, p.indice_texto, p.desde_s) for p in pasos] == [
+        (22, 0, 0.08),
+        (54, 1, 0.72),
+        (86, 2, 1.34),
+        (100, 2, 1.82),
+    ]
     webcam, conexion = pasos[1].listo, pasos[2].listo
     assert not webcam()
     assert not conexion()
