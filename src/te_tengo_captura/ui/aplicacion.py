@@ -7,11 +7,14 @@ tray menu opens it again or exits.
 
 import logging
 import os
+import tempfile
 from collections.abc import MutableMapping
+from pathlib import Path
 
 from te_tengo_captura.agente import Agente
 from te_tengo_captura.bandeja.avisos import Avisos
 from te_tengo_captura.bandeja.icono import EN_MACOS, IconoBandeja
+from te_tengo_captura.bandeja.iconos import icono
 from te_tengo_captura.ui import arranque
 from te_tengo_captura.ui.puente import Puente
 from te_tengo_captura.ui.ventana import VentanaEstado
@@ -26,6 +29,22 @@ def quitar_qt_de_opencv(entorno: MutableMapping[str, str] = os.environ) -> None:
         valor = entorno.get(variable, "")
         if f"{os.sep}cv2{os.sep}" in valor:
             del entorno[variable]
+
+
+def guardar_icono(carpeta: Path | None = None) -> Path:
+    """Writes the brand app icon as a PNG for the window and the Dock, and returns its path."""
+    ruta = (carpeta or Path(tempfile.gettempdir())) / "te-tengo-captura.png"
+    icono(None, 512).save(ruta)
+    return ruta
+
+
+def mostrar_icono_en_el_dock(ruta: Path) -> None:
+    """macOS: an unpackaged run shows Python's icon in the Dock; use the brand icon instead."""
+    from AppKit import NSApplication, NSImage
+
+    imagen = NSImage.alloc().initWithContentsOfFile_(str(ruta))
+    if imagen is not None:
+        NSApplication.sharedApplication().setApplicationIconImage_(imagen)
 
 
 class Aplicacion:
@@ -49,10 +68,13 @@ class Aplicacion:
         import webview
 
         quitar_qt_de_opencv()
+        ruta_icono = guardar_icono()
         if EN_MACOS:
+            mostrar_icono_en_el_dock(ruta_icono)
             self._icono.iniciar()  # AppKit: from the main thread, before its event loop starts
         try:
-            webview.start(self._iniciar)
+            # ``icon`` sets the window icon on Linux (GTK and Qt); Windows uses the .exe's icon.
+            webview.start(self._iniciar, icon=str(ruta_icono))
         finally:
             self._icono.detener()
             self._agente.detener()
