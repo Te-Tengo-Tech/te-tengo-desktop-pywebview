@@ -4,7 +4,7 @@ Each important decision is recorded in a short file using Michael Nygard's forma
 
 | No. | Decision | Status |
 |---|---|---|
-| [0001](0001-fastapi-and-uvicorn.md) | FastAPI and Uvicorn for the service | Accepted |
+| [0001](0001-fastapi-and-uvicorn.md) | FastAPI and Uvicorn for the service | Superseded by 0007 (the service was retired) |
 | [0002](0002-domain-structure.md) | Structure by domain with a pure core and adapters | Accepted |
 | [0003](0003-mediapipe-in-separate-process.md) | MediaPipe 0.10.35 in a separate process | Accepted |
 | [0004](0004-chen-thresholds.md) | Classification with the thresholds of Chen et al. (2020) | Accepted |

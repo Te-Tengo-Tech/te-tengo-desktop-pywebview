@@ -4,7 +4,7 @@
 
 > **Building the agent:** the work is planned in [docs/WORK_PLAN.md](docs/WORK_PLAN.md) and the rules for contributors and coding agents are in [AGENTS.md](AGENTS.md). The backend contract is [docs/AGENT_CONTRACT.md](docs/AGENT_CONTRACT.md).
 
-> **Migration status (ADR 0007):** the code started as a cloud service (`te-tengo-service-detection-worker`, with FastAPI and WebSocket ingestion). The core (`clasificacion/`, `pose/`, the clip buffer and encoding, `eventos/`) is reused as is inside the agent; the ingestion server will be retired when the agent is ready. The change request to the charter is pending.
+> **Migration status (ADR 0007):** the code started as a cloud service (`te-tengo-service-detection-worker`, with FastAPI and WebSocket ingestion). The validated core now lives in `src/te_tengo_deteccion/` and the cloud ingestion service was retired. The change request to the charter is pending.
 
 
 **Detection module** of Te Tengo, the pose-estimation-based system for detecting falls of older adults in their homes.
@@ -40,15 +40,13 @@ The internal organization is explained in [docs/architecture.md](docs/architectu
 | Python | 3.11 (required by `mediapipe==0.10.35`, see [ADR 0003](docs/adr/0003-mediapipe-in-separate-process.md)) |
 | [uv](https://docs.astral.sh/uv/) | 0.12 or later |
 | FFmpeg | Any recent version (builds the MP4 clips) |
-| Docker | 29 or later (optional, for the image) |
 
 ## Getting started
 
 ```bash
 make instalar      # creates .venv with uv and installs the pre-commit hooks
 make modelo        # downloads pose_landmarker_lite.task into models/
-make env          # creates .env with local tokens (does not overwrite an existing one)
-make ejecutar      # http://localhost:8001/docs
+make camara        # tests the classifier with the webcam
 ```
 
 ## Commands
@@ -58,19 +56,16 @@ make ejecutar      # http://localhost:8001/docs
 | `make instalar` | Installs the dependencies (`uv sync`) and the pre-commit hooks |
 | `make env` | Creates `.env` from `.env.example` with random local tokens |
 | `make modelo` | Downloads the MediaPipe model |
-| `make ejecutar` | Starts the service with auto-reload |
 | `make camara` | Tests the classifier with the webcam or a video, with an on-screen overlay |
-| `make agente` | Sends the webcam or a video to the worker, like the real agent |
 | `make datasets` | Downloads URFD and CAUCAFall |
 | `make validar` | Validates the classifier with the datasets and generates the report |
 | `make formatear` | Formats the code with Ruff |
 | `make revisar` | Lint (Ruff), formatting and types (mypy in strict mode) |
 | `make probar` | Tests with coverage (pytest) |
-| `make imagen` | Builds the Docker image |
 
 ## Testing with the camera or with videos
 
-There are two tools in `scripts/`. Neither one needs the backend or the real agent.
+The tool in `scripts/` needs neither the backend nor the real agent.
 
 **1. Local classifier test** (`make camara`). Opens the webcam or a video and uses the same code as the worker. The window shows the video with the skeleton (colored by phase), the center line, the hip center (cyan) and the body bounding box. Next to it there is a panel with:
 - the state: normal, possible fall or on the floor, with the countdown to 30 s;
@@ -92,16 +87,6 @@ make camara ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240 --csv medicio
 - **On macOS:** the first time, you must give camera permission to the terminal or the IDE (System Settings → Privacy & Security → Camera).
 - **iPhone as a camera (Continuity Camera):** with iOS 16 or later, macOS Ventura or later and the same Apple Account, the iPhone appears as one more camera. To see its index: `make camara ARGS="--listar-camaras"`; then use it with `--camara N`. Avoid "Desk View", which shows the desk from above.
 
-**2. Simulated agent** (`make agente`). Sends the webcam or a video to the worker over WebSocket, just as Te Tengo Captura will (480p, 8 fps and JPEG). It tests the full service:
-
-```bash
-make ejecutar                                    # in one terminal (requires the threshold in .env)
-make agente                                      # in another one: webcam
-make agente ARGS="--video fall-01-cam0.mp4 --recorte 320,0,320,240"
-```
-
-The worker logs each event (`Evento detectado: caida en camara-local …`). Without the backend or SeaweedFS, it also logs a warning that it could not publish the event, but it keeps working.
-
 ## Validation with public datasets
 
 The classifier was validated with **URFD** (70 videos) and **CAUCAFall** (100 videos) under production conditions: 480p, 8 fps, JPEG and MediaPipe in VIDEO mode. To measure without bias, each group was left out during calibration:
@@ -119,12 +104,7 @@ make validar    # generates resultados/reporte.md
 
 ## Interfaces
 
-| Interface | Details |
-|---|---|
-| `GET /health` | Liveness for Docker and the reverse proxy |
-| `WS /v1/ingesta/{camara_id}` | Video from the Capture Agent. Format in [docs/ingestion-protocol.md](docs/ingestion-protocol.md). |
-| Backend API → `POST /internal/v1/eventos` | Detected events (provisional contract) |
-| Backend API → `PUT /internal/v1/eventos/{id}/clip` | Key of the stored clip |
+The agent talks to `te-tengo-general-api` through the contract in [docs/AGENT_CONTRACT.md](docs/AGENT_CONTRACT.md).
 
 ## Configuration
 

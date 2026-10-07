@@ -9,15 +9,12 @@ authors = [
     { name = "Elmer Augusto Riva Rodriguez" },
 ]
 dependencies = [
-    "boto3>=1.43",
-    "fastapi>=0.142",
     "httpx>=0.28",
     # Pinned: 1.0.x fails on macOS (issue google-ai-edge/mediapipe#6356). See docs/adr/0003.
     "mediapipe==0.10.35",
     "numpy>=2.0",
     "pydantic>=2.13",
     "pydantic-settings>=2.15",
-    "uvicorn[standard]>=0.54",
 ]
 
 [project.scripts]
@@ -25,7 +22,6 @@ te-tengo-captura = "te_tengo_captura.__main__:main"
 
 [dependency-groups]
 dev = [
-    "httpx2>=2.13",
     "mypy>=2.4",
     "pillow>=12",
     "pre-commit>=4.6",
@@ -33,7 +29,6 @@ dev = [
     "pytest-asyncio>=1.4",
     "pytest-cov>=7.1",
     "ruff>=0.16",
-    "websockets>=17",
 ]
 
 [build-system]
@@ -66,7 +61,7 @@ files = ["src", "tests", "scripts"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["mediapipe.*", "cv2.*", "boto3.*", "botocore.*"]
+module = ["mediapipe.*", "cv2.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- Pytest
