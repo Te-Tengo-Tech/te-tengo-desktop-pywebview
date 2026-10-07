@@ -80,7 +80,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - Bridge (`js_api`): `estado()`, `minimizar()`, `cerrar()`, `buscarWebcam()`, `reintentarAhora()`; Python pushes updates with `window.evaluate_js("ttg.actualizar(...)")`.
   - The retry countdown updates without moving focus; `role="status"`; `prefers-reduced-motion` respected.
   - Tests: the bridge object without pywebview; a test that the HTML references only local assets.
-- [ ] **T12 Splash window** (screen 00). 480 × 300, frameless, centered, `--morado`, the animated symbol, `BOOT_STEPS` driven by real startup steps (config, webcam, backend), version from the package, about 2.2 s minimum, then the status window.
+- [x] **T12 Splash window** (screen 00). 480 × 300, frameless, centered, `--morado`, the animated symbol, `BOOT_STEPS` driven by real startup steps (config, webcam, backend), version from the package, about 2.2 s minimum, then the status window.
 - [ ] **T13 Tray icon and notifications** (screens 06–07).
   - pystray icon with the status dot (green sending, grey paused, amber problem; `trayState` in `core.js`); menu «Abrir Te Tengo Captura» and «Salir» (implementation choice: confirm the exit text with the team, see blockers).
   - System notification when the window is closed the first time and when the webcam disconnects with the window closed, with the texts of `osToast`.

@@ -71,4 +71,11 @@ assert.match(ui.win(E.enviando, '', {kind: 'warn', icon: 'wifiOff', text: 'Aún 
 
 // Every room of the prototype has its illustration, without people.
 for (const room of ['Sala', 'Dormitorio', 'Cocina', 'Pasillo']) assert.match(ui.roomSVG(room), /^<svg class="room"/);
+// The splash (screen 00).
+const boot = ui.bootWin({play: true, pct: 34, step: 0, version: '1.0.0'});
+assert.match(boot, /role="dialog" aria-label="Te Tengo Captura se está iniciando"/);
+assert.match(boot, /aria-label="Te Tengo Captura"/);
+assert.match(boot, /role="progressbar" aria-label="Progreso del inicio" aria-valuemin="0" aria-valuemax="100" aria-valuenow="34"/);
+assert.match(boot, /<span id="boot-st" aria-live="polite">Iniciando…<\/span><span class="boot-v">Versión 1\.0\.0<\/span>/);
+assert.deepEqual(ui.BOOT_STEPS, ['Iniciando…', 'Abriendo la webcam configurada…', 'Conectando con Te Tengo…']);
 console.log('ok');

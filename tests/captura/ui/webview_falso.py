@@ -68,5 +68,7 @@ class WebviewFalso(ModuleType):
         self, func: Callable[..., Any] | None = None, args: Any = None, **opciones: Any
     ) -> None:
         self.iniciado = True
+        for ventana in self.ventanas:
+            ventana.events.loaded.disparar()
         if func is not None:
             func(*(args or ()))

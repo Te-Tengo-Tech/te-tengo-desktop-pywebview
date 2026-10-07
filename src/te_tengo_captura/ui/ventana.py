@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 WEB = Path(__file__).resolve().parent / "web"
 ANCHO, ALTO = 960, 640
 FONDO = "#EEF0F4"  # --ground, so no white flash before the page paints
+FONDO_ARRANQUE = "#4A2A85"  # --morado
 
 
 def script_actualizar(datos: dict[str, Any]) -> str:

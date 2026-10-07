@@ -62,17 +62,23 @@ def test_actualiza_la_pagina_solo_cuando_cargo(
 
 
 def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
-    webview: WebviewFalso, tmp_path: Path, configuracion: Configuracion
+    webview: WebviewFalso, configuracion: Configuracion, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from te_tengo_captura.ui import arranque
     from te_tengo_captura.ui.aplicacion import ejecutar
 
     class AgenteFalso:
+        version = "1.0.0"
+
         def __init__(self) -> None:
             self.eventos: list[str] = []
             self.oyentes: list[object] = []
 
         def estado(self) -> object:
             return derivar(Entradas(True, True, True, None, 2, 8, "Sala"), configuracion, "1.0.0")
+
+        def publicar_estado(self) -> None:
+            self.eventos.append("publicar")
 
         def suscribir(self, oyente: object) -> None:
             self.oyentes.append(oyente)
@@ -90,11 +96,19 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
             return True
 
     agente = AgenteFalso()
+    pasos = [arranque.Paso(22, 0, lambda: True), arranque.Paso(100, 2, lambda: True)]
+    monkeypatch.setattr(arranque, "pasos", lambda _: pasos)
+    monkeypatch.setattr(arranque, "DURACION_MINIMA_S", 0.0)
+    monkeypatch.setattr(arranque, "SALIDA_S", 0.0)
     ejecutar(agente)  # type: ignore[arg-type]
     assert webview.iniciado
-    assert agente.eventos == ["iniciar", "detener"]
+    assert agente.eventos == ["iniciar", "publicar", "detener"]
     assert len(agente.oyentes) == 1
-    puente = webview.ventanas[0].opciones["js_api"]
+    inicio, estado = webview.ventanas
+    assert inicio.destruida  # the splash gives way to the status window
+    assert inicio.scripts[-1] == "window.ttg && window.ttg.arranqueFin()"
+    assert estado.visible
+    puente = estado.opciones["js_api"]
     assert puente.estado()["situacion"] == "enviando"
     puente.cerrar()
-    assert not webview.ventanas[0].visible
+    assert not estado.visible
