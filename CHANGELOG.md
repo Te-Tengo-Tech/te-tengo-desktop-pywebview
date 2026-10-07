@@ -6,6 +6,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ### Added
 - Detection core split into `te_tengo_deteccion` (classification, pose, clip buffer and MP4 encoding, unchanged logic) and the empty `te_tengo_captura` app package with the `te-tengo-captura` entry point; a test keeps the core free of app, GUI and network imports (T01).
+- Video sources (T06): `FuenteWebcam`, `FuenteArchivo` and `FuenteFalsa` behind `FuenteVideo`; `Captador` downscales to 480p, samples at 8 fps and compresses at JPEG quality 80 like the validation, detects disconnection after 3 s of failed reads, reopens every 2 s and supports «Buscar de nuevo».
 - Persistent outbox (T05): SQLite in the platform data directory for events and clip files, in-order delivery, idempotent resend by `eventoId`, exponential backoff (2 s doubling, 300 s cap, equal jitter), clip files deleted after upload, and a sender thread.
 - Backend client for the agent contract (T04): `ClienteBackend` (httpx, `Api-Version: 1`, re-registers on `401`, typed errors per `ProblemDetail.codigo`, no secrets in logs) and the in-memory `BackendFalso` on `httpx.MockTransport`.
 - Installation configuration (T03): TOML file in the platform config directory or `--config`, with `config.ejemplo.toml`, calibrated classifier defaults and Spanish errors naming the missing field. Replaces `.env`, `pydantic-settings` and `scripts/crear_env.py`.
