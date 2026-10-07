@@ -7,6 +7,10 @@ It runs in a worker thread (``HiloCaptura``). Rules (AGENTS.md):
   buffer is dropped and the classifier and the tracker are reset; when it turns true again the
   webcam is reopened and capture resumes on its own (CA-22.3).
 * **Never lose an event:** each event gets a UUID v7 ``eventoId`` and goes to the outbox first.
+* **Crash recovery:** an unexpected error in a step does not end the thread. ``HiloCaptura``
+  logs it, resets the loop (webcam, classifier, tracker and clip buffer) and tries again with a
+  growing wait (1 s doubling up to 30 s). Until a frame is processed again the webcam is reported
+  as not connected, so the window shows the problem and the backend learns about it.
 * **Clips** (CA-18.1): for the events in ``EVENTOS_CON_CLIP`` the frames from 6 s before to 6 s
   after are encoded as MP4 off the loop thread and queued for upload. If encoding fails, the
   event has already been queued and is sent without its clip (CA-18.2).
@@ -77,6 +81,7 @@ class BucleCaptura:
         self._activa = False
         self._buscar = threading.Event()
         self.deteccion_confiable = True
+        self.fallando = False  # an unexpected error happened and no frame was processed since
 
     @property
     def activa(self) -> bool:
@@ -86,7 +91,7 @@ class BucleCaptura:
     @property
     def webcam_conectada(self) -> bool:
         """Last known state; a webcam not opened yet (capture not allowed) is not «lost»."""
-        return self._captador.conectada is not False
+        return not self.fallando and self._captador.conectada is not False
 
     def actualizar_umbrales(self, umbrales: Umbrales) -> None:
         """New thresholds (remote configuration): applied with a fresh classifier."""
@@ -116,6 +121,7 @@ class BucleCaptura:
             self._ejecutar_clip(partial(self._guardar_clip, clip))
 
         pose = self._estimador.estimar(fotograma.imagen, fotograma.instante_ms)
+        self.fallando = False
         if pose is not None:
             self.deteccion_confiable = True
         ocurrido_en = self._reloj_utc()
@@ -146,6 +152,14 @@ class BucleCaptura:
         self._detener()
         self._estimador.cerrar()
 
+    def reiniciar_tras_error(self) -> None:
+        """After an unexpected error: start over as if capture had just been allowed."""
+        self.fallando = True
+        try:
+            self._detener()
+        except Exception:
+            logger.exception("Error al reiniciar la captura")
+
     def _detener(self) -> None:
         if self._activa:
             logger.info("Captura detenida: se cierra la webcam y se descarta el buffer")
@@ -166,11 +180,16 @@ class BucleCaptura:
         self._al_encolar()
 
 
+ESPERA_ERROR_INICIAL_S = 1.0
+ESPERA_ERROR_MAXIMA_S = 30.0
+
+
 class HiloCaptura:
-    """Runs ``BucleCaptura`` in a worker thread until ``detener``."""
+    """Runs ``BucleCaptura`` in a worker thread until ``detener``, surviving errors."""
 
     def __init__(self, bucle: BucleCaptura) -> None:
         self._bucle = bucle
+        self.errores = 0
         self._detenido = threading.Event()
         self._despertar = threading.Event()
         self._hilo = threading.Thread(target=self._correr, name="captura", daemon=True)
@@ -189,9 +208,24 @@ class HiloCaptura:
             self._hilo.join(espera_s)
 
     def _correr(self) -> None:
+        seguidos = 0
         try:
             while not self._detenido.is_set():
-                self._bucle.paso()
+                try:
+                    self._bucle.paso()
+                except Exception:
+                    self.errores += 1
+                    seguidos += 1
+                    espera = min(
+                        ESPERA_ERROR_MAXIMA_S, ESPERA_ERROR_INICIAL_S * 2 ** (seguidos - 1)
+                    )
+                    logger.exception("Error en la captura; se reinicia en %.0f s", espera)
+                    self._bucle.reiniciar_tras_error()
+                    self._despertar.wait(espera)
+                    self._despertar.clear()
+                    continue
+                if not self._bucle.fallando:
+                    seguidos = 0
                 if (espera := self._bucle.espera()) > 0:
                     self._despertar.wait(espera)
                     self._despertar.clear()

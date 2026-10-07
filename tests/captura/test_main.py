@@ -1,3 +1,7 @@
+import logging
+import sys
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -6,6 +10,23 @@ from te_tengo_captura import __version__
 from te_tengo_captura.__main__ import argumentos, construir_agente, main
 from te_tengo_captura.captura.fuentes import FuenteArchivo
 from te_tengo_captura.config import Configuracion
+
+
+@pytest.fixture(autouse=True)
+def restaurar_logging() -> Iterator[None]:
+    """main() configures the root logger; leave it as it was for the other tests."""
+    raiz = logging.getLogger()
+    manejadores, nivel = list(raiz.handlers), raiz.level
+    ganchos = (sys.excepthook, threading.excepthook)
+    yield
+    for manejador in list(raiz.handlers):
+        raiz.removeHandler(manejador)
+        manejador.close()
+    for manejador in manejadores:
+        raiz.addHandler(manejador)
+    raiz.setLevel(nivel)
+    sys.excepthook, threading.excepthook = ganchos
+
 
 MODELO = Path("models/pose_landmarker_lite.task")
 
@@ -20,7 +41,19 @@ def test_version(capsys: pytest.CaptureFixture[str]) -> None:
 def test_configuracion_invalida_explica_el_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["--config", str(tmp_path / "no-existe.toml"), "--datos", str(tmp_path)]) == 2
+    assert (
+        main(
+            [
+                "--config",
+                str(tmp_path / "no-existe.toml"),
+                "--datos",
+                str(tmp_path),
+                "--logs",
+                str(tmp_path),
+            ]
+        )
+        == 2
+    )
     assert "No se encontró el archivo de configuración" in capsys.readouterr().err
 
 
@@ -29,7 +62,16 @@ def test_falta_el_modelo(
 ) -> None:
     ejemplo = Path(__file__).resolve().parents[2] / "config.ejemplo.toml"
     codigo = main(
-        ["--config", str(ejemplo), "--modelo", str(tmp_path / "no.task"), "--datos", str(tmp_path)]
+        [
+            "--config",
+            str(ejemplo),
+            "--modelo",
+            str(tmp_path / "no.task"),
+            "--datos",
+            str(tmp_path),
+            "--logs",
+            str(tmp_path),
+        ]
     )
     assert codigo == 2
     assert "make modelo" in capsys.readouterr().err
@@ -57,7 +99,7 @@ def test_segundo_lanzamiento_avisa_y_sale(tmp_path: Path) -> None:
     mostrada = threading.Event()
     primera = Instancia(tmp_path)
     assert primera.adquirir(mostrada.set)
-    assert main(["--datos", str(tmp_path)]) == 0
+    assert main(["--datos", str(tmp_path), "--logs", str(tmp_path)]) == 0
     assert mostrada.wait(5)
     primera.liberar()
 
@@ -71,5 +113,18 @@ def test_main_ejecuta_la_aplicacion(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         principal, "ejecutar_aplicacion", lambda agente, abrir: ejecutadas.append(agente)
     )
     ejemplo = Path(__file__).resolve().parents[2] / "config.ejemplo.toml"
-    assert main(["--config", str(ejemplo), "--backend-falso", "--datos", str(tmp_path)]) == 0
+    assert (
+        main(
+            [
+                "--config",
+                str(ejemplo),
+                "--backend-falso",
+                "--datos",
+                str(tmp_path),
+                "--logs",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
     assert len(ejecutadas) == 1

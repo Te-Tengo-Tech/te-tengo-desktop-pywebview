@@ -88,7 +88,7 @@ The agent is built task by task from this checklist. An agent working autonomous
 - [x] **T14 Start with the system and single instance.**
   - Windows: a per-user `Run` registry entry (installer task or first run); macOS/Linux: document the LaunchAgent / autostart `.desktop` alternative.
   - A second launch focuses the running window instead of starting another agent.
-- [ ] **T15 Logging and crash recovery.** Rotating log files in the platform log directory (no secrets, no frames); unhandled errors in the capture thread restart the loop and are shown as the "problem" state.
+- [x] **T15 Logging and crash recovery.** Rotating log files in the platform log directory (no secrets, no frames); unhandled errors in the capture thread restart the loop and are shown as the "problem" state.
 
 ### Delivery
 - [ ] **T16 Packaging.**
