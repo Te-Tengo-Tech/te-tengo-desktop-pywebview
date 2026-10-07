@@ -137,3 +137,32 @@ def test_notificacion_fallida_no_rompe_nada(pystray: PystrayFalso) -> None:
 
     pystray.iconos[0].notify = fallar  # type: ignore[method-assign]
     bandeja.notificar(Notificacion("t", "x"))
+
+
+def test_en_macos_la_bandeja_se_actualiza_en_el_hilo_principal(
+    pystray: PystrayFalso, configuracion: Configuracion, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import ModuleType
+
+    from te_tengo_captura.bandeja.icono import IconoBandeja
+
+    pendientes: list[object] = []
+    apphelper = ModuleType("PyObjCTools.AppHelper")
+    apphelper.callAfter = pendientes.append  # type: ignore[attr-defined]
+    paquete = ModuleType("PyObjCTools")
+    paquete.AppHelper = apphelper  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "PyObjCTools", paquete)
+    monkeypatch.setitem(sys.modules, "PyObjCTools.AppHelper", apphelper)
+    monkeypatch.setattr("te_tengo_captura.bandeja.icono.EN_MACOS", True)
+
+    bandeja = IconoBandeja(lambda: None, lambda: None)
+    bandeja.actualizar(estado(configuracion))
+    bandeja.notificar(Notificacion("t", "x"))
+
+    icono_ = pystray.iconos[0]
+    assert icono_.title == "Te Tengo Captura"  # nothing touched outside the main thread
+    assert len(pendientes) == 2
+    for accion in pendientes:
+        accion()  # type: ignore[operator]
+    assert icono_.title.startswith("Te Tengo Captura · enviando")
+    assert icono_.notificaciones == [("t", "x")]

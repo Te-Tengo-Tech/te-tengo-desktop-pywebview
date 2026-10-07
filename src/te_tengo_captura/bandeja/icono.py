@@ -6,6 +6,7 @@ default item, so a click on the icon opens the window.
 """
 
 import logging
+import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -16,6 +17,19 @@ logger = logging.getLogger(__name__)
 
 TEXTO_ABRIR = "Abrir Te Tengo Captura"
 TEXTO_SALIR = "Salir"
+
+
+# macOS: AppKit status items may only be touched from the main thread, which pywebview owns.
+EN_MACOS = sys.platform == "darwin"
+
+
+def _en_hilo_principal(accion: Callable[[], None]) -> None:
+    if EN_MACOS:
+        from PyObjCTools import AppHelper
+
+        AppHelper.callAfter(accion)
+    else:
+        accion()
 
 
 def descripcion(estado: EstadoAgente) -> str:
@@ -39,22 +53,30 @@ class IconoBandeja:
         )
 
     def iniciar(self) -> None:
-        # Detached: pywebview owns the main thread.
+        # Detached: pywebview owns the main thread and runs its event loop. On macOS this must be
+        # called from the main thread, before ``webview.start``.
         self._icono.run_detached()
 
     def actualizar(self, estado: EstadoAgente) -> None:
-        if estado.bandeja.k != self._punto:
-            self._punto = estado.bandeja.k
-            self._icono.icon = icono(self._punto)
-        titulo = descripcion(estado)
-        if self._icono.title != titulo:
-            self._icono.title = titulo
+        punto, titulo = estado.bandeja.k, descripcion(estado)
+
+        def aplicar() -> None:
+            if punto != self._punto:
+                self._punto = punto
+                self._icono.icon = icono(punto)
+            if self._icono.title != titulo:
+                self._icono.title = titulo
+
+        _en_hilo_principal(aplicar)
 
     def notificar(self, aviso: Notificacion) -> None:
-        try:
-            self._icono.notify(aviso.texto, aviso.titulo)
-        except Exception:  # notifications are best effort (not every desktop supports them)
-            logger.warning("No se pudo mostrar la notificación del sistema", exc_info=True)
+        def mostrar() -> None:
+            try:
+                self._icono.notify(aviso.texto, aviso.titulo)
+            except Exception:  # notifications are best effort (not every desktop supports them)
+                logger.warning("No se pudo mostrar la notificación del sistema", exc_info=True)
+
+        _en_hilo_principal(mostrar)
 
     def detener(self) -> None:
         self._icono.stop()

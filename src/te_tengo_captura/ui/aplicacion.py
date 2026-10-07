@@ -11,7 +11,7 @@ from collections.abc import MutableMapping
 
 from te_tengo_captura.agente import Agente
 from te_tengo_captura.bandeja.avisos import Avisos
-from te_tengo_captura.bandeja.icono import IconoBandeja
+from te_tengo_captura.bandeja.icono import EN_MACOS, IconoBandeja
 from te_tengo_captura.ui import arranque
 from te_tengo_captura.ui.puente import Puente
 from te_tengo_captura.ui.ventana import VentanaEstado
@@ -49,6 +49,8 @@ class Aplicacion:
         import webview
 
         quitar_qt_de_opencv()
+        if EN_MACOS:
+            self._icono.iniciar()  # AppKit: from the main thread, before its event loop starts
         try:
             webview.start(self._iniciar)
         finally:
@@ -70,7 +72,8 @@ class Aplicacion:
         self._avisos.ventana_oculta(self._agente.estado())
 
     def _iniciar(self) -> None:
-        self._icono.iniciar()
+        if not EN_MACOS:
+            self._icono.iniciar()
         self._inicio.esperar_carga()
         pasos = arranque.pasos(self._agente)
         self._inicio.mostrar(pasos[0].porcentaje, pasos[0].indice_texto)
