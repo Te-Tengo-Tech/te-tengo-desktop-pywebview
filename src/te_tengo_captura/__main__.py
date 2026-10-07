@@ -69,9 +69,9 @@ def construir_agente(args: argparse.Namespace, configuracion: config.Configuraci
         if args.video
         else FuenteWebcam(configuracion.webcam.indice)
     )
-    estimador = EstimadorMediaPipe(
-        args.modelo or ruta_modelo_predeterminada(), configuracion.clasificacion.visibilidad_min
-    )
+    # MediaPipe keeps the confidences of the validation (``crear_landmarker``'s default);
+    # ``visibilidad_min`` is the classifier's A5 and must not change the pose detector.
+    estimador = EstimadorMediaPipe(args.modelo or ruta_modelo_predeterminada())
     return Agente(
         configuracion,
         cliente,

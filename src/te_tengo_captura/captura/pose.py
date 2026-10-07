@@ -32,6 +32,10 @@ class Estimador(Protocol):
 
 
 class EstimadorMediaPipe:
+    """MediaPipe as in the validation (``scripts/evaluar.py``): lite model, VIDEO mode and the
+    detection, presence and tracking confidences at 0.5. ``scripts/comparar_pipelines.py`` and
+    ``tests/captura/test_paridad.py`` check that it sees the same poses as the validation."""
+
     def __init__(self, ruta_modelo: Path, confianza_min: float = 0.5) -> None:
         if not ruta_modelo.is_file():
             raise FileNotFoundError(
