@@ -260,19 +260,19 @@ This creates the demo account, the household, the consent and one installation, 
 ```bash
 make instalar && make modelo
 mkdir -p datos/urfd
-curl -fL -o datos/urfd/fall-03-cam0.mp4 https://fenix.ur.edu.pl/~mkepski/ds/data/fall-03-cam0.mp4
+curl -fL -o datos/urfd/fall-01-cam0.mp4 https://fenix.ur.edu.pl/~mkepski/ds/data/fall-01-cam0.mp4
 ```
 
 You can also run `make datasets` to get both datasets (about 220 MB).
 
-URFD MP4 files have the depth image on the left and the RGB image on the right (`scripts/evaluar.py`, `listar_videos`). The validation uses only the RGB half (`--recorte 320,0,320,240`). The agent's `--video` plays the whole frame. With the uncropped file, the classifier detects nothing, so crop the RGB half first:
+URFD MP4 files have the depth image on the left and the RGB image on the right (`scripts/evaluar.py`, `listar_videos`). The validation uses only the RGB half (`--recorte 320,0,320,240`). The agent's `--video` plays the whole frame. With the uncropped file, the classifier detects nothing, so crop the RGB half first. Write it **without loss** (FFV1 in an `.avi`): re-encoding it with a lossy codec such as `mp4v` changes the pixels MediaPipe sees, and on `fall-01` that is enough to lose the only frame with the person on the floor, so the agent misses a fall that the validation detects (`scripts/comparar_pipelines.py fall-01 --recodificado` shows it frame by frame).
 
 ```bash
 uv run python - <<'EOF'
 import cv2
-src = cv2.VideoCapture("datos/urfd/fall-03-cam0.mp4")
+src = cv2.VideoCapture("datos/urfd/fall-01-cam0.mp4")
 fps = src.get(cv2.CAP_PROP_FPS)
-out = cv2.VideoWriter("datos/urfd/fall-03-rgb.mp4", cv2.VideoWriter_fourcc(*"mp4v"), fps, (320, 240))
+out = cv2.VideoWriter("datos/urfd/fall-01-rgb.avi", cv2.VideoWriter_fourcc(*"FFV1"), fps, (320, 240))
 while True:
     ok, frame = src.read()
     if not ok:
@@ -282,18 +282,18 @@ out.release()
 EOF
 ```
 
-The output name does not end in `-cam0.mp4`, so `make validar` ignores it. Check that the cropped clip triggers a fall before starting the agent:
+The output name does not end in `-cam0.mp4`, so `make validar` ignores it. Check that the cropped clip triggers a fall before starting the agent. `make camara` processes the frames exactly as the agent does (8 fps sampling, 480p, JPEG quality 80), so its result is the agent's:
 
 ```bash
-make camara ARGS="--video datos/urfd/fall-03-rgb.mp4 --sin-ventana"   # expect one `caida` event
+make camara ARGS="--video datos/urfd/fall-01-rgb.avi --sin-ventana"   # expect one `caida` event at 4.77 s
 ```
 
-URFD falls are detected in 23 of 30 videos ([validation.md](validation.md), section 3.1). If you pick another video, check it the same way. `make camara` can still disagree with the agent, so prefer `fall-03`: on `fall-01` `make camara` reports the fall, but in the agent MediaPipe finds the person in only about 1 frame in 10 and the agent misses the fall on the first pass of the video. With `fall-02` to `fall-06` the agent sends `caida` on the first pass; the automated test below uses `fall-03`.
+URFD falls are detected in 23 of 30 videos ([validation.md](validation.md), section 3.1). If you pick another video, check it the same way.
 
 **4. Agent** (terminal 3, in `te-tengo-desktop-pywebview`):
 
 ```bash
-uv run te-tengo-captura --config config.local.toml --video datos/urfd/fall-03-rgb.mp4
+uv run te-tengo-captura --config config.local.toml --video datos/urfd/fall-01-rgb.avi
 ```
 
 Add `--sin-interfaz` to run it with no window nor tray (for example over SSH, or on a machine without a display). It then logs each state change (`Estado del agente: enviando`) and stops with Ctrl+C.
@@ -339,7 +339,7 @@ The script:
 
 - starts its own stack (compose project `tt-e2e`, API on 18080, PostgreSQL on 15432, Floci on 14566), so it runs while the steps above are running;
 - seeds the demo household and registers a push device for the family;
-- crops `fall-03` to its RGB half and holds the last frame 45 s, so the agent also sends `caida_confirmada`;
+- crops `fall-03` to its RGB half without loss (FFV1) and holds the last frame 45 s, so the agent also sends `caida_confirmada`;
 - runs this agent with `--sin-interfaz` and checks through the API, as the family, that:
   - a `CAIDA` alert is created and pushed;
   - the alert becomes `confirmada`;
