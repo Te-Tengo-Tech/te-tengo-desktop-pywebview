@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a defect in Te Tengo Captura (the household agent)
+title: "fix: <short description>"
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What is wrong? Do not paste credentials, tokens, frames or personal data.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - deteccion (classifier, pose, clips)
+        - captura (webcam, capture loop)
+        - backend (AGENT_CONTRACT client)
+        - envios (outbox)
+        - ui / bandeja
+        - packaging
+        - scripts / validation tools
+        - build / ci
+        - unknown
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run uv run te-tengo-captura --config ...
+        2. ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual behavior
+      description: Reference docs/AGENT_CONTRACT.md, the prototype screen or the acceptance criterion (CA-XX.Y) when it applies.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        - OS: Windows 11 / macOS / Linux
+        - Packaged build or uv run:
+        - Version (te-tengo-captura --version):
+        - Webcam model:
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (te-tengo-captura.log)
+      render: shell
+    validations:
+      required: false

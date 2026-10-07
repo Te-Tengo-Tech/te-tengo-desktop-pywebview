@@ -1,5 +1,9 @@
 # te-tengo-desktop-pywebview
 
+[![CI](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/ci.yml)
+[![Dependency audit](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/audit.yml/badge.svg)](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/audit.yml)
+[![OSV-Scanner](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/osv-scanner.yml/badge.svg)](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/osv-scanner.yml)
+
 **Te Tengo Captura**, the household agent of **Te Tengo**, a system that detects falls of older adults at home. It runs on the household PC, which stays on, and:
 
 - opens the configured USB webcam;
