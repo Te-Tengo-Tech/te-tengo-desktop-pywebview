@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := ayuda
-.PHONY: ayuda instalar modelo camara datasets validar formatear revisar probar
+.PHONY: ayuda instalar modelo camara datasets validar formatear revisar probar empaquetar
 
 ayuda: ## Lists the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -32,3 +32,8 @@ revisar: ## Lint, formatting and types
 
 probar: ## Tests with coverage
 	uv run pytest
+
+empaquetar: ## Builds the one-folder app with PyInstaller into dist/ (needs the model)
+	uv sync --group empaquetado
+	uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
+	./dist/te-tengo-captura/te-tengo-captura --version
