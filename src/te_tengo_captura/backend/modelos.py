@@ -1,5 +1,6 @@
 """Request and response bodies of the agent contract (camelCase JSON, ISO-8601 UTC times)."""
 
+import math
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -65,6 +66,11 @@ class EventoAgente(_Cuerpo):
     @field_serializer("ocurrido_en")
     def _serializar_instante(self, instante: datetime) -> str:
         return iso_utc(instante)
+
+    @field_serializer("parametros")
+    def _serializar_parametros(self, parametros: dict[str, float]) -> dict[str, float]:
+        # JSON has no infinity: a person lying flat can give an infinite width/height ratio.
+        return {nombre: valor for nombre, valor in parametros.items() if math.isfinite(valor)}
 
 
 class EventoRecibido(_Cuerpo):

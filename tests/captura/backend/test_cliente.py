@@ -246,3 +246,17 @@ def test_secretos_para_el_filtro_de_logs(cliente: ClienteBackend) -> None:
     assert cliente.secretos() == [CREDENCIAL]
     cliente.registrar()
     assert cliente.secretos() == [CREDENCIAL, "token-1"]
+
+
+def test_evento_omite_parametros_no_finitos() -> None:
+    evento = EventoAgente(
+        evento_id="0192f6e4-0000-7000-8000-000000000000",
+        tipo=TipoEvento.CAIDA,
+        ocurrido_en=datetime(2026, 10, 7, 15, 4, 31, tzinfo=UTC),
+        parametros={"angulo_grados": 22.1, "razon_ancho_alto": float("inf")},
+    )
+
+    cuerpo = evento.json_api()
+
+    assert cuerpo["parametros"] == {"angulo_grados": 22.1}
+    httpx.Request("POST", "http://api", json=cuerpo)  # serializable without NaN or infinity
