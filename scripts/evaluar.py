@@ -26,7 +26,7 @@ import argparse
 import json
 import sys
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,7 +76,14 @@ def listar_videos(datos: Path = DATOS) -> list[Video]:
 # ------------------------------------------------------------------------------ extraction
 
 
-def _extraer(video: Video, fps: float, modelo: str, modo: str, variante: str, jpeg: bool) -> str:
+def fotogramas_validacion(
+    video: Video, fps: float, modelo: str, modo: str = "video", jpeg: bool = True
+) -> Iterator[tuple[float, Any, Pose | None]]:
+    """The validation pipeline, frame by frame: (instant in s, image sent to MediaPipe, pose).
+
+    Sampling by time at ``fps``, RGB crop, 480p, JPEG quality 80 and MediaPipe in ``modo``.
+    ``scripts/comparar_pipelines.py`` and the parity test check the agent against this.
+    """
     import cv2
 
     from te_tengo_deteccion.pose.service import crear_landmarker, detectar
@@ -85,36 +92,46 @@ def _extraer(video: Video, fps: float, modelo: str, modo: str, variante: str, jp
     landmarker = crear_landmarker(modelo, modo=modo)
     captura = cv2.VideoCapture(str(video.ruta))
     fps_fuente = captura.get(cv2.CAP_PROP_FPS) or 30.0
-    fotogramas: list[list[Any]] = []
-    siguiente, indice, ancho, alto = 0.0, 0, 0, 0
-    while True:
-        ok, imagen = captura.read()
-        if not ok:
-            break
-        instante = indice / fps_fuente
-        indice += 1
-        if instante + 1e-9 < siguiente:
-            continue
-        siguiente += 1 / fps
-        if video.recorte:
-            x, y, w, h = video.recorte
-            imagen = imagen[y : y + h, x : x + w]
-        alto, ancho = imagen.shape[:2]
-        if alto > ALTO_MAX:
-            imagen = cv2.resize(imagen, (round(ancho * ALTO_MAX / alto / 2) * 2, ALTO_MAX))
+    siguiente, indice = 0.0, 0
+    try:
+        while True:
+            ok, imagen = captura.read()
+            if not ok:
+                break
+            instante = indice / fps_fuente
+            indice += 1
+            if instante + 1e-9 < siguiente:
+                continue
+            siguiente += 1 / fps
+            if video.recorte:
+                x, y, w, h = video.recorte
+                imagen = imagen[y : y + h, x : x + w]
             alto, ancho = imagen.shape[:2]
-        if jpeg:  # same as the agent: JPEG at quality 80
-            _, comprimida = cv2.imencode(".jpg", imagen, [cv2.IMWRITE_JPEG_QUALITY, CALIDAD_JPEG])
-            imagen = cv2.imdecode(comprimida, cv2.IMREAD_COLOR)  # type: ignore[assignment]
-        pose = detectar(landmarker, imagen, round(instante * 1000) if modo == "video" else None)
+            if alto > ALTO_MAX:
+                imagen = cv2.resize(imagen, (round(ancho * ALTO_MAX / alto / 2) * 2, ALTO_MAX))
+            if jpeg:  # same as the agent: JPEG at quality 80
+                _, comprimida = cv2.imencode(
+                    ".jpg", imagen, [cv2.IMWRITE_JPEG_QUALITY, CALIDAD_JPEG]
+                )
+                imagen = cv2.imdecode(comprimida, cv2.IMREAD_COLOR)  # type: ignore[assignment]
+            ms = round(instante * 1000) if modo == "video" else None
+            yield instante, imagen, detectar(landmarker, imagen, ms)
+    finally:
+        captura.release()
+        landmarker.close()
+
+
+def _extraer(video: Video, fps: float, modelo: str, modo: str, variante: str, jpeg: bool) -> str:
+    fotogramas: list[list[Any]] = []
+    ancho, alto = 0, 0
+    for instante, imagen, pose in fotogramas_validacion(video, fps, modelo, modo, jpeg):
+        alto, ancho = imagen.shape[:2]
         puntos = None
         if pose is not None:
             puntos = [
                 [round(lm.x, 5), round(lm.y, 5), round(lm.visibilidad, 3)] for lm in pose.landmarks
             ]
         fotogramas.append([round(instante, 4), puntos])
-    captura.release()
-    landmarker.close()
     destino = video.cache(variante)
     destino.parent.mkdir(parents=True, exist_ok=True)
     destino.write_text(
