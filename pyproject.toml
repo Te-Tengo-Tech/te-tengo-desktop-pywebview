@@ -17,6 +17,8 @@ dependencies = [
     "platformdirs>=4",
     "av>=18.1.0",
     "pywebview>=6.2.1",
+    "pystray>=0.19.5",
+    "pillow>=12.3.0",
 ]
 
 [project.scripts]
@@ -25,7 +27,6 @@ te-tengo-captura = "te_tengo_captura.__main__:main"
 [dependency-groups]
 dev = [
     "mypy>=2.4",
-    "pillow>=12",
     "pre-commit>=4.6",
     "pytest>=9.1",
     "pytest-asyncio>=1.4",
@@ -67,7 +68,7 @@ files = ["src", "tests", "scripts"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["mediapipe.*", "cv2.*"]
+module = ["mediapipe.*", "cv2.*", "pystray.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- Pytest

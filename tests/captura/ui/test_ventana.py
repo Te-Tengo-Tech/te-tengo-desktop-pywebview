@@ -7,6 +7,7 @@ from te_tengo_captura.config import Configuracion
 from te_tengo_captura.estado import Entradas, derivar
 from te_tengo_captura.ui.puente import Puente
 from te_tengo_captura.ui.ventana import ALTO, ANCHO, WEB, VentanaEstado
+from tests.captura.ui.pystray_falso import PystrayFalso
 from tests.captura.ui.webview_falso import WebviewFalso
 
 
@@ -64,6 +65,8 @@ def test_actualiza_la_pagina_solo_cuando_cargo(
 def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     webview: WebviewFalso, configuracion: Configuracion, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    pystray = PystrayFalso()
+    monkeypatch.setitem(sys.modules, "pystray", pystray)
     from te_tengo_captura.ui import arranque
     from te_tengo_captura.ui.aplicacion import ejecutar
 
@@ -73,6 +76,8 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         def __init__(self) -> None:
             self.eventos: list[str] = []
             self.oyentes: list[object] = []
+
+        config = configuracion
 
         def estado(self) -> object:
             return derivar(Entradas(True, True, True, None, 2, 8, "Sala"), configuracion, "1.0.0")
@@ -103,12 +108,26 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     ejecutar(agente)  # type: ignore[arg-type]
     assert webview.iniciado
     assert agente.eventos == ["iniciar", "publicar", "detener"]
-    assert len(agente.oyentes) == 1
+    assert len(agente.oyentes) == 3  # window, tray icon and notifications
     inicio, estado = webview.ventanas
     assert inicio.destruida  # the splash gives way to the status window
     assert inicio.scripts[-1] == "window.ttg && window.ttg.arranqueFin()"
     assert estado.visible
     puente = estado.opciones["js_api"]
     assert puente.estado()["situacion"] == "enviando"
+    bandeja = pystray.iconos[0]
+    assert not bandeja.corriendo  # stopped when the app ended
     puente.cerrar()
     assert not estado.visible
+    assert bandeja.notificaciones == [
+        (
+            "Te Tengo Captura sigue funcionando en segundo plano",
+            "Sigue enviando el video de la cámara. Ábrelo desde su ícono, junto al reloj.",
+        )
+    ]
+    assert bandeja.menu is not None
+    abrir, salir = bandeja.menu.items
+    abrir.accion()
+    assert estado.visible
+    salir.accion()
+    assert estado.destruida
