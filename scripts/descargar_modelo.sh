@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Descarga el modelo MediaPipe Pose Landmarker (lite) en models/.
+# Downloads the MediaPipe Pose Landmarker (lite) model into models/.
 # Fuente: https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker#models
 set -euo pipefail
 

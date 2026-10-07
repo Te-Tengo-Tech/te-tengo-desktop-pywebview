@@ -17,7 +17,7 @@ htmlcov/
 # Entorno y secretos
 .env
 
-# Modelo de MediaPipe (se descarga con `make modelo`)
+# MediaPipe model (downloaded with `make modelo`)
 models/*.task
 
 # Sistema
@@ -25,6 +25,6 @@ models/*.task
 .idea/
 .vscode/
 
-# Datasets de validación (se descargan con scripts/descargar_datasets.py)
+# Validation datasets (downloaded with scripts/descargar_datasets.py)
 datos/
 resultados/

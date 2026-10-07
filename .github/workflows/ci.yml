@@ -16,7 +16,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - name: Librerías del sistema para MediaPipe en Linux (OpenGL ES y EGL, aun en CPU)
+      - name: System libraries for MediaPipe on Linux (OpenGL ES and EGL, even on CPU)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgles2 libegl1 ffmpeg
       - name: Instalar dependencias
         run: uv sync --locked
