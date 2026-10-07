@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from detection_worker.clasificacion.estados import TipoEvento
+from te_tengo_deteccion.clasificacion.estados import TipoEvento
 
 
 class EventoDetectado(BaseModel):

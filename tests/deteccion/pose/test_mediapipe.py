@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from detection_worker.pose.service import MediaPipeEstimador
+from te_tengo_deteccion.pose.service import MediaPipeEstimador
 
 MODELO = Path("models/pose_landmarker_lite.task")
 

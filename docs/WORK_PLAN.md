@@ -29,7 +29,7 @@ The agent is built task by task from this checklist. An agent working autonomous
 ## Tasks
 
 ### Foundation
-- [ ] **T01 Split the code into the detection core and the app** (ADR 0007).
+- [x] **T01 Split the code into the detection core and the app** (ADR 0007).
   - Move `clasificacion/`, `pose/`, the clip buffer (`ingesta/buffer.py`) and the encoder (`codificar_mp4`) into `src/te_tengo_deteccion/` without changing their logic; the existing tests move with them and must pass unchanged in substance.
   - Create the empty `src/te_tengo_captura/` package and a test that fails if `te_tengo_deteccion` imports `te_tengo_captura`, `webview`, `pystray` or `httpx`.
   - Update `scripts/evaluar.py`, `probar_camara.py` and `visor.py` imports; they must keep working.

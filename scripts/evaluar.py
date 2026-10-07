@@ -32,9 +32,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from detection_worker.clasificacion.estados import ClasificadorCinematico, TipoEvento
-from detection_worker.clasificacion.umbrales import Umbrales
-from detection_worker.pose.schemas import Landmark, Pose
+from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico, TipoEvento
+from te_tengo_deteccion.clasificacion.umbrales import Umbrales
+from te_tengo_deteccion.pose.schemas import Landmark, Pose
 
 DATOS, RESULTADOS = Path("datos"), Path("resultados")
 ALTO_MAX = 480
@@ -79,7 +79,7 @@ def listar_videos(datos: Path = DATOS) -> list[Video]:
 def _extraer(video: Video, fps: float, modelo: str, modo: str, variante: str, jpeg: bool) -> str:
     import cv2
 
-    from detection_worker.pose.service import crear_landmarker, detectar
+    from te_tengo_deteccion.pose.service import crear_landmarker, detectar
 
     # One landmarker per video: in VIDEO mode, timestamps must increase within the video.
     landmarker = crear_landmarker(modelo, modo=modo)

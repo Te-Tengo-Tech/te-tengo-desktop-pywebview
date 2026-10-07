@@ -1,7 +1,7 @@
 import pytest
 
-from detection_worker.clasificacion.medicion import MedidorCinematico
-from detection_worker.pose.schemas import Landmark, Pose
+from te_tengo_deteccion.clasificacion.medicion import MedidorCinematico
+from te_tengo_deteccion.pose.schemas import Landmark, Pose
 from tests import fabricas
 
 

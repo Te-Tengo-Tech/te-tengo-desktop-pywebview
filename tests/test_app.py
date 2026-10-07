@@ -3,10 +3,10 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from detection_worker import __version__
-from detection_worker.clasificacion.umbrales import Umbrales
 from detection_worker.config import ConfiguracionInvalidaError, Settings, cargar_settings
 from detection_worker.ingesta import protocolo
 from detection_worker.main import Componentes, create_app
+from te_tengo_deteccion.clasificacion.umbrales import Umbrales
 from tests import fabricas
 from tests.conftest import TOKEN_INGESTA, AlmacenFalso, EstimadorFalso, PublicadorFalso
 

@@ -20,6 +20,9 @@ dependencies = [
     "uvicorn[standard]>=0.54",
 ]
 
+[project.scripts]
+te-tengo-captura = "te_tengo_captura.__main__:main"
+
 [dependency-groups]
 dev = [
     "httpx2>=2.13",
@@ -38,7 +41,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/detection_worker"]
+packages = ["src/te_tengo_deteccion", "src/te_tengo_captura", "src/detection_worker"]
 
 # ---------------------------------------------------------------- Ruff
 [tool.ruff]
@@ -52,7 +55,7 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "N", "ASYNC", "RUF", "PT"]
 ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["detection_worker"]
+known-first-party = ["te_tengo_deteccion", "te_tengo_captura", "detection_worker"]
 
 # ---------------------------------------------------------------- Mypy
 [tool.mypy]
@@ -70,9 +73,9 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-ra --strict-markers --cov=detection_worker --cov-report=term-missing"
+addopts = "-ra --strict-markers --cov=te_tengo_deteccion --cov=te_tengo_captura --cov=detection_worker --cov-report=term-missing"
 markers = ["integracion: requires the downloaded MediaPipe model"]
 
 [tool.coverage.run]
 branch = true
-source = ["detection_worker"]
+source = ["te_tengo_deteccion", "te_tengo_captura", "detection_worker"]

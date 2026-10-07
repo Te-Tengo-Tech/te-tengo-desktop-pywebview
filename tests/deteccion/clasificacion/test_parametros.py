@@ -2,8 +2,8 @@ import math
 
 import pytest
 
-from detection_worker.clasificacion import parametros
-from detection_worker.pose.schemas import Landmark, Pose, Punto
+from te_tengo_deteccion.clasificacion import parametros
+from te_tengo_deteccion.pose.schemas import Landmark, Pose, Punto
 from tests import fabricas
 
 

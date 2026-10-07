@@ -12,7 +12,7 @@ angles and proportions.
 import math
 from dataclasses import dataclass
 
-from detection_worker.pose.schemas import Indice, Pose, Punto
+from te_tengo_deteccion.pose.schemas import Indice, Pose, Punto
 
 
 @dataclass(frozen=True, slots=True)

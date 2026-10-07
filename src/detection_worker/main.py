@@ -12,8 +12,8 @@ from detection_worker.clips.service import AlmacenClips, S3AlmacenClips
 from detection_worker.config import Settings, cargar_settings
 from detection_worker.eventos.client import BackendPublicador, PublicadorEventos
 from detection_worker.ingesta.router import router as ingesta_router
-from detection_worker.pose.service import EstimadorPose, MediaPipeEstimador
 from detection_worker.salud.router import router as salud_router
+from te_tengo_deteccion.pose.service import EstimadorPose, MediaPipeEstimador
 
 logger = logging.getLogger(__name__)
 

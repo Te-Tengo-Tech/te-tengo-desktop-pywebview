@@ -2,11 +2,11 @@ from collections.abc import Iterator
 
 import pytest
 
-from detection_worker.clasificacion.umbrales import Umbrales
 from detection_worker.config import Settings
 from detection_worker.eventos.schemas import EventoDetectado
-from detection_worker.ingesta.buffer import Clip
-from detection_worker.pose.schemas import Pose
+from te_tengo_deteccion.clasificacion.umbrales import Umbrales
+from te_tengo_deteccion.clips.buffer import Clip
+from te_tengo_deteccion.pose.schemas import Pose
 
 TOKEN_INGESTA = "token-de-prueba"
 
