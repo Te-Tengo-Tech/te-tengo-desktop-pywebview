@@ -1,14 +1,22 @@
 """Entry point: ``uv run te-tengo-captura``."""
 
 import argparse
+import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from te_tengo_captura import __version__, config
+from te_tengo_captura import __version__, config, rutas
+from te_tengo_captura.agente import Agente
+from te_tengo_captura.backend.cliente import ClienteBackend
+from te_tengo_captura.backend.falso import URL_API, BackendFalso
+from te_tengo_captura.captura.fuentes import FuenteArchivo, FuenteVideo, FuenteWebcam
+from te_tengo_captura.captura.pose import EstimadorMediaPipe, ruta_modelo_predeterminada
+
+logger = logging.getLogger(__name__)
 
 
-def _argumentos(argv: Sequence[str] | None) -> argparse.Namespace:
+def argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="te-tengo-captura", description="Te Tengo Captura")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
@@ -16,16 +24,65 @@ def _argumentos(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         help=f"installation file (default: {config.ruta_predeterminada()})",
     )
+    parser.add_argument(
+        "--backend-falso",
+        action="store_true",
+        help="use the in-memory backend instead of the API (local runs and demos)",
+    )
+    parser.add_argument(
+        "--video", type=Path, help="play a video file in a loop instead of the webcam (demos)"
+    )
+    parser.add_argument("--modelo", type=Path, help="MediaPipe pose model (.task)")
+    parser.add_argument("--datos", type=Path, help="data directory (outbox and pending clips)")
     return parser.parse_args(argv)
 
 
+def construir_agente(args: argparse.Namespace, configuracion: config.Configuracion) -> Agente:
+    credencial = configuracion.credencial_instalacion.get_secret_value()
+    if args.backend_falso:
+        falso = BackendFalso(credencial=credencial)
+        cliente = ClienteBackend(
+            URL_API,
+            credencial,
+            configuracion.camara.nombre_habitacion,
+            __version__,
+            transporte=falso.transporte(),
+        )
+    else:
+        cliente = ClienteBackend(
+            configuracion.api_url, credencial, configuracion.camara.nombre_habitacion, __version__
+        )
+    fuente: FuenteVideo = (
+        FuenteArchivo(args.video, repetir=True, tiempo_real=True)
+        if args.video
+        else FuenteWebcam(configuracion.webcam.indice)
+    )
+    estimador = EstimadorMediaPipe(
+        args.modelo or ruta_modelo_predeterminada(), configuracion.clasificacion.visibilidad_min
+    )
+    return Agente(
+        configuracion,
+        cliente,
+        fuente,
+        estimador,
+        args.datos or rutas.datos(),
+        __version__,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _argumentos(argv)
+    args = argumentos(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     try:
-        config.cargar(args.config)
-    except config.ConfiguracionInvalidaError as error:
+        configuracion = config.cargar(args.config)
+        agente = construir_agente(args, configuracion)
+    except (config.ConfiguracionInvalidaError, FileNotFoundError) as error:
         print(error, file=sys.stderr)
         return 2
+
+    from te_tengo_captura.ui.aplicacion import ejecutar
+
+    ejecutar(agente)
     return 0
 
 

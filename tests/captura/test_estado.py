@@ -176,6 +176,7 @@ def test_json_para_la_interfaz(configuracion: Configuracion) -> None:
         "installed": "22/09/2026",
     }
     assert datos["situacion"] == "sin_internet"
+    assert datos["listo"] is True
     assert datos["health"]["accion"] == {
         "act": "retryNow",
         "texto": "Reintentar ahora",

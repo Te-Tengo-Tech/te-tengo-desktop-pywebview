@@ -74,7 +74,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - Keep H.264, even dimensions and `yuv420p`; test that the output opens and has the expected frame count.
 
 ### Desktop UI
-- [ ] **T11 Status window** (screens 01–05).
+- [x] **T11 Status window** (screens 01–05).
   - `ui/web/`: `index.html`, `app.css` (tokens and components from the prototype's `app.css`, only what the window uses), `app.js` (port of `scrEstado`, `health`, `camState`, `roomSVG`, the icon set and the brand SVGs from `core.js`), fonts copied from `docs/references/desktop-prototype/fonts/` (OFL).
   - Window 960 × 640, not resizable, frameless with the prototype's 36 px title bar (minimize, disabled maximize, close). Close and minimize hide to the tray; they never stop the agent.
   - Bridge (`js_api`): `estado()`, `minimizar()`, `cerrar()`, `buscarWebcam()`, `reintentarAhora()`; Python pushes updates with `window.evaluate_js("ttg.actualizar(...)")`.

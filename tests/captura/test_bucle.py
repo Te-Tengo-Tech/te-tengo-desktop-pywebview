@@ -181,7 +181,12 @@ def test_webcam_desconectada_no_produce_eventos(umbrales: Umbrales) -> None:
     escenario.fuente.conectada = False
     assert escenario.correr(20) == []
     assert not escenario.bucle.webcam_conectada
+    escenario.fuente.conectada = True
     escenario.bucle.buscar_webcam()
+    aperturas = escenario.fuente.aperturas
+    escenario.correr(1)  # the reopen happens on the next step, not right away
+    assert escenario.fuente.aperturas == aperturas + 1
+    assert escenario.bucle.webcam_conectada
 
 
 def test_actualizar_umbrales_reinicia_el_clasificador(umbrales: Umbrales) -> None:
@@ -228,3 +233,10 @@ def test_estimador_mediapipe_sin_personas() -> None:
 def test_estimador_mediapipe_sin_modelo(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         EstimadorMediaPipe(tmp_path / "no.task")
+
+
+def test_sin_permiso_la_webcam_no_figura_desconectada(umbrales: Umbrales) -> None:
+    escenario = Escenario(umbrales, [])
+    escenario.permiso.valor = False
+    escenario.correr(3)
+    assert escenario.bucle.webcam_conectada

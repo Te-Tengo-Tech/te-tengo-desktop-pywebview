@@ -113,6 +113,8 @@ class EstadoAgente:
             "retry": e.segundos_para_reintento,
             "ago": e.segundos_desde_envio,
             "toast": None,
+            # False until the first heartbeat answers; the UI shows no transition notices before.
+            "listo": e.en_linea is not None,
             "situacion": self.situacion.value,
             "cam": asdict(self.camara),
             "health": asdict(self.aviso),
