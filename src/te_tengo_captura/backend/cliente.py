@@ -73,6 +73,8 @@ class ClienteBackend:
         # A separate client without base headers for the pre-signed storage URL.
         self._almacen = httpx.Client(timeout=TIMEOUT_SUBIDA, transport=transporte)
         self._candado = threading.Lock()
+        # Heartbeat, outbox and thresholds share the client: only one of them registers at a time.
+        self._candado_registro = threading.Lock()
         self._registro: Registro | None = None
 
     @property
@@ -145,14 +147,22 @@ class ClienteBackend:
     # ------------------------------------------------------------------ internals
 
     def _autenticado(self, metodo: str, ruta: str, json: Any = None) -> httpx.Response:
-        token = self._token() or self.registrar().token
+        token = self._token() or self._registrar_si_hace_falta(rechazado=None)
         try:
             return self._enviar(metodo, ruta, json=json, token=token)
         except NoAutorizadoError:
             # The token expired or was revoked: register again once (contract, "Token expiry").
             logger.info("Token rechazado en %s; se registra de nuevo", ruta)
-            token = self.registrar().token
+            token = self._registrar_si_hace_falta(rechazado=token)
             return self._enviar(metodo, ruta, json=json, token=token)
+
+    def _registrar_si_hace_falta(self, rechazado: str | None) -> str:
+        """Registers unless another thread already got a token other than the rejected one."""
+        with self._candado_registro:
+            actual = self._token()
+            if actual is not None and actual != rechazado:
+                return actual
+            return self.registrar().token
 
     def _token(self) -> str | None:
         with self._candado:

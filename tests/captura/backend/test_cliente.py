@@ -260,3 +260,15 @@ def test_evento_omite_parametros_no_finitos() -> None:
 
     assert cuerpo["parametros"] == {"angulo_grados": 22.1}
     httpx.Request("POST", "http://api", json=cuerpo)  # serializable without NaN or infinity
+
+
+def test_hilos_concurrentes_registran_una_sola_vez(
+    backend: BackendFalso, cliente: ClienteBackend
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=4) as hilos:
+        estados = list(hilos.map(lambda _: cliente.estado_captura(), range(8)))
+
+    assert all(estado.captura_permitida for estado in estados)
+    assert backend.registros == 1
