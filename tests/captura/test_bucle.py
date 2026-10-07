@@ -240,3 +240,44 @@ def test_sin_permiso_la_webcam_no_figura_desconectada(umbrales: Umbrales) -> Non
     escenario.permiso.valor = False
     escenario.correr(3)
     assert escenario.bucle.webcam_conectada
+
+
+def test_un_error_inesperado_reinicia_la_captura_y_se_muestra_como_problema(
+    umbrales: Umbrales, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from te_tengo_captura.captura import bucle as modulo
+
+    monkeypatch.setattr(modulo, "ESPERA_ERROR_INICIAL_S", 0.01)
+    escenario = Escenario(umbrales, [])
+    fallos = {"n": 2}
+    vistos: list[bool] = []
+    recuperada = threading.Event()
+    original = escenario.estimador.estimar
+
+    def estimar(imagen: Imagen, instante_ms: int) -> Pose | None:
+        if fallos["n"] > 0:
+            fallos["n"] -= 1
+            raise RuntimeError("MediaPipe falló")
+        vistos.append(escenario.bucle.webcam_conectada)
+        recuperada.set()
+        return original(imagen, instante_ms)
+
+    escenario.estimador.estimar = estimar  # type: ignore[method-assign]
+    hilo = HiloCaptura(escenario.bucle)
+    hilo.iniciar()
+    assert recuperada.wait(5)
+    hilo.detener()
+    assert hilo.errores == 2
+    assert escenario.estimador.reinicios >= 2  # the tracker was reset after each error
+    assert escenario.fuente.aperturas >= 3  # the webcam was reopened
+    assert vistos[0] is False  # reported as a problem until a frame goes through
+    assert escenario.bucle.webcam_conectada
+
+
+def test_mientras_falla_la_webcam_figura_desconectada(umbrales: Umbrales) -> None:
+    escenario = Escenario(umbrales, [])
+    escenario.correr(1)
+    escenario.bucle.reiniciar_tras_error()
+    assert not escenario.bucle.webcam_conectada
+    escenario.correr(2)
+    assert escenario.bucle.webcam_conectada

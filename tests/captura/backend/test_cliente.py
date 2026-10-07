@@ -240,3 +240,9 @@ def test_no_registra_secretos_en_los_logs(
     assert "token-" not in texto
     assert "firma=secreta" not in texto
     cliente.cerrar()
+
+
+def test_secretos_para_el_filtro_de_logs(cliente: ClienteBackend) -> None:
+    assert cliente.secretos() == [CREDENCIAL]
+    cliente.registrar()
+    assert cliente.secretos() == [CREDENCIAL, "token-1"]

@@ -6,7 +6,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from te_tengo_captura import __version__, autoinicio, config, rutas
+from te_tengo_captura import __version__, autoinicio, config, registro, rutas
 from te_tengo_captura.agente import Agente
 from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.falso import URL_API, BackendFalso
@@ -35,6 +35,7 @@ def argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--modelo", type=Path, help="MediaPipe pose model (.task)")
     parser.add_argument("--datos", type=Path, help="data directory (outbox and pending clips)")
+    parser.add_argument("--logs", type=Path, help="log directory")
     return parser.parse_args(argv)
 
 
@@ -81,7 +82,11 @@ def ejecutar_aplicacion(agente: Agente, instancia_abrir: dict[str, Callable[[], 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = argumentos(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    secretos: list[Callable[[], list[str]]] = []
+    ruta_log = registro.configurar(
+        args.logs or rutas.logs(), lambda: [s for fuente in secretos for s in fuente()]
+    )
+    logger.info("Te Tengo Captura %s; registro en %s", __version__, ruta_log)
     # A second launch shows the running agent's window instead of starting another agent.
     instancia = Instancia(args.datos or rutas.datos())
     abrir: dict[str, Callable[[], None]] = {}
@@ -90,8 +95,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     try:
         configuracion = config.cargar(args.config)
+        secretos.append(lambda: [configuracion.credencial_instalacion.get_secret_value()])
         agente = construir_agente(args, configuracion)
+        secretos.append(agente.secretos)
     except (config.ConfiguracionInvalidaError, FileNotFoundError) as error:
+        logger.error("%s", error)
         print(error, file=sys.stderr)
         instancia.liberar()
         return 2

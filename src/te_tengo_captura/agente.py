@@ -90,6 +90,9 @@ class Agente:
         self._cliente.cerrar()
         logger.info("Te Tengo Captura detenido")
 
+    def secretos(self) -> list[str]:
+        return self._cliente.secretos()
+
     # ------------------------------------------------------------------ state
 
     def suscribir(self, oyente: Callable[[EstadoAgente], None]) -> None:

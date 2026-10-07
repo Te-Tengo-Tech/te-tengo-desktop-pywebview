@@ -79,6 +79,11 @@ class ClienteBackend:
     def registro(self) -> Registro | None:
         return self._registro
 
+    def secretos(self) -> list[str]:
+        """Values that must never appear in a log (for the log filter)."""
+        token = self._token()
+        return [self._credencial, *([token] if token else [])]
+
     # ------------------------------------------------------------------ contract
 
     def registrar(self) -> Registro:
