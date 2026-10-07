@@ -47,7 +47,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - `ClienteBackend` (httpx, `Api-Version: 1`): `registrar`, `estado_captura`, `senal`, `publicar_evento`, `solicitar_subida_clip`, `subir_clip`, `configuracion`.
   - Re-registers on `401` (not `CREDENCIAL_INVALIDA`); maps `ProblemDetail.codigo` to typed exceptions; timeouts and no secrets in logs.
   - `BackendFalso` (in-memory, on `httpx.MockTransport`) that implements the whole contract; it is reused by every later test and by `--backend-falso` for local runs without the API.
-- [ ] **T05 Outbox for events and clips.**
+- [x] **T05 Outbox for events and clips.**
   - SQLite in the platform data directory: pending events and clip files, sent with exponential backoff (cap and jitter are implementation choices; document them).
   - Idempotent resend by `eventoId`; survives restarts; clip files deleted after a successful upload.
   - Tests: offline → online delivers in order; duplicate response `200` counts as delivered.
