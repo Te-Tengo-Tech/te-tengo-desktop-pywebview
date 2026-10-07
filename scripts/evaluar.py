@@ -141,8 +141,13 @@ def _extraer(video: Video, fps: float, modelo: str, modo: str, variante: str, jp
     return video.nombre
 
 
-def nombre_variante(modelo: Path, modo: str, fps: float, jpeg: bool) -> str:
+def nombre_variante(
+    modelo: Path, modo: str, fps: float, jpeg: bool, pipeline: str = "validacion"
+) -> str:
+    """Cache folder. ``pipeline="agente"``: poses produced by the desktop agent's capture loop
+    (``scripts/comparar_pipelines.py --guardar``) instead of ``extraer``."""
     sufijo = "-jpeg" if jpeg else ""
+    sufijo += "" if pipeline == "validacion" else f"-{pipeline}"
     return f"{modelo.stem.removeprefix('pose_landmarker_')}-{modo}-{fps:g}fps{sufijo}"
 
 
@@ -317,6 +322,12 @@ def main() -> int:
         )
     p_ext.add_argument("--procesos", type=int, default=6)
     p_ext.add_argument("--rehacer", action="store_true")
+    p_eval.add_argument(
+        "--pipeline",
+        choices=["validacion", "agente"],
+        default="validacion",
+        help="Poses de `extraer` o del bucle del agente (comparar_pipelines.py --guardar)",
+    )
     p_eval.add_argument("--velocidad-min", type=float, help="Umbral fijo (sin calibrar)")
     p_eval.add_argument("--barrer", nargs=3, type=float, metavar=("DESDE", "HASTA", "PASO"))
     p_eval.add_argument("--persistencia", type=float, default=None, help="persistencia_erguido_s")
@@ -329,7 +340,8 @@ def main() -> int:
             "No hay videos. Ejecuta: uv run python scripts/descargar_datasets.py", file=sys.stderr
         )
         return 1
-    variante = nombre_variante(args.modelo, args.modo, args.fps, not args.sin_jpeg)
+    pipeline = getattr(args, "pipeline", "validacion")
+    variante = nombre_variante(args.modelo, args.modo, args.fps, not args.sin_jpeg, pipeline)
     if args.comando == "extraer":
         jpeg = not args.sin_jpeg
         extraer(videos, args.fps, args.modelo, args.modo, jpeg, args.procesos, args.rehacer)
@@ -340,7 +352,12 @@ def main() -> int:
     faltan = [v.nombre for v in videos if not v.cache(variante).exists()]
     if faltan:
         print(
-            f"Faltan poses de {len(faltan)} videos. Ejecuta primero: evaluar.py extraer",
+            f"Faltan poses de {len(faltan)} videos. Ejecuta primero: "
+            + (
+                "evaluar.py extraer"
+                if pipeline == "validacion"
+                else "comparar_pipelines.py --todos --guardar"
+            ),
             file=sys.stderr,
         )
         return 1

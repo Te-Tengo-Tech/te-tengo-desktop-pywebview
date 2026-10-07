@@ -18,9 +18,11 @@ Examples:
 """
 
 import argparse
+import json
 import sys
 import tempfile
 from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -51,6 +53,7 @@ CLAVE = (
 class Registro:
     """One frame as MediaPipe and the classifier saw it."""
 
+    instante: float
     instante_ms: int
     forma: tuple[int, ...]
     tipo: str
@@ -58,6 +61,19 @@ class Registro:
     visibilidades: tuple[float, ...]
     fase: str
     eventos: tuple[str, ...]
+    puntos: list[list[float]] | None  # landmarks rounded as in the cache of evaluar.py
+
+    @property
+    def clave(self) -> tuple[Any, ...]:
+        """What must match between paths: the poses as stored for the validation and the
+        classifier's phase and events."""
+        return (self.instante_ms, self.forma, self.puntos, self.fase, self.eventos)
+
+
+def _puntos(pose: Pose | None) -> list[list[float]] | None:
+    if pose is None:
+        return None
+    return [[round(lm.x, 5), round(lm.y, 5), round(lm.visibilidad, 3)] for lm in pose.landmarks]
 
 
 def _visibilidades(pose: Pose | None) -> tuple[float, ...]:
@@ -87,6 +103,7 @@ def por_validacion(
         eventos = clasificador.actualizar(t, _redondeada(pose))
         registros.append(
             Registro(
+                t,
                 round(instante * 1000),
                 tuple(imagen.shape),
                 f"{imagen.dtype} BGR",
@@ -94,6 +111,7 @@ def por_validacion(
                 _visibilidades(pose),
                 clasificador.fase.value,
                 tuple(e.tipo.value for e in eventos),
+                _puntos(pose),
             )
         )
     return registros
@@ -182,9 +200,19 @@ def por_agente(
             ms, forma, tipo, pose = registrador.vistos[-1]
             fase = bucle._clasificador.fase.value
             nombres = tuple(e.tipo.value for e in eventos)
-            registros.append(
-                Registro(ms, forma, tipo, pose is not None, _visibilidades(pose), fase, nombres)
+            vis = _visibilidades(pose)
+            registro = Registro(
+                round(ms / 1000, 4),
+                ms,
+                forma,
+                tipo,
+                pose is not None,
+                vis,
+                fase,
+                nombres,
+                _puntos(pose),
             )
+            registros.append(registro)
     finally:
         bucle.cerrar()
     return registros
@@ -219,6 +247,16 @@ def recodificar_mp4v(video: evaluar.Video, destino: Path) -> Path:
 # ------------------------------------------------------------------ report
 
 
+def guardar_poses(video: evaluar.Video, variante: str, registros: list[Registro]) -> None:
+    """Stores the agent's poses in the cache format of ``evaluar.py`` (``--pipeline agente``)."""
+    alto, ancho = registros[-1].forma[:2] if registros else (0, 0)
+    fotogramas = [[r.instante, r.puntos] for r in registros]
+    destino = video.cache(variante)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    datos = {"fps": 8.0, "ancho": ancho, "alto": alto, "fotogramas": fotogramas}
+    destino.write_text(json.dumps(datos), encoding="utf-8")
+
+
 def _texto(r: Registro | None) -> str:
     if r is None:
         return "—"
@@ -227,66 +265,93 @@ def _texto(r: Registro | None) -> str:
     return f"{'x'.join(map(str, r.forma))} {r.tipo} {vis:<29} {r.fase}{eventos}"
 
 
-def comparar(nombre: str, caminos: dict[str, list[Registro]], resumen: bool) -> bool:
-    base = caminos["validacion"]
+def comparar(nombre: str, caminos: dict[str, list[Registro]], resumen: bool) -> tuple[bool, str]:
+    """Whether the agent matches the validation, and the report of the video."""
+    base = [r.clave for r in caminos["validacion"]]
     iguales = True
-    print(f"\n== {nombre}")
+    lineas = [f"== {nombre}"]
     for camino, registros in caminos.items():
         poses = sum(r.pose for r in registros)
         eventos = [(r.instante_ms, e) for r in registros for e in r.eventos]
-        mismos = [(r.instante_ms, r.pose, r.fase, r.eventos) for r in registros] == [
-            (r.instante_ms, r.pose, r.fase, r.eventos) for r in base
-        ]
+        mismos = [r.clave for r in registros] == base
         iguales = iguales and (mismos or camino == "agente-mp4v")
         marca = "" if camino == "validacion" else (" = validacion" if mismos else " ≠ validacion")
-        print(f"  {camino:<11} pose en {poses}/{len(registros)} · eventos {eventos}{marca}")
-    if resumen:
-        return iguales
-    filas = max(len(r) for r in caminos.values())
-    print(f"  {'ms':>6} | " + " | ".join(caminos))
-    for i in range(filas):
-        actuales = [r[i] if i < len(r) else None for r in caminos.values()]
-        ms = next(r.instante_ms for r in actuales if r is not None)
-        claves = {
-            None if r is None else (r.instante_ms, r.pose, r.fase, r.eventos) for r in actuales
-        }
-        distinto = len(claves) > 1
-        print(f"{'*' if distinto else ' '} {ms:>6} | " + " | ".join(_texto(r) for r in actuales))
-    return iguales
+        lineas.append(f"  {camino:<11} pose en {poses}/{len(registros)} · eventos {eventos}{marca}")
+    if not resumen:
+        lineas.append(f"  {'ms':>6} | " + " | ".join(caminos))
+        for i in range(max(len(r) for r in caminos.values())):
+            actuales = [r[i] if i < len(r) else None for r in caminos.values()]
+            ms = next(r.instante_ms for r in actuales if r is not None)
+            distinto = len({None if r is None else r.clave for r in actuales}) > 1
+            fila = " | ".join(_texto(r) for r in actuales)
+            lineas.append(f"{'*' if distinto else ' '} {ms:>6} | {fila}")
+    return iguales, "\n".join(lineas)
+
+
+def comparar_video(
+    video: evaluar.Video, modelo: Path, recodificado: bool, resumen: bool, guardar: str | None
+) -> tuple[bool, str]:
+    umbrales = Umbrales(**UMBRALES_CALIBRADOS)  # the agent's thresholds without overrides
+    caminos = {
+        "validacion": por_validacion(video, modelo, umbrales),
+        "agente": por_agente(video.ruta, video.recorte, modelo, umbrales),
+    }
+    if recodificado:
+        with tempfile.TemporaryDirectory() as temporal:
+            clip = recodificar_mp4v(video, Path(temporal) / f"{video.nombre}-rgb.mp4")
+            caminos["agente-mp4v"] = por_agente(clip, None, modelo, umbrales)
+    if guardar:
+        guardar_poses(video, guardar, caminos["agente"])
+    return comparar(video.nombre, caminos, resumen)
 
 
 def main() -> int:
     a = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    a.add_argument("videos", nargs="+", help="Nombres como en evaluar.py (fall-01, adl-01, …)")
+    a.add_argument("videos", nargs="*", help="Nombres como en evaluar.py (fall-01, adl-01, …)")
+    a.add_argument("--todos", action="store_true", help="Todos los videos de datos/ (resumen)")
     a.add_argument("--modelo", type=Path, default=Path("models/pose_landmarker_lite.task"))
     a.add_argument("--recodificado", action="store_true", help="Añade el clip recortado con mp4v")
     a.add_argument("--resumen", action="store_true", help="Solo el resumen de cada video")
+    a.add_argument(
+        "--guardar",
+        action="store_true",
+        help="Guarda las poses del agente para `evaluar.py evaluar --pipeline agente`",
+    )
+    a.add_argument("--procesos", type=int, default=6)
     args = a.parse_args()
     if not args.modelo.is_file():
         print(f"Falta el modelo {args.modelo}. Ejecuta: make modelo", file=sys.stderr)
         return 1
-    videos = {v.nombre: v for v in evaluar.listar_videos()}
-    faltan = [n for n in args.videos if n not in videos]
-    if faltan:
-        print(f"No están en datos/: {', '.join(faltan)}", file=sys.stderr)
+    todos = {v.nombre: v for v in evaluar.listar_videos()}
+    nombres = list(todos) if args.todos else args.videos
+    faltan = [n for n in nombres if n not in todos]
+    if not nombres or faltan:
+        print(f"No están en datos/: {', '.join(faltan) or 'ningún video'}", file=sys.stderr)
         return 1
-    umbrales = Umbrales(**UMBRALES_CALIBRADOS)  # the agent's thresholds without overrides
-    iguales = True
-    with tempfile.TemporaryDirectory() as temporal:
-        for nombre in args.videos:
-            video = videos[nombre]
-            caminos = {
-                "validacion": por_validacion(video, args.modelo, umbrales),
-                "agente": por_agente(video.ruta, video.recorte, args.modelo, umbrales),
-            }
-            if args.recodificado:
-                clip = recodificar_mp4v(video, Path(temporal) / f"{nombre}-rgb.mp4")
-                caminos["agente-mp4v"] = por_agente(clip, None, args.modelo, umbrales)
-            iguales = comparar(nombre, caminos, args.resumen) and iguales
-    print("\nLos caminos coinciden." if iguales else "\nLos caminos NO coinciden.")
-    return 0 if iguales else 1
+    resumen = args.resumen or args.todos
+    guardar = (
+        evaluar.nombre_variante(args.modelo, "video", 8.0, True, "agente") if args.guardar else None
+    )
+    distintos = []
+    with ProcessPoolExecutor(args.procesos) as grupo:
+        tareas = [
+            grupo.submit(comparar_video, todos[n], args.modelo, args.recodificado, resumen, guardar)
+            for n in nombres
+        ]
+        for nombre, tarea in zip(nombres, tareas, strict=True):
+            iguales, texto = tarea.result()
+            print(texto, flush=True)
+            if not iguales:
+                distintos.append(nombre)
+    print(
+        f"\nEl agente coincide con la validación en {len(nombres) - len(distintos)} "
+        f"de {len(nombres)} videos."
+    )
+    if distintos:
+        print(f"Distintos: {', '.join(distintos)}")
+    return 1 if distintos else 0
 
 
 if __name__ == "__main__":
