@@ -950,7 +950,7 @@ wheels = [
 ]
 
 [[package]]
-name = "te-tengo-service-detection-worker"
+name = "te-tengo-desktop-pywebview"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [

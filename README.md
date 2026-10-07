@@ -1,4 +1,9 @@
-# te-tengo-service-detection-worker
+# te-tengo-desktop-pywebview
+
+**Te Tengo Captura**, el agente de la vivienda. Hoy contiene el **módulo de detección validado** (MediaPipe, clasificación cinemática y clips) y sus herramientas de validación. Ahí se construirá la aplicación de escritorio (pywebview), que **procesará el video en la PC** y enviará solo eventos y clips al backend.
+
+> **Estado de la migración (ADR 0007):** el código nació como servicio en la nube (`te-tengo-service-detection-worker`, con FastAPI e ingesta por WebSocket). El núcleo (`clasificacion/`, `pose/`, búfer y codificación del clip, `eventos/`) se reutiliza tal cual dentro del agente; el servidor de ingesta se retirará cuando el agente esté listo. La solicitud de cambio al charter está pendiente.
+
 
 **Módulo de detección** de Te Tengo, el sistema basado en estimación de pose para la detección de caídas en adultos mayores en su vivienda.
 

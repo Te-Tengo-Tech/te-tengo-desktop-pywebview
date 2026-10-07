@@ -2,7 +2,7 @@
 .PHONY: ayuda instalar env modelo ejecutar camara agente datasets validar formatear revisar probar imagen
 
 PUERTO ?= 8001
-IMAGEN ?= te-tengo-service-detection-worker
+IMAGEN ?= te-tengo-desktop-pywebview
 
 ayuda: ## Lista los comandos disponibles
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'

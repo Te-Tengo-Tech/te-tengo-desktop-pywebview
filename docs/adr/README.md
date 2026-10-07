@@ -10,5 +10,6 @@ Cada decisión importante se registra en un archivo corto con el formato de Mich
 | [0004](0004-umbrales-de-chen.md) | Clasificación por umbrales de Chen et al. (2020) | Aceptada |
 | [0005](0005-uv-ruff-mypy.md) | uv, Ruff y mypy como herramientas del proyecto | Aceptada |
 | [0006](0006-mediapipe-modo-video.md) | MediaPipe en modo VIDEO, un seguimiento por cámara | Aceptada (reemplaza el modo de 0003) |
+| [0007](0007-procesamiento-en-la-vivienda.md) | Procesar el video en la PC de la vivienda (este repositorio pasa a ser el agente de escritorio) | Aceptada por el equipo; solicitud de cambio al charter pendiente |
 
 Nygard, M. (2011, 15 de noviembre). *Documenting architecture decisions*. Cognitect. https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions
