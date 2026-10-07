@@ -6,7 +6,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from te_tengo_captura import __version__, autoinicio, config, registro, rutas
+from te_tengo_captura import __version__, autoinicio, config, registro, rutas, sin_interfaz
 from te_tengo_captura.agente import Agente
 from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.falso import URL_API, BackendFalso
@@ -36,6 +36,11 @@ def argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--modelo", type=Path, help="MediaPipe pose model (.task)")
     parser.add_argument("--datos", type=Path, help="data directory (outbox and pending clips)")
     parser.add_argument("--logs", type=Path, help="log directory")
+    parser.add_argument(
+        "--sin-interfaz",
+        action="store_true",
+        help="run without window or tray until Ctrl+C or SIGTERM (no display: end-to-end tests)",
+    )
     parser.add_argument(
         "--autoprueba",
         action="store_true",
@@ -112,9 +117,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(error, file=sys.stderr)
         instancia.liberar()
         return 2
-    autoinicio.registrar()
     try:
-        ejecutar_aplicacion(agente, abrir)
+        if args.sin_interfaz:
+            # Not the household install: no autostart entry, which would start it with a window.
+            sin_interfaz.ejecutar(agente)
+        else:
+            autoinicio.registrar()
+            ejecutar_aplicacion(agente, abrir)
     finally:
         instancia.liberar()
     return 0

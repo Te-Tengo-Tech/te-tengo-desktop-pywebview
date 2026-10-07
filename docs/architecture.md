@@ -60,7 +60,8 @@ src/te_tengo_captura/
 ├── instancia.py                 single instance (file lock + loopback socket)
 ├── autoinicio.py                per-user Run registry entry on Windows
 ├── registro.py                  rotating logs without secrets
-└── autoprueba.py                --autoprueba: smoke test of a build
+├── autoprueba.py                --autoprueba: smoke test of a build
+└── sin_interfaz.py              --sin-interfaz: the agent without window or tray (end-to-end test)
 ```
 
 ## Flows

@@ -242,7 +242,7 @@ This recipe runs the API, the demo household and the agent on one development ma
 
 ```bash
 ./scripts/generate-keys.sh   # first time only: local RS256 keys in .claves/
-./gradlew bootRun            # profile `local`: starts PostgreSQL and SeaweedFS from compose.yaml
+./gradlew bootRun            # profile `local`: starts PostgreSQL and Floci (local AWS) from compose.yaml
 ```
 
 Wait until `http://localhost:8080/actuator/health` answers `UP`.
@@ -265,14 +265,14 @@ curl -fL -o datos/urfd/fall-01-cam0.mp4 https://fenix.ur.edu.pl/~mkepski/ds/data
 
 You can also run `make datasets` to get both datasets (about 220 MB).
 
-URFD MP4 files have the depth image on the left and the RGB image on the right (`scripts/evaluar.py`, `listar_videos`). The validation uses only the RGB half (`--recorte 320,0,320,240`). The agent's `--video` plays the whole frame. With the uncropped file, the classifier detects nothing, so crop the RGB half first:
+URFD MP4 files have the depth image on the left and the RGB image on the right (`scripts/evaluar.py`, `listar_videos`). The validation uses only the RGB half (`--recorte 320,0,320,240`). The agent's `--video` plays the whole frame. With the uncropped file, the classifier detects nothing, so crop the RGB half first. Write it **without loss** (FFV1 in an `.avi`): re-encoding it with a lossy codec such as `mp4v` changes the pixels MediaPipe sees, and on `fall-01` that is enough to lose the only frame with the person on the floor, so the agent misses a fall that the validation detects (`scripts/comparar_pipelines.py fall-01 --recodificado` shows it frame by frame).
 
 ```bash
 uv run python - <<'EOF'
 import cv2
 src = cv2.VideoCapture("datos/urfd/fall-01-cam0.mp4")
 fps = src.get(cv2.CAP_PROP_FPS)
-out = cv2.VideoWriter("datos/urfd/fall-01-rgb.mp4", cv2.VideoWriter_fourcc(*"mp4v"), fps, (320, 240))
+out = cv2.VideoWriter("datos/urfd/fall-01-rgb.avi", cv2.VideoWriter_fourcc(*"FFV1"), fps, (320, 240))
 while True:
     ok, frame = src.read()
     if not ok:
@@ -282,10 +282,10 @@ out.release()
 EOF
 ```
 
-The output name does not end in `-cam0.mp4`, so `make validar` ignores it. Check that the cropped clip triggers a fall before starting the agent:
+The output name does not end in `-cam0.mp4`, so `make validar` ignores it. Check that the cropped clip triggers a fall before starting the agent. `make camara` processes the frames exactly as the agent does (8 fps sampling, 480p, JPEG quality 80), so its result is the agent's:
 
 ```bash
-make camara ARGS="--video datos/urfd/fall-01-rgb.mp4 --sin-ventana"   # expect one `caida` event
+make camara ARGS="--video datos/urfd/fall-01-rgb.avi --sin-ventana"   # expect one `caida` event at 4.77 s
 ```
 
 URFD falls are detected in 23 of 30 videos ([validation.md](validation.md), section 3.1). If you pick another video, check it the same way.
@@ -293,8 +293,10 @@ URFD falls are detected in 23 of 30 videos ([validation.md](validation.md), sect
 **4. Agent** (terminal 3, in `te-tengo-desktop-pywebview`):
 
 ```bash
-uv run te-tengo-captura --config config.local.toml --video datos/urfd/fall-01-rgb.mp4
+uv run te-tengo-captura --config config.local.toml --video datos/urfd/fall-01-rgb.avi
 ```
+
+Add `--sin-interfaz` to run it with no window nor tray (for example over SSH, or on a machine without a display). It then logs each state change (`Estado del agente: enviando`) and stops with Ctrl+C.
 
 The video plays in a loop, in real time, instead of the webcam (`[webcam] indice` is ignored). Expected results:
 
@@ -303,7 +305,7 @@ The video plays in a loop, in real time, instead of the webcam (`[webcam] indice
   - `Cámara registrada`;
   - `Evento detectado: caida …`;
   - `Evento … enviado`;
-  - about 6 s later, `Clip del evento … subido` (CA-18.1). The clip goes to SeaweedFS at `http://localhost:8333`.
+  - about 6 s later, `Clip del evento … subido` (CA-18.1). The clip goes to Floci's S3 at `http://localhost:4566` (bucket `te-tengo-clips`).
 - The fall repeats each time the video loops.
 
 **5. Check the result in the API** (terminal 2). Sign in with the demo account defined at the top of `scripts/seed-demo.sh`, then list the cameras and the alerts:
@@ -324,6 +326,27 @@ To try the other states, use the mobile app with the demo account:
 - revoke the consent → screen 03.
 
 You can also stop the API → screen 04.
+
+### Automated: `scripts/e2e.sh` in `te-tengo-general-api`
+
+The same flow runs unattended as a smoke test of the agent ↔ API contract. From `te-tengo-general-api`, with this repository next to it:
+
+```bash
+./scripts/e2e.sh
+```
+
+The script:
+
+- starts its own stack (compose project `tt-e2e`, API on 18080, PostgreSQL on 15432, Floci on 14566), so it runs while the steps above are running;
+- seeds the demo household and registers a push device for the family;
+- crops `fall-03` to its RGB half without loss (FFV1) and holds the last frame 45 s, so the agent also sends `caida_confirmada`;
+- runs this agent with `--sin-interfaz` and checks through the API, as the family, that:
+  - a `CAIDA` alert is created and pushed;
+  - the alert becomes `confirmada`;
+  - its clip becomes `DISPONIBLE` and downloads from Floci;
+- tears everything down, prints PASS or FAIL and the detection → push latency.
+
+It takes about 1.5 minutes, plus the API build the first time. The agent's log is kept in the work directory that the summary prints. The API's `End-to-end` GitHub workflow runs the same script against a branch of this repository (see the API README).
 
 ## 13. Uninstall
 

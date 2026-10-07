@@ -59,6 +59,7 @@ scripts/                  validation and camera test tools (keep them working)
 | `make probar` | `pytest` with coverage |
 | `make formatear` | Format and fix imports |
 | `uv run te-tengo-captura --backend-falso --config config.ejemplo.toml` | Run the agent without the API (needs a display) |
+| `uv run te-tengo-captura --sin-interfaz --config <toml> --video <file>` | Run the agent with no window nor tray (no display needed); the API's `scripts/e2e.sh` uses it |
 | `make empaquetar` | PyInstaller one-folder build |
 | `make camara`, `make validar` | Local tools: webcam test and dataset validation (need a webcam or the datasets) |
 

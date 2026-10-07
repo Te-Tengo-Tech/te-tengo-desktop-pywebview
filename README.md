@@ -64,6 +64,7 @@ uv run te-tengo-captura --backend-falso --config config.ejemplo.toml
 | `--video <file>` | Play a video in a loop instead of the webcam (demos) |
 | `--modelo <path>` | MediaPipe model (default: `models/pose_landmarker_lite.task`, or the one bundled in the build) |
 | `--datos <dir>`, `--logs <dir>` | Data (outbox, pending clips) and log directories |
+| `--sin-interfaz` | Run without window or tray until Ctrl+C or SIGTERM, logging each state change (machines without a display, such as the API's end-to-end test in CI) |
 | `--autoprueba` | Check the model, clip encoding and UI libraries, then exit (smoke test of a build) |
 | `--version` | Print the version |
 
