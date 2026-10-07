@@ -20,7 +20,7 @@ def test_version(capsys: pytest.CaptureFixture[str]) -> None:
 def test_configuracion_invalida_explica_el_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["--config", str(tmp_path / "no-existe.toml")]) == 2
+    assert main(["--config", str(tmp_path / "no-existe.toml"), "--datos", str(tmp_path)]) == 2
     assert "No se encontró el archivo de configuración" in capsys.readouterr().err
 
 
@@ -47,3 +47,29 @@ def test_construye_el_agente_con_backend_falso_y_video(
     assert agente.reintentar_ahora()  # the fake backend answers the heartbeat
     assert agente.estado().situacion.value == "enviando"
     agente.detener()
+
+
+def test_segundo_lanzamiento_avisa_y_sale(tmp_path: Path) -> None:
+    import threading
+
+    from te_tengo_captura.instancia import Instancia
+
+    mostrada = threading.Event()
+    primera = Instancia(tmp_path)
+    assert primera.adquirir(mostrada.set)
+    assert main(["--datos", str(tmp_path)]) == 0
+    assert mostrada.wait(5)
+    primera.liberar()
+
+
+@pytest.mark.skipif(not MODELO.is_file(), reason="Falta el modelo: ejecuta `make modelo`")
+def test_main_ejecuta_la_aplicacion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import te_tengo_captura.__main__ as principal
+
+    ejecutadas: list[object] = []
+    monkeypatch.setattr(
+        principal, "ejecutar_aplicacion", lambda agente, abrir: ejecutadas.append(agente)
+    )
+    ejemplo = Path(__file__).resolve().parents[2] / "config.ejemplo.toml"
+    assert main(["--config", str(ejemplo), "--backend-falso", "--datos", str(tmp_path)]) == 0
+    assert len(ejecutadas) == 1

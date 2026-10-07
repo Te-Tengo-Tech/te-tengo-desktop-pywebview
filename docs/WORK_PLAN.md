@@ -85,7 +85,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - pystray icon with the status dot (green sending, grey paused, amber problem; `trayState` in `core.js`); menu «Abrir Te Tengo Captura» and «Salir» (implementation choice: confirm the exit text with the team, see blockers).
   - System notification when the window is closed the first time and when the webcam disconnects with the window closed, with the texts of `osToast`.
   - Tray icon images generated from the brand SVG at build time or committed as PNG.
-- [ ] **T14 Start with the system and single instance.**
+- [x] **T14 Start with the system and single instance.**
   - Windows: a per-user `Run` registry entry (installer task or first run); macOS/Linux: document the LaunchAgent / autostart `.desktop` alternative.
   - A second launch focuses the running window instead of starting another agent.
 - [ ] **T15 Logging and crash recovery.** Rotating log files in the platform log directory (no secrets, no frames); unhandled errors in the capture thread restart the loop and are shown as the "problem" state.

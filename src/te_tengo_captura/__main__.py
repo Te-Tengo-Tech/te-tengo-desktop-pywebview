@@ -3,15 +3,16 @@
 import argparse
 import logging
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from te_tengo_captura import __version__, config, rutas
+from te_tengo_captura import __version__, autoinicio, config, rutas
 from te_tengo_captura.agente import Agente
 from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.falso import URL_API, BackendFalso
 from te_tengo_captura.captura.fuentes import FuenteArchivo, FuenteVideo, FuenteWebcam
 from te_tengo_captura.captura.pose import EstimadorMediaPipe, ruta_modelo_predeterminada
+from te_tengo_captura.instancia import Instancia
 
 logger = logging.getLogger(__name__)
 
@@ -70,19 +71,35 @@ def construir_agente(args: argparse.Namespace, configuracion: config.Configuraci
     )
 
 
+def ejecutar_aplicacion(agente: Agente, instancia_abrir: dict[str, Callable[[], None]]) -> None:
+    from te_tengo_captura.ui.aplicacion import Aplicacion
+
+    aplicacion = Aplicacion(agente)
+    instancia_abrir["abrir"] = aplicacion.abrir
+    aplicacion.ejecutar()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = argumentos(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    # A second launch shows the running agent's window instead of starting another agent.
+    instancia = Instancia(args.datos or rutas.datos())
+    abrir: dict[str, Callable[[], None]] = {}
+    if not instancia.adquirir(lambda: abrir.get("abrir", lambda: None)()):
+        instancia.avisar()
+        return 0
     try:
         configuracion = config.cargar(args.config)
         agente = construir_agente(args, configuracion)
     except (config.ConfiguracionInvalidaError, FileNotFoundError) as error:
         print(error, file=sys.stderr)
+        instancia.liberar()
         return 2
-
-    from te_tengo_captura.ui.aplicacion import ejecutar
-
-    ejecutar(agente)
+    autoinicio.registrar()
+    try:
+        ejecutar_aplicacion(agente, abrir)
+    finally:
+        instancia.liberar()
     return 0
 
 
