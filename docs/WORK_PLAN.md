@@ -34,7 +34,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - Create the empty `src/te_tengo_captura/` package and a test that fails if `te_tengo_deteccion` imports `te_tengo_captura`, `webview`, `pystray` or `httpx`.
   - Update `scripts/evaluar.py`, `probar_camara.py` and `visor.py` imports; they must keep working.
   - Update `pyproject.toml` (packages, ruff `known-first-party`, coverage source, a `te-tengo-captura` script entry).
-- [ ] **T02 Retire the cloud ingestion service.**
+- [x] **T02 Retire the cloud ingestion service.**
   - Delete the rest of `ingesta/` (keep the orchestration of `ProcesadorCamara` for T07, e.g. as `te_tengo_captura/captura/procesador.py`), `salud/`, `main.py`, `eventos/` (replaced by `backend/` in T04), S3 storage, `Dockerfile`, `.dockerignore`, `scripts/agente_simulado.py` and `docs/ingestion-protocol.md`, and their tests.
   - Remove `fastapi`, `uvicorn`, `boto3`, `websockets`, `httpx2` if unused; drop the Docker job from CI.
   - Record the retirement in ADR 0007 ("Consequences") and in `CHANGELOG.md`.

@@ -1,21 +1,17 @@
-"""Processing of the frames of one camera.
+"""Processing of the frames of the household webcam.
 
-Flow: ingestion → pose → classification → events and clips.
+Flow: frame → pose → classification → events and clips. Kept from the retired ingestion
+service; T07 turns it into the capture loop with the consent gate and the outbox.
 """
 
 import asyncio
 import logging
 from collections.abc import Coroutine
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 from uuid import uuid4
 
-import httpx
-
-from detection_worker.clips.service import AlmacenClips
-from detection_worker.eventos.client import PublicadorEventos
-from detection_worker.eventos.schemas import EventoDetectado
-from detection_worker.ingesta import protocolo
 from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico, TipoEvento
 from te_tengo_deteccion.clips.buffer import BufferClip, Clip
 from te_tengo_deteccion.pose.service import EstimadorPose
@@ -26,8 +22,26 @@ logger = logging.getLogger(__name__)
 EVENTOS_CON_CLIP = frozenset({TipoEvento.CAIDA, TipoEvento.MOVIMIENTO_INESTABLE})
 
 
+@dataclass(frozen=True, slots=True)
+class EventoDetectado:
+    """Event ready to be reported to the backend."""
+
+    evento_id: str
+    tipo: TipoEvento
+    ocurrido_en: datetime
+    parametros: dict[str, float] = field(default_factory=dict)
+
+
+class PublicadorEventos(Protocol):
+    async def publicar(self, evento: EventoDetectado) -> None: ...
+
+
+class DestinoClips(Protocol):
+    async def guardar(self, clip: Clip) -> None: ...
+
+
 class ProcesadorCamara:
-    """Handles the connection of one Capture Agent (one camera)."""
+    """Turns the frames of one camera into published events and clips."""
 
     def __init__(
         self,
@@ -35,20 +49,19 @@ class ProcesadorCamara:
         estimador: EstimadorPose,
         clasificador: ClasificadorCinematico,
         publicador: PublicadorEventos,
-        almacen: AlmacenClips,
+        clips: DestinoClips,
         buffer: BufferClip | None = None,
     ) -> None:
         self._camara_id = camara_id
         self._estimador = estimador
         self._clasificador = clasificador
         self._publicador = publicador
-        self._almacen = almacen
+        self._clips = clips
         self._buffer = buffer or BufferClip()
         self._tareas: set[asyncio.Task[None]] = set()
 
-    async def procesar(self, mensaje: bytes) -> list[EventoDetectado]:
-        """Processes a message from the agent and returns the published events."""
-        instante_ms, jpeg = protocolo.decodificar(mensaje)
+    async def procesar(self, instante_ms: int, jpeg: bytes) -> list[EventoDetectado]:
+        """Processes one frame and returns the published events."""
         instante = instante_ms / 1000
         for clip in self._buffer.agregar(instante, jpeg):
             self._en_segundo_plano(self._guardar_clip(clip))
@@ -58,20 +71,14 @@ class ProcesadorCamara:
         for evento in self._clasificador.actualizar(instante, pose):
             detectado = EventoDetectado(
                 evento_id=uuid4().hex,
-                camara_id=self._camara_id,
                 tipo=evento.tipo,
                 ocurrido_en=datetime.fromtimestamp(evento.instante, UTC),
                 parametros=evento.parametros,
             )
-            logger.info(
-                "Evento detectado: %s en %s %s",
-                evento.tipo.value,
-                self._camara_id,
-                evento.parametros,
-            )
+            logger.info("Evento detectado: %s %s", evento.tipo.value, evento.parametros)
             if evento.tipo in EVENTOS_CON_CLIP:
                 self._buffer.marcar_evento(detectado.evento_id, evento.instante)
-            await self._publicar(detectado)
+            await self._publicador.publicar(detectado)
             publicados.append(detectado)
         return publicados
 
@@ -80,22 +87,9 @@ class ProcesadorCamara:
             await asyncio.gather(*self._tareas, return_exceptions=True)
         await self._estimador.liberar(self._camara_id)
 
-    async def _publicar(self, evento: EventoDetectado) -> None:
-        try:
-            await self._publicador.publicar(evento)
-        except httpx.HTTPError as error:
-            # No full traceback: with the backend down, the log would fill up with noise.
-            logger.warning(
-                "No se pudo publicar el evento %s (%s): %s",
-                evento.tipo.value,
-                evento.evento_id,
-                error,
-            )
-
     async def _guardar_clip(self, clip: Clip) -> None:
         try:
-            clave = await self._almacen.guardar(self._camara_id, clip)
-            await self._publicador.asociar_clip(clip.evento_id, clave)
+            await self._clips.guardar(clip)
         except Exception as error:
             logger.error("No se pudo guardar el clip del evento %s: %s", clip.evento_id, error)
 

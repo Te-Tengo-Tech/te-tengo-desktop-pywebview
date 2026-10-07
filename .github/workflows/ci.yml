@@ -30,11 +30,3 @@ jobs:
         run: ./scripts/descargar_modelo.sh
       - name: Pruebas
         run: uv run pytest
-
-  imagen:
-    runs-on: ubuntu-latest
-    needs: calidad
-    steps:
-      - uses: actions/checkout@v7
-      - name: Construir imagen Docker
-        run: docker build -t te-tengo-service-detection-worker .
