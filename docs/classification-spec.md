@@ -2,7 +2,7 @@
 
 This document explains **what** the Kinematic Classification Service computes, **why**, and **where** each formula and each threshold **comes from**. The code does not cite authors: each function names the rule (R1–R8) or the adaptation (A1–A5) that it implements, and this document gives the details with their sources.
 
-Code: [`src/detection_worker/clasificacion/`](../src/detection_worker/clasificacion) · Tests: [`tests/clasificacion/`](../tests/clasificacion)
+Code: [`src/te_tengo_deteccion/clasificacion/`](../src/te_tengo_deteccion/clasificacion) · Tests: [`tests/deteccion/clasificacion/`](../tests/deteccion/clasificacion)
 
 **How to read the origin of each value**
 
@@ -147,18 +147,18 @@ Adaptations A3, A6, A7 and A8 and the speed threshold came from validating with 
 
 ## 4. Threshold table
 
-| Variable (`TT_CLASIFICACION__…`) | Value | Rule | Origin |
+| Field (`[clasificacion]` of the installation file) | Value | Rule | Origin |
 |---|---|---|---|
-| `VELOCIDAD_DESCENSO_MIN` | 0.01 (in `.env`; the code has no default value) | R1 | Calibrated with URFD and CAUCAFall ([validation.md](validation.md)) |
-| `INTERVALO_VELOCIDAD_S` | 0.25 s | R1 | Chen et al. (2020), sec. 3.2 |
-| `VENTANA_VELOCIDAD_S` | 1 s | R1 | Adaptation A3 (descent duration: Choi et al., 2015, in Traverso et al., 2024) |
-| `PERSISTENCIA_ERGUIDO_S` | 1 s | R5 | Adaptation A8, calibrated with URFD |
-| `ANGULO_LINEA_CENTRAL_MAX_GRADOS` | 45° | R2, R5 | Chen et al. (2020), sec. 3.3 |
-| `RAZON_ANCHO_ALTO_MIN` | 1 | R3, R5 | Chen et al. (2020), sec. 3.4 |
-| `VENTANA_REACCION_S` | 1.48 s | R4, R7 | Gutiérrez et al. (2023) |
-| `CONFIRMACION_SUELO_S` | 30 s | R6 | Backlog, US-13 |
-| `SIN_DETECCION_CONFIABLE_S` | 300 s | R8 | Backlog, US-15 |
-| `VISIBILIDAD_MIN` | 0.5 | A5 | MediaPipe default value (Google, s.f.-a); to be calibrated |
+| `velocidad_descenso_min` | 0.01 (the agent's calibrated default in `te_tengo_captura/config.py`; the core has no default value) | R1 | Calibrated with URFD and CAUCAFall ([validation.md](validation.md)) |
+| `intervalo_velocidad_s` | 0.25 s | R1 | Chen et al. (2020), sec. 3.2 |
+| `ventana_velocidad_s` | 1 s | R1 | Adaptation A3 (descent duration: Choi et al., 2015, in Traverso et al., 2024) |
+| `persistencia_erguido_s` | 1 s | R5 | Adaptation A8, calibrated with URFD |
+| `angulo_linea_central_max_grados` | 45° | R2, R5 | Chen et al. (2020), sec. 3.3 |
+| `razon_ancho_alto_min` | 1 | R3, R5 | Chen et al. (2020), sec. 3.4 |
+| `ventana_reaccion_s` | 1.48 s | R4, R7 | Gutiérrez et al. (2023) |
+| `confirmacion_suelo_s` | 30 s | R6 | Backlog, US-13 |
+| `sin_deteccion_confiable_s` | 300 s | R8 | Backlog, US-15 |
+| `visibilidad_min` | 0.5 | A5 | MediaPipe default value (Google, s.f.-a); to be calibrated |
 
 ---
 

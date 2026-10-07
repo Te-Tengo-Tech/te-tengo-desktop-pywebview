@@ -96,7 +96,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - CI job on `windows-latest` that builds the app and uploads it as an artifact; a smoke test that runs the built exe with `--version`.
 - [x] **T17 Remote thresholds** (`GET /api/agente/configuracion`). Applied at startup and every hour (implementation choice); invalid values are ignored and logged.
 - [~] **T18 Live view on demand** (US-23). Blocked: live view transport (see `docs/BLOCKERS.md`). Prepare a `TransmisorEnVivo` interface fed by the capture loop; no network implementation until the decision. *Interface ready:* `te_tengo_captura/captura/en_vivo.py` (`TransmisorEnVivo`, `TransmisorNulo`), fed by the capture loop only while capture is allowed; the network part waits for the decision.
-- [ ] **T19 Documentation.** Rewrite `README.md` for the agent (install, configure, run, package); update `docs/architecture.md` with a component diagram of `te_tengo_captura`; add `docs/INSTALLATION.md` for the project team (config file, webcam position as in the validation datasets, autostart).
+- [x] **T19 Documentation.** Rewrite `README.md` for the agent (install, configure, run, package); update `docs/architecture.md` with a component diagram of `te_tengo_captura`; add `docs/INSTALLATION.md` for the project team (config file, webcam position as in the validation datasets, autostart).
 
 ## Local test checklist (for the team, after the cloud finishes)
 Run on a real PC; these need hardware the cloud does not have.

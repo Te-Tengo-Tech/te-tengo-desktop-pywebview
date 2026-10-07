@@ -6,6 +6,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ### Added
 - Detection core split into `te_tengo_deteccion` (classification, pose, clip buffer and MP4 encoding, unchanged logic) and the empty `te_tengo_captura` app package with the `te-tengo-captura` entry point; a test keeps the core free of app, GUI and network imports (T01).
+- Documentation (T19): README for the agent (install, configure, run, package), `docs/architecture.md` with the component diagram of `te_tengo_captura`, and `docs/INSTALLATION.md` for the project team (configuration file, webcam position as in the validation, autostart, files and uninstall).
 - Live view interface (T18, blocked on the transport decision): `TransmisorEnVivo` protocol fed by the capture loop while someone watches and capture is allowed, with a no-op default.
 - Remote thresholds (T17): `GET /api/agente/configuracion` at startup and every hour (5 min after a failure); each field is validated on its own and applied over the installation's values, unknown or invalid fields are logged and ignored, and the capture thread switches to a fresh classifier.
 - Packaging (T16): PyInstaller spec `packaging/te-tengo-captura.spec` (one-folder build with the MediaPipe model, its data files, the web UI and an icon drawn from the brand), `make empaquetar`, a `--autoprueba` smoke test (model, clip encoding, UI libraries and assets) and a `windows-latest` CI job that builds, smoke-tests and uploads the app.
@@ -33,7 +34,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 ### Pending
 - Validate the unstable movement rule with our own recordings.
 - Frame quality control, motion detection and backpressure.
-- Forwarding the video to the Live Streaming Service.
+- Live view transport (T18, blocked on the team's decision).
 
 ## [0.2.0] - 2026-10-03
 
