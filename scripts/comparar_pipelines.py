@@ -67,7 +67,7 @@ class Registro:
     def clave(self) -> tuple[Any, ...]:
         """What must match between paths: the poses as stored for the validation and the
         classifier's phase and events."""
-        return (self.instante_ms, self.forma, self.puntos, self.fase, self.eventos)
+        return (self.instante, self.forma, self.puntos, self.fase, self.eventos)
 
 
 def _puntos(pose: Pose | None) -> list[list[float]] | None:
@@ -126,12 +126,15 @@ class FuenteRecortada:
     def __init__(self, fuente: FuenteArchivo, recorte: tuple[int, int, int, int] | None) -> None:
         self.fuente = fuente
         self._recorte = recorte
+        self.instante = 0.0  # of the last frame read: the one the capture loop just processed
 
     def abrir(self) -> bool:
         return self.fuente.abrir()
 
     def leer(self) -> tuple[float, Imagen] | None:
         lectura = self.fuente.leer()
+        if lectura is not None:
+            self.instante = lectura[0]
         if lectura is None or self._recorte is None:
             return lectura
         x, y, w, h = self._recorte
@@ -180,9 +183,10 @@ def por_agente(
     estimador: Callable[[Path], EstimadorMediaPipe] = EstimadorMediaPipe,
 ) -> list[Registro]:
     archivo = FuenteArchivo(ruta)
+    recortada = FuenteRecortada(archivo, recorte)
     registrador = EstimadorRegistrador(estimador(modelo))
     bucle = BucleCaptura(
-        Captador(FuenteRecortada(archivo, recorte), reloj=lambda: 0.0),
+        Captador(recortada, reloj=lambda: 0.0),
         registrador,
         umbrales,
         _Bandeja(),
@@ -202,7 +206,7 @@ def por_agente(
             nombres = tuple(e.tipo.value for e in eventos)
             vis = _visibilidades(pose)
             registro = Registro(
-                round(ms / 1000, 4),
+                round(recortada.instante, 4),
                 ms,
                 forma,
                 tipo,
