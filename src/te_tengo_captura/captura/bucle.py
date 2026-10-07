@@ -80,6 +80,7 @@ class BucleCaptura:
         self._buffer = BufferClip()
         self._activa = False
         self._buscar = threading.Event()
+        self._umbrales_nuevos: Umbrales | None = None
         self.deteccion_confiable = True
         self.fallando = False  # an unexpected error happened and no frame was processed since
 
@@ -93,10 +94,14 @@ class BucleCaptura:
         """Last known state; a webcam not opened yet (capture not allowed) is not «lost»."""
         return not self.fallando and self._captador.conectada is not False
 
+    @property
+    def umbrales(self) -> Umbrales:
+        return self._umbrales
+
     def actualizar_umbrales(self, umbrales: Umbrales) -> None:
-        """New thresholds (remote configuration): applied with a fresh classifier."""
-        self._umbrales = umbrales
-        self._clasificador = ClasificadorCinematico(umbrales)
+        """New thresholds (remote configuration), from any thread: the capture thread applies
+        them on its next step with a fresh classifier."""
+        self._umbrales_nuevos = umbrales
 
     def buscar_webcam(self) -> None:
         """«Buscar de nuevo» from another thread: the reopen happens on the capture thread."""
@@ -114,6 +119,10 @@ class BucleCaptura:
         if self._buscar.is_set():
             self._buscar.clear()
             self._captador.buscar_de_nuevo()
+        if (nuevos := self._umbrales_nuevos) is not None:
+            self._umbrales_nuevos = None
+            self._umbrales = nuevos
+            self._clasificador = ClasificadorCinematico(nuevos)
         fotograma = self._captador.leer()
         if fotograma is None:
             return []

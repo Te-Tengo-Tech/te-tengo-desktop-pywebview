@@ -192,9 +192,12 @@ def test_webcam_desconectada_no_produce_eventos(umbrales: Umbrales) -> None:
 def test_actualizar_umbrales_reinicia_el_clasificador(umbrales: Umbrales) -> None:
     escenario = Escenario(umbrales, caida(5))
     escenario.correr(10)
-    escenario.bucle.actualizar_umbrales(umbrales.model_copy(update={"confirmacion_suelo_s": 2.0}))
+    nuevos = umbrales.model_copy(update={"confirmacion_suelo_s": 2.0})
+    escenario.bucle.actualizar_umbrales(nuevos)
+    assert escenario.bucle.umbrales == umbrales  # applied by the capture thread, on its next step
     escenario.estimador.poses = [fabricas.TENDIDA for _ in range(40)]
     assert escenario.correr(40) == []  # no fall in progress after the reset
+    assert escenario.bucle.umbrales == nuevos
 
 
 def test_hilo_de_captura_procesa_y_se_detiene(umbrales: Umbrales) -> None:
