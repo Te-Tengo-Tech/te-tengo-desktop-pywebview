@@ -94,7 +94,7 @@ The agent is built task by task from this checklist. An agent working autonomous
 - [x] **T16 Packaging.**
   - PyInstaller spec (`packaging/te-tengo-captura.spec`) including the MediaPipe model, `ui/web/` and the MediaPipe data files; one-folder build.
   - CI job on `windows-latest` that builds the app and uploads it as an artifact; a smoke test that runs the built exe with `--version`.
-- [ ] **T17 Remote thresholds** (`GET /api/agente/configuracion`). Applied at startup and every hour (implementation choice); invalid values are ignored and logged.
+- [x] **T17 Remote thresholds** (`GET /api/agente/configuracion`). Applied at startup and every hour (implementation choice); invalid values are ignored and logged.
 - [~] **T18 Live view on demand** (US-23). Blocked: live view transport (see `docs/BLOCKERS.md`). Prepare a `TransmisorEnVivo` interface fed by the capture loop; no network implementation until the decision.
 - [ ] **T19 Documentation.** Rewrite `README.md` for the agent (install, configure, run, package); update `docs/architecture.md` with a component diagram of `te_tengo_captura`; add `docs/INSTALLATION.md` for the project team (config file, webcam position as in the validation datasets, autostart).
 

@@ -20,6 +20,7 @@ from te_tengo_captura.config import Configuracion
 from te_tengo_captura.envios.cola import ColaEnvios, EnviadorPendientes
 from te_tengo_captura.estado import Entradas, EstadoAgente, derivar
 from te_tengo_captura.latido import HiloLatido, Latido, Salud
+from te_tengo_captura.umbrales_remotos import ActualizadorUmbrales
 from te_tengo_deteccion.clips.codificar import codificar_mp4
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,9 @@ class Agente:
             reloj_utc=reloj_utc,
         )
         self._enviador = EnviadorPendientes(self.cola, cliente)
+        self.umbrales = ActualizadorUmbrales(
+            cliente, config.clasificacion, self.bucle.actualizar_umbrales, version
+        )
         self._hilo_captura = HiloCaptura(self.bucle)
         self._hilo_latido = HiloLatido(self.latido)
         self._oyentes: list[Callable[[EstadoAgente], None]] = []
@@ -79,10 +83,12 @@ class Agente:
         self._hilo_latido.iniciar()
         self._enviador.iniciar()
         self._hilo_captura.iniciar()
+        self.umbrales.iniciar()
         self._hilo_estado.start()
 
     def detener(self) -> None:
         self._detenido.set()
+        self.umbrales.detener()
         self._hilo_captura.detener()
         self._hilo_latido.detener()
         self._enviador.detener()
