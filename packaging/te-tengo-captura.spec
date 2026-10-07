@@ -5,7 +5,8 @@
 #   uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
 #
 # Bundles the MediaPipe model (models/), the web UI (te_tengo_captura/ui/web) and MediaPipe's
-# data files. The Windows icon is drawn from the brand app icon at build time.
+# data files. The icon (.ico on Windows, .icns in the macOS .app) is drawn from the brand app icon
+# at build time.
 import sys
 from pathlib import Path
 
@@ -20,9 +21,14 @@ MODELO = RAIZ / "models" / "pose_landmarker_lite.task"
 if not MODELO.is_file():
     raise SystemExit(f"Falta el modelo {MODELO}: ejecuta `make modelo`")
 
-ICONO = Path(workpath) / "te-tengo-captura.ico"
-ICONO.parent.mkdir(parents=True, exist_ok=True)
-icono(None, 256).save(ICONO, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+EN_MACOS = sys.platform == "darwin"
+Path(workpath).mkdir(parents=True, exist_ok=True)
+if EN_MACOS:
+    ICONO = Path(workpath) / "te-tengo-captura.icns"
+    icono(None, 1024).save(ICONO)
+else:
+    ICONO = Path(workpath) / "te-tengo-captura.ico"
+    icono(None, 256).save(ICONO, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
 
 datas = [
     (str(MODELO), "models"),
@@ -57,3 +63,18 @@ exe = EXE(
     upx=False,
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="te-tengo-captura", upx=False)
+
+if EN_MACOS:
+    # A .app bundle so Finder and the Dock show the brand icon. [implementation choice] The bundle id
+    # follows the mobile app's (tech.tetengo.teTengo); the camera usage text is pending team review.
+    app = BUNDLE(
+        coll,
+        name="Te Tengo Captura.app",
+        icon=str(ICONO),
+        bundle_identifier="tech.tetengo.captura",
+        info_plist={
+            "CFBundleDisplayName": "Te Tengo Captura",
+            "NSCameraUsageDescription": "Te Tengo Captura usa la webcam para detectar caídas.",
+            "NSHighResolutionCapable": True,
+        },
+    )
