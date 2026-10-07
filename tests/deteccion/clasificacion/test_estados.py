@@ -1,13 +1,13 @@
 import pytest
 
-from detection_worker.clasificacion.estados import (
+from te_tengo_deteccion.clasificacion.estados import (
     ClasificadorCinematico,
     Fase,
     TipoEvento,
     UmbralSinCalibrarError,
 )
-from detection_worker.clasificacion.umbrales import Umbrales
-from detection_worker.pose.schemas import Landmark, Pose
+from te_tengo_deteccion.clasificacion.umbrales import Umbrales
+from te_tengo_deteccion.pose.schemas import Landmark, Pose
 from tests import fabricas
 
 PASO = 0.1  # 10 fps

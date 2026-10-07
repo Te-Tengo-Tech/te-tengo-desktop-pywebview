@@ -12,13 +12,13 @@ from uuid import uuid4
 
 import httpx
 
-from detection_worker.clasificacion.estados import ClasificadorCinematico, TipoEvento
 from detection_worker.clips.service import AlmacenClips
 from detection_worker.eventos.client import PublicadorEventos
 from detection_worker.eventos.schemas import EventoDetectado
 from detection_worker.ingesta import protocolo
-from detection_worker.ingesta.buffer import BufferClip, Clip
-from detection_worker.pose.service import EstimadorPose
+from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico, TipoEvento
+from te_tengo_deteccion.clips.buffer import BufferClip, Clip
+from te_tengo_deteccion.pose.service import EstimadorPose
 
 logger = logging.getLogger(__name__)
 

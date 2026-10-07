@@ -1,8 +1,8 @@
-from detection_worker.clasificacion.estados import ClasificadorCinematico, TipoEvento
-from detection_worker.clasificacion.umbrales import Umbrales
 from detection_worker.ingesta import protocolo
 from detection_worker.ingesta.service import ProcesadorCamara
-from detection_worker.pose.schemas import Pose
+from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico, TipoEvento
+from te_tengo_deteccion.clasificacion.umbrales import Umbrales
+from te_tengo_deteccion.pose.schemas import Pose
 from tests import fabricas
 from tests.conftest import AlmacenFalso, EstimadorFalso, PublicadorFalso
 

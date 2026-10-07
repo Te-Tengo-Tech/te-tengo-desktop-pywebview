@@ -8,9 +8,9 @@ import secrets
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
-from detection_worker.clasificacion.estados import ClasificadorCinematico
 from detection_worker.ingesta.protocolo import MensajeInvalidoError
 from detection_worker.ingesta.service import ProcesadorCamara
+from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico
 
 logger = logging.getLogger(__name__)
 

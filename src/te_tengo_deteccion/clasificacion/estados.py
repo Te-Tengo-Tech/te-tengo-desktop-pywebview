@@ -25,9 +25,9 @@ Events emitted:
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from detection_worker.clasificacion.medicion import Medicion, MedidorCinematico
-from detection_worker.clasificacion.umbrales import Umbrales
-from detection_worker.pose.schemas import Pose
+from te_tengo_deteccion.clasificacion.medicion import Medicion, MedidorCinematico
+from te_tengo_deteccion.clasificacion.umbrales import Umbrales
+from te_tengo_deteccion.pose.schemas import Pose
 
 
 class UmbralSinCalibrarError(ValueError):

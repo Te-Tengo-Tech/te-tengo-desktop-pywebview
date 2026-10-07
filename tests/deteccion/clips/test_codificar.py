@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import pytest
 
-from detection_worker.clips.service import codificar_mp4
+from te_tengo_deteccion.clips.codificar import codificar_mp4
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg no está instalado")

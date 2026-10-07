@@ -13,11 +13,11 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from detection_worker.clasificacion.estados import Fase, Tiempos
-from detection_worker.clasificacion.medicion import Medicion
-from detection_worker.clasificacion.parametros import centro_cadera, extremos_linea_central
-from detection_worker.clasificacion.umbrales import Umbrales
-from detection_worker.pose.schemas import Indice, Pose
+from te_tengo_deteccion.clasificacion.estados import Fase, Tiempos
+from te_tengo_deteccion.clasificacion.medicion import Medicion
+from te_tengo_deteccion.clasificacion.parametros import centro_cadera, extremos_linea_central
+from te_tengo_deteccion.clasificacion.umbrales import Umbrales
+from te_tengo_deteccion.pose.schemas import Indice, Pose
 
 ALTO_VIDEO = 560
 ANCHO_PANEL = 400

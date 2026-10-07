@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Protocol
 
-from detection_worker.pose.schemas import Landmark, Pose
+from te_tengo_deteccion.pose.schemas import Landmark, Pose
 
 # Child process state: one VIDEO-mode landmarker per camera, with its last timestamp.
 _configuracion: tuple[str, float] = ("", 0.5)

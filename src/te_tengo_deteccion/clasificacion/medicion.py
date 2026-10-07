@@ -8,8 +8,8 @@ import statistics
 from collections import deque
 from dataclasses import dataclass
 
-from detection_worker.clasificacion import parametros
-from detection_worker.pose.schemas import Pose
+from te_tengo_deteccion.clasificacion import parametros
+from te_tengo_deteccion.pose.schemas import Pose
 
 
 @dataclass(frozen=True, slots=True)

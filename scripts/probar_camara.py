@@ -27,10 +27,10 @@ from typing import Any
 import cv2
 from visor import Estado, Visor
 
-from detection_worker.clasificacion.estados import ClasificadorCinematico, Evento
-from detection_worker.clasificacion.medicion import MedidorCinematico
-from detection_worker.clasificacion.umbrales import Umbrales
-from detection_worker.pose.service import crear_landmarker, detectar
+from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico, Evento
+from te_tengo_deteccion.clasificacion.medicion import MedidorCinematico
+from te_tengo_deteccion.clasificacion.umbrales import Umbrales
+from te_tengo_deteccion.pose.service import crear_landmarker, detectar
 
 ALTO_MAX = 480  # the agent sends 480p
 VELOCIDAD_CALIBRADA = 0.01  # docs/validation.md

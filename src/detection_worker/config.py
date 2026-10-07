@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from detection_worker.clasificacion.umbrales import Umbrales
+from te_tengo_deteccion.clasificacion.umbrales import Umbrales
 
 
 class Settings(BaseSettings):
