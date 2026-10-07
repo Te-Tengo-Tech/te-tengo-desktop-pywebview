@@ -4,6 +4,9 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+### Added
+- Work plan, agent contract, desktop prototype references and Claude Code cloud setup to build the agent autonomously (`AGENTS.md`, `docs/WORK_PLAN.md`, `.claude/`).
+
 ### Pending
 - Validate the unstable movement rule with our own recordings.
 - Frame quality control, motion detection and backpressure.

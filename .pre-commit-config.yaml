@@ -1,5 +1,7 @@
 # Installed with `make instalar`. Documentation: https://pre-commit.com
 default_stages: [pre-commit]
+# Reference copies are kept byte for byte.
+exclude: ^docs/references/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

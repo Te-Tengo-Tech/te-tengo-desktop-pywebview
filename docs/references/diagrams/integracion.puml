@@ -1,0 +1,242 @@
+@startuml integration-sequence-fall-detection
+title Diagrama de Integración -- Flujo de Datos del Sistema basado en estimación de pose para la detección de caídas
+
+' Los participantes son los componentes de la arquitectura lógica (arquitectura_logica_v2.puml),
+' agrupados por capa. La vivienda no analiza el video: el agente de captura solo lo reduce,
+' lo cifra y lo envía al módulo de detección.
+
+skinparam defaultFontName "Segoe UI"
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+skinparam maxMessageSize 240
+skinparam ArrowColor #3D2C5C
+skinparam BoxPadding 6
+skinparam SequenceLifeLineBorderColor #8B7FB0
+skinparam SequenceGroupBorderColor #6B5B95
+skinparam SequenceGroupHeaderFontColor #2E2440
+skinparam SequenceDividerBackgroundColor #EFEAF6
+skinparam SequenceDividerBorderColor #6B5B95
+skinparam SequenceDividerFontColor #2E2440
+skinparam SequenceBoxBorderColor #8B7FB0
+skinparam SequenceBoxFontColor #2E2440
+skinparam ParticipantBackgroundColor #FFFFFF
+skinparam ParticipantBorderColor #6B5B95
+skinparam ParticipantFontColor #2E2440
+skinparam ActorBackgroundColor #FFFFFF
+skinparam ActorBorderColor #6B5B95
+skinparam DatabaseBackgroundColor #B5543C
+skinparam DatabaseBorderColor #7A3624
+skinparam DatabaseFontColor #2E2440
+skinparam LegendBackgroundColor #FFFFFF
+skinparam LegendBorderColor #8B7FB0
+
+actor "Familiar /\ncuidador" as Familiar
+
+box "Dispositivos e interfaces externas" #F4F4F6
+  participant "Cámaras RGB estándar\n[Webcam USB]" as Camaras
+end box
+
+box "Capa de Captura\n[PC de la vivienda]" #F6F3FA
+  participant "Agente de captura\n[Aplicación de escritorio]" as Agente
+end box
+
+box "Capa de Procesamiento de Video\n[Módulo de detección]" #EFEAF6
+  participant "Servicio de\ningesta de video" as Ingesta
+  participant "Servicio de\nestimación de pose" as Pose
+  participant "Servicio de\nclasificación cinemática" as Clasificacion
+  participant "Servicio de\ntransmisión en vivo" as Transmision
+end box
+
+box "Capa de Servicios\n[Backend API del sistema]" #F6F3FA
+  participant "Backend API del sistema\n[REST API]" as Backend
+  participant "Servicios de\nAplicación" as Servicios
+end box
+
+box "Capa de Persistencia Compartida" #EFEAF6
+  participant "Persistencia\ncentral" as PersistenciaCentral
+  database "Base de Datos Central\n[Base de datos\nrelacional]" as Database
+  participant "Persistencia de\nclips de video" as PersistenciaClips
+  database "Almacenamiento de clips\n[Almacenamiento\nde objetos]" as Clips
+end box
+
+box "Dispositivos e interfaces externas" #F4F4F6
+  participant "Servicio de\nnotificaciones push\n[Servicio externo]" as Push
+end box
+
+box "Capa de Presentación\n[Aplicación móvil]" #F6F3FA
+  participant "Aplicación del\nfamiliar/cuidador" as Mobile
+  database "Base de datos local\ndel cliente\n[SQLite]" as ClientCache
+end box
+
+== Instalación y registro de la cámara (configuración fija) ==
+note over Camaras, Agente
+  El equipo del proyecto instala la webcam USB y el
+  agente de captura en la PC de la vivienda, con un
+  archivo de configuración fija.
+end note
+Agente -> Agente : Lee su configuración fija\n(vivienda, webcam y habitación)
+Agente -> Backend : Registra la cámara al iniciar (HTTPS / REST)
+Backend -> Servicios : Delega el registro de la cámara
+Servicios -> PersistenciaCentral : Asocia la cámara a la vivienda con el\nnombre de habitación de la instalación
+PersistenciaCentral -> Database : Persiste la cámara
+Backend --> Agente : Confirma el registro
+Familiar -> Mobile : Ve la cámara de su vivienda
+opt Cambio del nombre de la habitación
+  Familiar -> Mobile : Edita el nombre de la habitación
+  Mobile -> Backend : Guarda el nuevo nombre (HTTPS / REST)
+  Backend -> Servicios : Actualiza la cámara
+  Servicios -> PersistenciaCentral : Guarda el nombre que usarán las alertas siguientes
+  PersistenciaCentral -> Database : Persiste la cámara
+end
+
+== Estado de captura: consentimiento y pausas ==
+Familiar -> Mobile : Registra el consentimiento o pausa la cámara
+Mobile -> Backend : Registra el cambio (HTTPS / REST)
+Backend -> Servicios : Delega el cambio
+Servicios -> PersistenciaCentral : Guarda consentimiento y pausas\ncon su fecha y hora
+PersistenciaCentral -> Database : Persiste el estado de captura
+Agente -> Backend : Consulta el estado de captura al iniciar,\nal reconectar y periódicamente (HTTPS / REST)
+Backend --> Agente : Devuelve consentimiento vigente y pausas
+Agente -> Agente : Solo envía video con consentimiento\ny sin pausa activa
+opt Fin de la pausa
+  Servicios -> Push : Solicita el aviso de reactivación automática
+  Push -> Mobile : Avisa que la captura se retomó
+end
+
+== Captura y detección continua (24/7) ==
+Camaras -> Agente : Entregan video en vivo (USB / UVC)
+Agente -> Agente : Reduce a 480p y 5-10 fps
+Agente -> Ingesta : Envía el video cifrado (TLS)
+Ingesta -> Ingesta : Controla la calidad, detecta movimiento y mantiene\nel búfer del clip (6 s antes y 6 s después)
+Ingesta -> Pose : Entrega fotogramas válidos
+Pose -> Pose : Detecta a la persona y extrae landmarks;\ndescarta fotogramas sin persona\no sin puntos del cuerpo visibles
+Pose -> Clasificacion : Entrega secuencias de landmarks
+Clasificacion -> Clasificacion : Calcula parámetros cinemáticos y compara\ncon umbrales: caída, movimiento inestable,\nrecuperación o actividad normal
+
+== Generación de la alerta ==
+alt Caída o movimiento inestable detectado
+  Clasificacion -> Servicios : Reporta el evento detectado:\ntipo, habitación y hora
+  Ingesta -> PersistenciaClips : Entrega el clip del evento\n(6 s antes y 6 s después)
+  PersistenciaClips -> Clips : Persiste el clip cifrado
+  Servicios -> PersistenciaCentral : Registra la alerta como "activa"
+  PersistenciaCentral -> Database : Persiste la alerta y el evento
+  Servicios -> Push : Solicita el envío de la alerta
+  Push -> Mobile : Notificación push a todos los familiares\nvinculados (menos de 10 s desde el evento)
+  Mobile --> Familiar : Muestra la alerta aunque la app esté cerrada
+end
+alt Caída: la persona sigue en el suelo 30 s
+  Clasificacion -> Servicios : Confirma la caída
+  Servicios -> PersistenciaCentral : Marca la caída como confirmada\ny mantiene la alerta activa
+  PersistenciaCentral -> Database : Persiste el estado de la alerta
+else Caída: la persona se levanta
+  Clasificacion -> Servicios : Reporta la recuperación
+  Servicios -> PersistenciaCentral : Registra la recuperación
+  PersistenciaCentral -> Database : Persiste el evento
+  Servicios -> Push : Solicita el aviso de recuperación
+  Push -> Mobile : Aviso de seguimiento "se levantó"
+end
+
+== Atención de la alerta ==
+Familiar -> Mobile : Abre la alerta
+Mobile -> Backend : Solicita el detalle y el clip (HTTPS / REST)
+Backend -> Servicios : Obtiene la alerta
+Servicios -> PersistenciaCentral : Consulta la alerta
+PersistenciaCentral -> Database : Lee la alerta y el evento
+Servicios -> PersistenciaClips : Solicita un enlace temporal al clip
+PersistenciaClips -> Clips : Genera el enlace temporal
+Backend --> Mobile : Entrega el detalle y el enlace del clip
+note left of Mobile
+  Desde la alerta también puede abrir
+  la vista en vivo (fase siguiente).
+end note
+Familiar -> Mobile : Marca la alerta como "atendida" o "falsa alarma"
+Mobile -> Backend : Registra el estado de la alerta (HTTPS / REST)
+Backend -> Servicios : Actualiza la alerta
+Servicios -> PersistenciaCentral : Guarda quién la atendió y a qué hora
+PersistenciaCentral -> Database : Persiste el estado de la alerta
+Servicios -> Push : Informa a los demás familiares
+alt Nadie la atiende en el tiempo de espera (3, 5 o 10 min)
+  Servicios -> Push : Solicita avisar al contacto secundario
+  Push -> Mobile : Notificación push al contacto secundario
+end
+
+== Vista en vivo y registro de accesos ==
+Familiar -> Mobile : Elige "ver en vivo" desde el inicio\no desde una alerta
+Mobile -> Backend : Solicita la vista en vivo (HTTPS / REST)
+Backend -> Servicios : Verifica que la cámara esté\nen línea y sin pausa
+alt Cámara en línea y sin pausa
+  Servicios -> Transmision : Autoriza una sesión temporal
+  Servicios -> PersistenciaCentral : Registra el inicio del acceso (quién y cuándo)
+  Ingesta -> Transmision : Reenvía el video de la cámara
+  Transmision --> Mobile : Transmite en vivo (WebRTC)
+  Familiar -> Mobile : Cierra la vista en vivo
+  Mobile -> Backend : Informa el cierre de la sesión (HTTPS / REST)
+  Backend -> Servicios : Cierra el acceso
+  Servicios -> PersistenciaCentral : Guarda la duración del acceso
+  PersistenciaCentral -> Database : Persiste el registro de accesos
+else Cámara en pausa o desconectada
+  Backend --> Mobile : Vista en vivo no disponible\n(y hasta qué hora dura la pausa)
+end
+opt Consulta del registro de accesos
+  Familiar -> Mobile : Abre el registro de accesos
+  Mobile -> Backend : Solicita los accesos (HTTPS / REST)
+  Backend -> Servicios : Delega la consulta
+  Servicios -> PersistenciaCentral : Consulta los accesos
+  PersistenciaCentral -> Database : Lee el registro de accesos
+  Backend --> Mobile : Entrega quién vio, cuándo y cuánto duró\n(del más reciente al más antiguo)
+end
+
+== Estado de conexión de las cámaras y confiabilidad de la detección ==
+Agente -> Backend : Envía el estado de conexión\nde la cámara (HTTPS / REST)
+Backend -> Servicios : Actualiza el estado de conexión
+Servicios -> PersistenciaCentral : Guarda la hora de la última señal
+PersistenciaCentral -> Database : Persiste el estado de conexión
+alt Sin señal de la cámara
+  Servicios -> PersistenciaCentral : Marca la cámara como "desconectada"
+  PersistenciaCentral -> Database : Persiste el estado de conexión
+  Servicios -> Push : Solicita el aviso de desconexión
+  Push -> Mobile : Avisa qué revisar: cable, PC encendida e internet
+else La cámara vuelve a transmitir
+  Servicios -> PersistenciaCentral : Marca la cámara como "en línea"
+  PersistenciaCentral -> Database : Persiste el estado de conexión
+  Servicios -> Push : Solicita el aviso de reconexión
+  Push -> Mobile : Avisa que el monitoreo se restableció
+end
+alt 5 min solo con fotogramas descartados
+  Clasificacion -> Servicios : Reporta detección no confiable
+  Servicios -> PersistenciaCentral : Registra el aviso
+  PersistenciaCentral -> Database : Persiste el evento
+  Servicios -> Push : Solicita el aviso de detección no confiable
+  Push -> Mobile : Avisa qué revisar: luz y encuadre
+end
+
+== Consulta del historial y el resumen semanal ==
+Familiar -> Mobile : Consulta el historial o el resumen semanal
+Mobile -> Backend : Solicita alertas, estados y conteos (HTTPS / REST)
+Backend -> Servicios : Delega la consulta
+Servicios -> PersistenciaCentral : Consulta el historial y los conteos
+PersistenciaCentral -> Database : Lee alertas y eventos
+Backend --> Mobile : Entrega el historial y el resumen
+Mobile -> ClientCache : Guarda una copia local
+Mobile --> Familiar : Muestra el historial, los clips\ny la comparación semanal
+
+legend bottom
+|= Componente |= Capa |= Responsabilidad en el flujo |
+| Cámaras RGB estándar [Webcam USB] | Dispositivos e interfaces externas | Capturan el video de la habitación; no procesan nada (una webcam en el piloto) |
+| Agente de captura [Aplicación de escritorio] | Captura | Lee su configuración fija, registra la cámara al iniciar, reduce, cifra y envía el video; respeta consentimiento y pausas |
+| Servicio de ingesta de video | Procesamiento de Video | Recibe el video, controla la calidad, detecta movimiento y mantiene el búfer del clip (6 s antes y 6 s después) |
+| Servicio de estimación de pose | Procesamiento de Video | Detecta a la persona, extrae sus landmarks y descarta fotogramas sin persona o sin puntos del cuerpo |
+| Servicio de clasificación cinemática | Procesamiento de Video | Clasifica el evento con umbrales; confirma la caída tras 30 s en el suelo o registra la recuperación; avisa si la detección no es confiable |
+| Servicio de transmisión en vivo | Procesamiento de Video | Retransmite la cámara por WebRTC a demanda del familiar; no disponible con la cámara en pausa |
+| Backend API del sistema [REST API] | Servicios | Punto de entrada de la aplicación móvil y del agente de captura |
+| Servicios de Aplicación | Servicios | Cámaras, consentimiento, alertas, escalamiento, vista en vivo y registro de accesos, familiares e historial |
+| Persistencia central | Persistencia Compartida | Acceso a los datos de usuarios, cámaras, consentimientos, alertas, eventos y accesos a la vista en vivo |
+| Base de Datos Central [Base de datos relacional] | Persistencia Compartida | Almacena los datos del sistema, incluido el registro de accesos |
+| Persistencia de clips de video | Persistencia Compartida | Guarda y elimina clips; aplica la retención y genera enlaces temporales |
+| Almacenamiento de clips [Almacenamiento de objetos] | Persistencia Compartida | Almacena los clips cifrados de los eventos |
+| Servicio de notificaciones push [Servicio externo] | Dispositivos e interfaces externas | Entrega alertas y avisos al celular aunque la app esté cerrada |
+| Aplicación del familiar/cuidador | Presentación | Alertas, clip, vista en vivo a demanda, registro de accesos, cámara, familia e historial |
+| Base de datos local del cliente [SQLite] | Presentación | Copia local de alertas, historial y estado de las cámaras |
+endlegend
+
+@enduml

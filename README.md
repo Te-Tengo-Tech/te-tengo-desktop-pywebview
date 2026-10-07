@@ -2,6 +2,8 @@
 
 **Te Tengo Captura**, the household agent. Today it holds the **validated detection module** (MediaPipe, kinematic classification and clips) and its validation tools. The desktop application (pywebview) will be built here. It will **process the video on the PC** and send only events and clips to the backend.
 
+> **Building the agent:** the work is planned in [docs/WORK_PLAN.md](docs/WORK_PLAN.md) and the rules for contributors and coding agents are in [AGENTS.md](AGENTS.md). The backend contract is [docs/AGENT_CONTRACT.md](docs/AGENT_CONTRACT.md).
+
 > **Migration status (ADR 0007):** the code started as a cloud service (`te-tengo-service-detection-worker`, with FastAPI and WebSocket ingestion). The core (`clasificacion/`, `pose/`, the clip buffer and encoding, `eventos/`) is reused as is inside the agent; the ingestion server will be retired when the agent is ready. The change request to the charter is pending.
 
 
