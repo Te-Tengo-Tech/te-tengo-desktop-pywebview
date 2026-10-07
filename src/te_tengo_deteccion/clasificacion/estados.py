@@ -35,7 +35,7 @@ class UmbralSinCalibrarError(ValueError):
 
     def __init__(self) -> None:
         super().__init__(
-            "Falta TT_CLASIFICACION__VELOCIDAD_DESCENSO_MIN: el umbral de velocidad aún no está "
+            "Falta velocidad_descenso_min: el umbral de velocidad aún no está "
             "calibrado (ver docs/classification-spec.md, regla R1)."
         )
 

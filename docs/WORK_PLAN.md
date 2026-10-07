@@ -38,7 +38,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - Delete the rest of `ingesta/` (keep the orchestration of `ProcesadorCamara` for T07, e.g. as `te_tengo_captura/captura/procesador.py`), `salud/`, `main.py`, `eventos/` (replaced by `backend/` in T04), S3 storage, `Dockerfile`, `.dockerignore`, `scripts/agente_simulado.py` and `docs/ingestion-protocol.md`, and their tests.
   - Remove `fastapi`, `uvicorn`, `boto3`, `websockets`, `httpx2` if unused; drop the Docker job from CI.
   - Record the retirement in ADR 0007 ("Consequences") and in `CHANGELOG.md`.
-- [ ] **T03 Installation configuration.**
+- [x] **T03 Installation configuration.**
   - A TOML file written by the project team, read from the platform config directory (`platformdirs`, app name `TeTengoCaptura`) or from `--config <path>`.
   - Fields: `api_url`, `credencial_instalacion`, `[webcam] indice, nombre, especificacion`, `[vivienda] nombre_adulto_mayor, direccion`, `[camara] nombre_habitacion`, `instalada_el`, optional `[clasificacion]` overrides.
   - Defaults for the classifier come from the calibrated values in `docs/validation.md` (today `.env.example`), not from new numbers.
