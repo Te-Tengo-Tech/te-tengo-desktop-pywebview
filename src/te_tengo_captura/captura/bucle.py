@@ -25,6 +25,7 @@ from functools import partial
 from typing import Protocol
 
 from te_tengo_captura.backend.modelos import EventoAgente
+from te_tengo_captura.captura.en_vivo import TransmisorEnVivo, TransmisorNulo
 from te_tengo_captura.captura.fuentes import Captador
 from te_tengo_captura.captura.pose import Estimador
 from te_tengo_captura.ids import uuid7
@@ -65,6 +66,7 @@ class BucleCaptura:
         ejecutar_clip: Callable[[Callable[[], None]], object] | None = None,
         reloj_utc: Callable[[], datetime] = lambda: datetime.now(UTC),
         generar_id: Callable[[], str] = uuid7,
+        en_vivo: TransmisorEnVivo | None = None,
     ) -> None:
         self._captador = captador
         self._estimador = estimador
@@ -76,6 +78,7 @@ class BucleCaptura:
         self._ejecutar_clip = ejecutar_clip or _en_otro_hilo()
         self._reloj_utc = reloj_utc
         self._generar_id = generar_id
+        self._en_vivo = en_vivo or TransmisorNulo()
         self._clasificador = ClasificadorCinematico(umbrales)
         self._buffer = BufferClip()
         self._activa = False
@@ -126,6 +129,8 @@ class BucleCaptura:
         fotograma = self._captador.leer()
         if fotograma is None:
             return []
+        if self._en_vivo.activo:
+            self._en_vivo.enviar(fotograma)
         for clip in self._buffer.agregar(fotograma.instante, fotograma.jpeg):
             self._ejecutar_clip(partial(self._guardar_clip, clip))
 
