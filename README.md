@@ -39,7 +39,6 @@ The internal organization is explained in [docs/architecture.md](docs/architectu
 |---|---|
 | Python | 3.11 (required by `mediapipe==0.10.35`, see [ADR 0003](docs/adr/0003-mediapipe-in-separate-process.md)) |
 | [uv](https://docs.astral.sh/uv/) | 0.12 or later |
-| FFmpeg | Any recent version (builds the MP4 clips) |
 
 ## Getting started
 

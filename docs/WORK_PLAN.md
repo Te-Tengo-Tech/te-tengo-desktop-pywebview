@@ -69,7 +69,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - One immutable `EstadoAgente` derived from: webcam connected, internet, consent, pause, last successful send. Its priority order and texts follow `camState`, `health` and `trayState` in `src/core.js`.
   - Serializes to the JSON the web UI consumes (same fields as `baseState()` in `core.js`, plus the household and webcam data from the config).
   - Table-driven tests covering the five states and their priority.
-- [ ] **T10 Encode clips without a system FFmpeg.**
+- [x] **T10 Encode clips without a system FFmpeg.**
   - The packaged Windows app cannot rely on `ffmpeg` in `PATH`. Replace the subprocess with PyAV (its wheels bundle FFmpeg) or another option that works in PyInstaller on Windows, macOS and Linux; write ADR 0008.
   - Keep H.264, even dimensions and `yuv420p`; test that the output opens and has the expected frame count.
 
