@@ -79,6 +79,7 @@ def construir_agente(args: argparse.Namespace, configuracion: config.Configuraci
         estimador,
         args.datos or rutas.datos(),
         __version__,
+        vista_en_vivo=not args.backend_falso,
     )
 
 
