@@ -5,7 +5,7 @@ from pathlib import Path
 
 import te_tengo_deteccion
 
-PROHIBIDOS = ("te_tengo_captura", "webview", "pystray", "httpx")
+PROHIBIDOS = ("te_tengo_captura", "webview", "pystray", "httpx", "websockets")
 RAIZ = Path(te_tengo_deteccion.__file__).parent
 
 

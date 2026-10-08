@@ -4,7 +4,7 @@
 **Te Tengo Captura**, the household agent of **Te Tengo** (a system that detects falls of older adults at home). It runs on the household PC, which stays on:
 - it opens the configured USB webcam;
 - it estimates the pose with MediaPipe **on the PC's CPU** and classifies the movement with the validated kinematic classifier (ADR 0007);
-- it sends only **events and 6 s + 6 s clips** to the backend (`te-tengo-general-api`), never a continuous video stream;
+- it sends only **events and 6 s + 6 s clips** to the backend (`te-tengo-general-api`), never a continuous video stream; video leaves the PC only while a family member watches the **live view** (US-23), published to the streaming service on the API's request (`docs/AGENT_CONTRACT.md`, "Live view");
 - it shows the state of the webcam in a small window and in the system tray.
 
 The family manages everything else (consent, pauses, room name, alerts) in the mobile app (`te-tengo-mobile-flutter`). The agent has **no camera linking and no settings screen**: the project team installs it with a fixed configuration file.

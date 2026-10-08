@@ -1,13 +1,13 @@
 # Internal architecture
 
-Te Tengo Captura is one Python process on the household PC. It reads the USB webcam, estimates the pose with MediaPipe on the CPU, classifies the movement with the validated kinematic classifier and sends **events and 6 s + 6 s clips** to `te-tengo-general-api` ([AGENT_CONTRACT.md](AGENT_CONTRACT.md)). A small window and the system tray show the state. ADR 0007 explains why the processing moved from the cloud to the PC.
+Te Tengo Captura is one Python process on the household PC. It reads the USB webcam, estimates the pose with MediaPipe on the CPU, classifies the movement with the validated kinematic classifier and sends **events and 6 s + 6 s clips** to `te-tengo-general-api` ([AGENT_CONTRACT.md](AGENT_CONTRACT.md)). Only while a family member watches the live view does it publish video, to the streaming service (MediaMTX) the API points it to. A small window and the system tray show the state. ADR 0007 explains why the processing moved from the cloud to the PC.
 
 ## Principles
 
 1. **Two packages, one rule.** `te_tengo_deteccion` is the validated detection core: pure Python, no GUI, no network. It never imports `te_tengo_captura`, pywebview, pystray or httpx (`tests/test_dependencias.py`). `te_tengo_captura` is the desktop application around it.
 2. **Same processing as the validation.** 480p, 8 fps sampled by time, JPEG quality 80, pose estimated on the decoded JPEG, MediaPipe in VIDEO mode ([validation.md](validation.md), section 2; ADR 0006).
-3. **Ports and fakes.** Every outside dependency comes in through a small protocol with a fake for tests: `FuenteVideo` (`FuenteFalsa`, `FuenteArchivo`), `Estimador`, the backend (`BackendFalso` on `httpx.MockTransport`), `TransmisorEnVivo`, and the `webview` and `pystray` modules (replaced in `sys.modules`).
-4. **Threads, not globals.** pywebview owns the main thread. Capture (with MediaPipe), heartbeat, outbox, remote thresholds and the state notifier each run in a worker thread. The UI receives the state through subscriptions and the JS bridge.
+3. **Ports and fakes.** Every outside dependency comes in through a small protocol with a fake for tests: `FuenteVideo` (`FuenteFalsa`, `FuenteArchivo`), `Estimador`, the backend (`BackendFalso` on `httpx.MockTransport`), `TransmisorEnVivo` and `Publicador` (live view), the control channel's `connect`, and the `webview` and `pystray` modules (replaced in `sys.modules`).
+4. **Threads, not globals.** pywebview owns the main thread. Capture (with MediaPipe), heartbeat, outbox, remote thresholds, the state notifier, the live view publisher and its control channel each run in a worker thread. The UI receives the state through subscriptions and the JS bridge.
 5. **Hard gates and no lost events.** Without consent or during a pause the webcam is closed (CA-05.2, CA-22.1). Every event goes to a persistent outbox before it is sent.
 
 ## Components
@@ -21,7 +21,9 @@ flowchart LR
     Bucle --> Pose["captura/pose<br/>EstimadorMediaPipe (VIDEO)"]
     Bucle --> Det["te_tengo_deteccion<br/>ClasificadorCinematico · BufferClip · codificar_mp4"]
     Bucle -->|events · clips| Cola["envios/cola<br/>ColaEnvios (SQLite) · EnviadorPendientes"]
-    Bucle -.->|frames while watched| Vivo["captura/en_vivo<br/>TransmisorEnVivo (blocked)"]
+    Bucle -.->|frame + pose while watched| Vivo["captura/en_vivo · postura · publicador<br/>TransmisionEnVivo · PublicadorPyAV"]
+    Canal["backend/transmision<br/>CanalTransmision (WebSocket)"] -->|transmitir · modo| Vivo
+    Latido -.->|capturaPermitida| Vivo
     Latido["latido<br/>Latido · HiloLatido"] -->|capturaPermitida| Bucle
     Umbrales["umbrales_remotos<br/>ActualizadorUmbrales"] -->|thresholds| Bucle
     Cola --> Cliente["backend/cliente<br/>ClienteBackend (httpx)"]
@@ -35,6 +37,8 @@ flowchart LR
   end
   Cliente -->|HTTPS · Api-Version 1| API["te-tengo-general-api"]
   Cliente -->|PUT pre-signed URL| S3[(Clip storage)]
+  API -->|"wss · /api/agente/transmision"| Canal
+  Vivo -->|"H.264 · RTSP(S) over TCP"| MTX["Streaming service<br/>MediaMTX"]
 ```
 
 ## Modules
@@ -52,8 +56,8 @@ src/te_tengo_captura/
 ├── estado.py                    EstadoAgente: priority and Spanish copy of the window and tray
 ├── latido.py                    heartbeat every 30 s; consent, pause and room name
 ├── umbrales_remotos.py          GET /api/agente/configuracion, hourly
-├── backend/                     ClienteBackend, typed errors, BackendFalso
-├── captura/                     sources, sampling, MediaPipe estimator, capture loop, live view port
+├── backend/                     ClienteBackend, typed errors, BackendFalso, live view control channel
+├── captura/                     sources, sampling, MediaPipe estimator, capture loop, live view
 ├── envios/                      persistent outbox (SQLite) and its sender thread
 ├── ui/                          splash, status window, JS bridge; web/ (HTML, CSS, JS, fonts)
 ├── bandeja/                     tray icon images, menu and notifications
@@ -78,6 +82,8 @@ src/te_tengo_captura/
 
 **The window** (notifier thread → main thread): every second `Agente.estado()` derives an immutable `EstadoAgente`. Its priority is lost webcam › no internet › no consent › paused › sending. The window gets it with `ttg.actualizar(...)`, the tray updates its dot and tooltip, and `Avisos` decides the system notifications. The page patches its regions in place, so the countdown never moves the focus.
 
+**Live view** (control channel and publisher threads, US-23): `CanalTransmision` keeps the WebSocket `/api/agente/transmision` open with the camera token. On `{"transmitir":true,…}` the capture loop starts handing each processed frame and its already estimated pose to `TransmisionEnVivo`, which only queues it (two frames; the oldest is dropped when behind). Its worker draws the picture for the mode (`postura.componer`: the frame, the frame with the skeleton, or the skeleton alone on the brand purple with no camera pixels) and `PublicadorPyAV` encodes it as H.264 and publishes it to `urlPublicacion` over RTSP/TCP. `{"transmitir":false}`, a closed channel, or capture no longer allowed (the loop calls `suspender` and the worker checks the gate) close the publisher at once. A failed publish retries at 1 s doubling up to 30 s.
+
 **Startup**: single-instance check → logging → configuration → agent → splash (real steps: threads, webcam, first heartbeat) → status window. Closing or minimizing hides the window to the tray; «Salir» in the tray menu stops everything.
 
 ## Decisions and their records
@@ -87,8 +93,9 @@ src/te_tengo_captura/
 | Processing on the PC, the server retired | [ADR 0007](adr/0007-processing-on-household-pc.md) |
 | MediaPipe in VIDEO mode | [ADR 0006](adr/0006-mediapipe-video-mode.md) |
 | Clips with PyAV | [ADR 0008](adr/0008-clip-encoding-with-pyav.md) |
+| Live view through MediaMTX | [AGENT_CONTRACT.md](AGENT_CONTRACT.md), "Live view"; `captura/en_vivo.py` and `backend/transmision.py` docstrings |
 | Thresholds and their sources | [classification-spec.md](classification-spec.md), [ADR 0004](adr/0004-chen-thresholds.md) |
-| Implementation choices (backoffs, intervals, timeouts) | the docstring of each module: `envios/cola.py`, `latido.py`, `captura/fuentes.py`, `captura/bucle.py`, `umbrales_remotos.py`, `ui/arranque.py` |
+| Implementation choices (backoffs, intervals, timeouts) | the docstring of each module: `envios/cola.py`, `latido.py`, `captura/fuentes.py`, `captura/bucle.py`, `captura/en_vivo.py`, `captura/publicador.py`, `backend/transmision.py`, `umbrales_remotos.py`, `ui/arranque.py` |
 | Open questions for the team | [BLOCKERS.md](BLOCKERS.md) |
 
 ## References

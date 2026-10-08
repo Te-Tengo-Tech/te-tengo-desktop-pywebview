@@ -86,6 +86,7 @@ def test_construye_el_agente_con_backend_falso_y_video(
     )
     agente = construir_agente(args, configuracion)
     assert isinstance(agente.captador._fuente, FuenteArchivo)
+    assert agente._canal is None  # no WebSocket server behind the fake backend
     assert agente.reintentar_ahora()  # the fake backend answers the heartbeat
     assert agente.estado().situacion.value == "enviando"
     agente.detener()

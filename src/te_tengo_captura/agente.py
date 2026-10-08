@@ -1,7 +1,8 @@
 """The agent without its UI: builds the components, runs their threads and derives the state.
 
 Threads (AGENTS.md): pywebview owns the main thread; the capture loop (with MediaPipe), the
-heartbeat, the outbox sender and the state notifier each run in a worker thread. The UI gets
+heartbeat, the outbox sender, the state notifier, the live view publisher and its control
+channel each run in a worker thread. The UI gets
 the state through ``suscribir`` and the bridge, never by reading globals.
 """
 
@@ -13,7 +14,9 @@ from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 
 from te_tengo_captura.backend.cliente import ClienteBackend
+from te_tengo_captura.backend.transmision import CanalTransmision
 from te_tengo_captura.captura.bucle import BucleCaptura, HiloCaptura
+from te_tengo_captura.captura.en_vivo import TransmisionEnVivo
 from te_tengo_captura.captura.fuentes import Captador, FuenteVideo
 from te_tengo_captura.captura.pose import Estimador
 from te_tengo_captura.config import Configuracion
@@ -40,7 +43,10 @@ class Agente:
         reloj_utc: Callable[[], datetime] = lambda: datetime.now(UTC),
         zona: tzinfo | None = None,
         codificar: Callable[[list[tuple[float, bytes]]], bytes] = codificar_mp4,
+        vista_en_vivo: bool = False,
     ) -> None:
+        """``vista_en_vivo`` opens the live view's control channel to ``config.api_url``; it is
+        off for ``--backend-falso`` and the tests, which have no WebSocket server."""
         self.config = config
         self.version = version
         self._cliente = cliente
@@ -56,6 +62,7 @@ class Agente:
             reloj_utc=reloj_utc,
             al_cambiar=self._al_latir,
         )
+        self.en_vivo = TransmisionEnVivo(permitida=self.latido.captura_permitida)
         self.bucle = BucleCaptura(
             self.captador,
             estimador,
@@ -65,6 +72,10 @@ class Agente:
             al_encolar=self._al_encolar,
             codificar=codificar,
             reloj_utc=reloj_utc,
+            en_vivo=self.en_vivo,
+        )
+        self._canal = (
+            CanalTransmision(cliente, config.api_url, self.en_vivo) if vista_en_vivo else None
         )
         self._enviador = EnviadorPendientes(self.cola, cliente)
         self.umbrales = ActualizadorUmbrales(
@@ -82,14 +93,20 @@ class Agente:
         logger.info("Te Tengo Captura %s iniciando", self.version)
         self._hilo_latido.iniciar()
         self._enviador.iniciar()
+        self.en_vivo.iniciar()
         self._hilo_captura.iniciar()
+        if self._canal is not None:
+            self._canal.iniciar()
         self.umbrales.iniciar()
         self._hilo_estado.start()
 
     def detener(self) -> None:
         self._detenido.set()
         self.umbrales.detener()
+        if self._canal is not None:
+            self._canal.detener()
         self._hilo_captura.detener()
+        self.en_vivo.cerrar()
         self._hilo_latido.detener()
         self._enviador.detener()
         self.cola.cerrar()
@@ -97,7 +114,7 @@ class Agente:
         logger.info("Te Tengo Captura detenido")
 
     def secretos(self) -> list[str]:
-        return self._cliente.secretos()
+        return [*self._cliente.secretos(), *self.en_vivo.secretos()]
 
     # ------------------------------------------------------------------ state
 

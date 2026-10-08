@@ -16,7 +16,7 @@ Section 8 explains each window state. Section 12 is a local end-to-end test reci
 
 ## 1. What is needed
 
-- A Windows 10 or 11 PC that stays on, with internet access.
+- A Windows 10 or 11 PC that stays on, with internet access (HTTPS to the API and, for the live view, outbound RTSPS to the streaming service's port, 8322 in production).
 - A USB webcam (the pilot uses a 1080p one; the agent works at 480p).
 - The build of the agent: the `te-tengo-captura-windows` artifact of the CI `empaquetar` job, or `make empaquetar` on a Windows machine with the repository.
 - The household already registered by the family in the mobile app (account, then household: US-01, US-04). The credential is issued for an existing household.

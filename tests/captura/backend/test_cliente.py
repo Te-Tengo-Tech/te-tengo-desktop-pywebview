@@ -272,3 +272,24 @@ def test_hilos_concurrentes_registran_una_sola_vez(
 
     assert all(estado.captura_permitida for estado in estados)
     assert backend.registros == 1
+
+
+def test_token_vigente_registra_solo_si_no_hay_token(
+    cliente: ClienteBackend, backend: BackendFalso
+) -> None:
+    token = cliente.token_vigente()
+    assert backend.registros == 1
+    assert cliente.token_vigente() == token
+    assert backend.registros == 1
+
+
+def test_renovar_token_registra_de_nuevo_una_sola_vez(
+    cliente: ClienteBackend, backend: BackendFalso
+) -> None:
+    rechazado = cliente.token_vigente()
+    nuevo = cliente.renovar_token(rechazado)
+    assert nuevo != rechazado
+    assert backend.registros == 2
+    # Another thread already renewed it: the new token is reused.
+    assert cliente.renovar_token(rechazado) == nuevo
+    assert backend.registros == 2

@@ -95,7 +95,7 @@ The agent is built task by task from this checklist. An agent working autonomous
   - PyInstaller spec (`packaging/te-tengo-captura.spec`) including the MediaPipe model, `ui/web/` and the MediaPipe data files; one-folder build.
   - CI job on `windows-latest` that builds the app and uploads it as an artifact; a smoke test that runs the built exe with `--version`.
 - [x] **T17 Remote thresholds** (`GET /api/agente/configuracion`). Applied at startup and every hour (implementation choice); invalid values are ignored and logged.
-- [~] **T18 Live view on demand** (US-23). Blocked: live view transport (see `docs/BLOCKERS.md`). Prepare a `TransmisorEnVivo` interface fed by the capture loop; no network implementation until the decision. *Interface ready:* `te_tengo_captura/captura/en_vivo.py` (`TransmisorEnVivo`, `TransmisorNulo`), fed by the capture loop only while capture is allowed; the network part waits for the decision.
+- [x] **T18 Live view on demand** (US-23). Unblocked by the decision of 2026-10-07 (MediaMTX, `docs/AGENT_CONTRACT.md`, "Live view"). Control channel `backend/transmision.py` (`CanalTransmision`: WebSocket `/api/agente/transmision`, bearer token, re-register on `401`, reconnect with backoff); `captura/en_vivo.py` (`TransmisionEnVivo`: bounded queue that drops the oldest frame, worker thread, closes at once on `transmitir:false` or when capture is not allowed); `captura/publicador.py` (H.264 with PyAV over RTSP/TCP, `zerolatency`, GOP 1 s); `captura/postura.py` (modes `VIDEO`, `VIDEO_CON_POSTURA`, `SOLO_POSTURA` without camera pixels). No «en vivo» indicator in the window: the prototype has no copy for it (see `docs/BLOCKERS.md`).
 - [x] **T19 Documentation.** Rewrite `README.md` for the agent (install, configure, run, package); update `docs/architecture.md` with a component diagram of `te_tengo_captura`; add `docs/INSTALLATION.md` for the project team (config file, webcam position as in the validation datasets, autostart).
 
 ## Local test checklist (for the team, after the cloud finishes)
@@ -108,3 +108,4 @@ Run on a real PC; these need hardware the cloud does not have.
 6. With the real API running locally: consent missing → 03; pause from the mobile app → 02 and resumes at the hour.
 7. Simulate a fall in front of the webcam → event and clip reach the API; the mobile app gets the push.
 8. Build on Windows with PyInstaller; it starts with Windows and lives in the tray.
+9. With the API's local compose (API + MediaMTX) and the mobile app: open the live view → the app plays the webcam within a few seconds; switch to «solo postura» → only the skeleton on the purple background; pause the camera from the app → the stream stops at once.
