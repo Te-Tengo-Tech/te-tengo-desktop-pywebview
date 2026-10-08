@@ -68,6 +68,10 @@ With a path, it writes a complete agent configuration with the new credential. W
 
 ## 3. Install the program
 
+**With the installer** (`te-tengo-captura-<version>-instalador.exe`, from a GitHub Release or the `Release Windows` workflow; [RELEASE_WINDOWS.md](RELEASE_WINDOWS.md)): run it as the household's Windows user. No administrator rights are needed. It installs into the folder below, creates the Start menu shortcut and the autostart entry (section 10). `te-tengo-captura-<version>-instalador.exe /CONFIG="C:\ruta\config.toml"` also copies the configuration file of section 4. SmartScreen may warn as in step 2.
+
+**Without the installer** (the `te-tengo-captura-windows` CI artifact):
+
 1. Unzip the `te-tengo-captura` folder to `%LOCALAPPDATA%\Programs\TeTengoCaptura\`.
 2. The first time, Windows SmartScreen may warn that the program is not signed (`docs/BLOCKERS.md`, "Windows code signing"). Choose «Más información» → «Ejecutar de todas formas».
 3. Optional: create a Start menu shortcut to `te-tengo-captura.exe`. Opening it again while it runs only shows its window.
@@ -349,6 +353,8 @@ The script:
 It takes about 1.5 minutes, plus the API build the first time. The agent's log is kept in the work directory that the summary prints. The API's `End-to-end` GitHub workflow runs the same script against a branch of this repository (see the API README).
 
 ## 13. Uninstall
+
+If the agent was installed with the installer, uninstall «Te Tengo Captura» from *Settings → Apps*. It stops the agent and removes the program, the shortcut and the autostart entry, then asks whether to delete the configuration and the data as well. Otherwise:
 
 1. «Salir» from the tray icon menu.
 2. Remove the autostart entry (section 10) and delete `%LOCALAPPDATA%\Programs\TeTengoCaptura\`.

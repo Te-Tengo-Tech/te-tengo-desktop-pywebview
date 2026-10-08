@@ -3,6 +3,7 @@
 [![CI](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/ci.yml)
 [![Dependency audit](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/audit.yml/badge.svg)](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/audit.yml)
 [![OSV-Scanner](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/osv-scanner.yml/badge.svg)](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/osv-scanner.yml)
+[![Release Windows](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/release-windows.yml/badge.svg)](https://github.com/Te-Tengo-Tech/te-tengo-desktop-pywebview/actions/workflows/release-windows.yml)
 
 **Te Tengo Captura**, the household agent of **Te Tengo**, a system that detects falls of older adults at home. It runs on the household PC, which stays on, and:
 
@@ -96,6 +97,8 @@ dist/te-tengo-captura/te-tengo-captura --autoprueba --logs .
 ```
 
 The spec bundles the model, MediaPipe's data files and the web UI, and draws the icon from the brand. CI builds it on `windows-latest`, runs `--version` and `--autoprueba`, and uploads the folder as the `te-tengo-captura-windows` artifact. On Windows the agent registers itself to start when the user signs in, and a second launch only shows the running window.
+
+The Windows **installer** (Inno Setup, per user, no administrator rights) and the release workflow that builds it and drafts GitHub Releases are described in [docs/RELEASE_WINDOWS.md](docs/RELEASE_WINDOWS.md).
 
 ## Testing with the webcam or videos
 
