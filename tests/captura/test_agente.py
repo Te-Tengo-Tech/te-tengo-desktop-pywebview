@@ -7,6 +7,8 @@ import pytest
 from te_tengo_captura.agente import Agente
 from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.falso import URL_API, BackendFalso
+from te_tengo_captura.backend.modelos import ModoVista
+from te_tengo_captura.backend.transmision import url_websocket
 from te_tengo_captura.captura.fuentes import FuenteFalsa, Imagen
 from te_tengo_captura.config import Configuracion
 from te_tengo_captura.estado import EstadoAgente, Situacion
@@ -112,3 +114,57 @@ def test_hilos_publican_el_estado_y_se_detienen(e: Escenario) -> None:
     assert e.agente.buscar_webcam(espera_s=5)
     e.agente.detener()
     assert e.backend.senales
+
+
+class PublicadorGrabado:
+    def __init__(self, url: str) -> None:
+        self.url = url
+        self.instantes: list[float] = []
+        self.cerrado = False
+
+    def publicar(self, imagen: Imagen, instante: float) -> None:
+        self.instantes.append(instante)
+
+    def cerrar(self) -> None:
+        self.cerrado = True
+
+
+def test_vista_en_vivo_con_la_captura_y_su_pausa(e: Escenario) -> None:
+    publicadores: list[PublicadorGrabado] = []
+
+    def abrir(url: str) -> PublicadorGrabado:
+        publicadores.append(PublicadorGrabado(url))
+        return publicadores[-1]
+
+    e.agente.en_vivo._abrir_publicador = abrir
+    e.agente.reintentar_ahora()  # capture allowed
+    e.agente.en_vivo.transmitir(
+        "rtsp://m:8554/camaras/camara-1", "agente", "clave-pub", ModoVista.VIDEO
+    )
+    assert "clave-pub" in e.agente.secretos()
+    e.agente.bucle.paso()
+    e.agente.en_vivo.procesar_siguiente(0)
+    assert len(publicadores[0].instantes) == 1
+
+    e.backend.pausar(AHORA + timedelta(hours=1))
+    e.agente.reintentar_ahora()
+    e.agente.bucle.paso()  # the gate closes the webcam and suspends the live view
+    e.agente.en_vivo.procesar_siguiente(0)
+    assert publicadores[0].cerrado
+    e.agente.bucle.paso()
+    e.agente.en_vivo.procesar_siguiente(0)
+    assert len(publicadores) == 1
+
+
+def test_el_canal_de_vista_en_vivo_solo_con_el_backend_real(
+    tmp_path: Path, configuracion: Configuracion
+) -> None:
+    backend = BackendFalso(credencial="c")
+    cliente = ClienteBackend(URL_API, "c", "Sala", "1.0.0", backend.transporte())
+    sin_canal = Agente(configuracion, cliente, FuenteFalsa(), SinPersonas(), tmp_path, "1.0.0")
+    assert sin_canal._canal is None
+    con_canal = Agente(
+        configuracion, cliente, FuenteFalsa(), SinPersonas(), tmp_path, "1.0.0", vista_en_vivo=True
+    )
+    assert con_canal._canal is not None
+    assert con_canal._canal._url == url_websocket(configuracion.api_url)

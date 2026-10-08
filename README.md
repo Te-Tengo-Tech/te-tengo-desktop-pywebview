@@ -121,11 +121,11 @@ Protocol, results per activity and limitations: [docs/validation.md](docs/valida
 
 ## Tests
 
-`make revisar probar` runs everything without a webcam or a display: fake video sources, the fake backend on `httpx.MockTransport`, an injected clock, and stand-ins for the `webview` and `pystray` modules. Where Node.js, Playwright and Chromium are available, the tests also render the window and the splash and compare them pixel by pixel with the prototype screens in `docs/references/desktop-prototype/screens/`. What needs real hardware is in the local test checklist of [docs/WORK_PLAN.md](docs/WORK_PLAN.md).
+`make revisar probar` runs everything without a webcam or a display: fake video sources, the fake backend on `httpx.MockTransport`, an injected clock, and stand-ins for the `webview` and `pystray` modules. The live view's control channel is tested against a local WebSocket server and its publisher against a fake; where Docker is available, one test also publishes to a real MediaMTX container. Where Node.js, Playwright and Chromium are available, the tests also render the window and the splash and compare them pixel by pixel with the prototype screens in `docs/references/desktop-prototype/screens/`. What needs real hardware is in the local test checklist of [docs/WORK_PLAN.md](docs/WORK_PLAN.md).
 
 ## Status
 
-Version 0.2.0. The agent is complete except for what needs real hardware (webcam, display, Windows packaging run) and the live view, which waits for the transport decision. Open items: [docs/BLOCKERS.md](docs/BLOCKERS.md). Changes: [CHANGELOG.md](CHANGELOG.md).
+Version 0.2.0. The agent is complete except for what needs real hardware (webcam, display, Windows packaging run); the live view publishes to MediaMTX on the API's request (`docs/AGENT_CONTRACT.md`, "Live view"). Open items: [docs/BLOCKERS.md](docs/BLOCKERS.md). Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 

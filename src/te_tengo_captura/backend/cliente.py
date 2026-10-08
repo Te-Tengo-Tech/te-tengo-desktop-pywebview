@@ -140,6 +140,14 @@ class ClienteBackend:
     def configuracion(self) -> ConfiguracionRemota:
         return _leer(ConfiguracionRemota, self._autenticado("GET", RUTA_CONFIGURACION))
 
+    def token_vigente(self) -> str:
+        """The camera token, registering first if there is none (control channel handshake)."""
+        return self._token() or self._registrar_si_hace_falta(rechazado=None)
+
+    def renovar_token(self, rechazado: str) -> str:
+        """A ``401`` outside this client (the control channel): register again once."""
+        return self._registrar_si_hace_falta(rechazado=rechazado)
+
     def cerrar(self) -> None:
         self._http.close()
         self._almacen.close()
@@ -147,7 +155,7 @@ class ClienteBackend:
     # ------------------------------------------------------------------ internals
 
     def _autenticado(self, metodo: str, ruta: str, json: Any = None) -> httpx.Response:
-        token = self._token() or self._registrar_si_hace_falta(rechazado=None)
+        token = self.token_vigente()
         try:
             return self._enviar(metodo, ruta, json=json, token=token)
         except NoAutorizadoError:

@@ -19,6 +19,7 @@ dependencies = [
     "pywebview>=6.2.1",
     "pystray>=0.19.5",
     "pillow>=12.3.0",
+    "websockets>=15",
 ]
 
 [project.scripts]
@@ -79,7 +80,10 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-ra --strict-markers --cov=te_tengo_deteccion --cov=te_tengo_captura --cov-report=term-missing"
-markers = ["integracion: requires the downloaded MediaPipe model"]
+markers = [
+    "integracion: requires the downloaded MediaPipe model",
+    "docker: runs a container (MediaMTX); skipped when Docker is not available",
+]
 
 [tool.coverage.run]
 branch = true

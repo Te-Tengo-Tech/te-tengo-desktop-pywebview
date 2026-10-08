@@ -290,9 +290,15 @@ class EnVivoGrabado:
     def __init__(self) -> None:
         self.activo = False
         self.instantes: list[float] = []
+        self.poses: list[Pose | None] = []
+        self.suspensiones = 0
 
-    def enviar(self, fotograma: Fotograma) -> None:
+    def enviar(self, fotograma: Fotograma, pose: Pose | None) -> None:
         self.instantes.append(fotograma.instante)
+        self.poses.append(pose)
+
+    def suspender(self) -> None:
+        self.suspensiones += 1
 
 
 def test_la_vista_en_vivo_recibe_los_fotogramas_solo_si_alguien_mira(umbrales: Umbrales) -> None:
@@ -307,6 +313,18 @@ def test_la_vista_en_vivo_recibe_los_fotogramas_solo_si_alguien_mira(umbrales: U
     escenario.permiso.valor = False  # paused: no live view (CA-23.4)
     escenario.correr(5)
     assert len(en_vivo.instantes) == 2
+    assert en_vivo.suspensiones == 1  # the publisher is told at once
+
+
+def test_la_vista_en_vivo_recibe_la_pose_ya_estimada_del_fotograma(umbrales: Umbrales) -> None:
+    pose = fabricas.DE_PIE
+    escenario = Escenario(umbrales, [pose, None])
+    en_vivo = EnVivoGrabado()
+    en_vivo.activo = True
+    escenario.bucle._en_vivo = en_vivo
+    escenario.correr(2)
+    assert en_vivo.poses == [pose, None]
+    assert escenario.estimador.llamadas == 2  # the live view never estimates again
 
 
 def test_transmisor_nulo() -> None:
@@ -314,4 +332,5 @@ def test_transmisor_nulo() -> None:
 
     nulo = TransmisorNulo()
     assert not nulo.activo
-    nulo.enviar(Fotograma(0.0, b"", np.zeros((1, 1, 3), dtype=np.uint8)))
+    nulo.enviar(Fotograma(0.0, b"", np.zeros((1, 1, 3), dtype=np.uint8)), None)
+    nulo.suspender()

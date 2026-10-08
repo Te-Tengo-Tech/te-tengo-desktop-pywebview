@@ -1,7 +1,8 @@
 """``--autoprueba``: checks that a build has everything it needs, without a webcam or a display.
 
 Used as the smoke test of the packaged app in CI: the MediaPipe model loads and runs, a clip is
-encoded, pywebview and pystray import, and the web assets are present.
+encoded, the live view encodes H.264 and has its RTSP muxer and WebSocket client, pywebview and
+pystray import, and the web assets are present.
 """
 
 import logging
@@ -40,6 +41,30 @@ def _clip() -> None:
         raise RuntimeError("el clip no es un MP4")
 
 
+def _vista_en_vivo() -> None:
+    import tempfile
+
+    import av
+    import numpy as np
+    from websockets.sync.client import connect  # noqa: F401
+
+    from te_tengo_captura.backend.modelos import ModoVista
+    from te_tengo_captura.captura.postura import componer
+    from te_tengo_captura.captura.publicador import PublicadorPyAV
+
+    if "rtsp" not in av.formats_available:
+        raise RuntimeError("PyAV no tiene RTSP")
+    with tempfile.TemporaryDirectory() as directorio:
+        destino = Path(directorio) / "vivo.mkv"
+        publicador = PublicadorPyAV(str(destino))
+        negro = np.zeros((480, 640, 3), dtype=np.uint8)
+        for i in range(8):
+            publicador.publicar(componer(negro, None, ModoVista.SOLO_POSTURA), i / 8)
+        publicador.cerrar()
+        if destino.stat().st_size == 0:
+            raise RuntimeError("la vista en vivo no se codificó")
+
+
 def _interfaz() -> None:
     import pystray  # noqa: F401
     import webview  # noqa: F401
@@ -57,6 +82,7 @@ def ejecutar(ruta_modelo: Path) -> int:
     pruebas: list[tuple[str, Callable[[], None]]] = [
         ("modelo de pose", lambda: _modelo(ruta_modelo)),
         ("clip MP4", _clip),
+        ("vista en vivo", _vista_en_vivo),
         ("interfaz", _interfaz),
     ]
     fallidas = 0

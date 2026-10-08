@@ -15,6 +15,7 @@
 | `POST /api/agente/eventos` | Detected event (body below); idempotent by `eventoId` | US-11 to US-21 |
 | `POST /api/agente/eventos/{eventoId}/clip` | Returns a pre-signed S3 PUT URL to upload the 6 s + 6 s clip | US-18 |
 | `GET /api/agente/configuracion` | Current classification thresholds and agent version, so agents can update themselves | — |
+| WebSocket `/api/agente/transmision` | Live view control channel: when to publish to the streaming service and in which mode (see "Live view") | US-23 |
 
 ## Detected event
 ```json
@@ -78,7 +79,20 @@
 
 **Token expiry:** any `401` other than `CREDENCIAL_INVALIDA` makes the agent register again with its installation credential (an expired or invalid token answers `401 SESION_EXPIRADA`). Agent tokens only open `/api/agente/**`; family members' tokens get `403` there.
 
-**Live view stream** (`wss://…/api/agente/transmision`, proposal pending team confirmation, see `docs/BLOCKERS.md`): the agent keeps one WebSocket open with its bearer token in the handshake.
-- The backend sends the text message `{"transmitir":true}` when a family member opens the live view and `{"transmitir":false}` when the last one closes it.
-- While streaming, the agent sends binary frames `[8-byte big-endian ms timestamp][JPEG]`, the format of its ingestion protocol; the backend relays them unchanged to the app's `urlTransmision`.
-- A new connection of the same camera replaces the previous one.
+## Live view (US-23)
+> Decision of 2026-10-07 (project owner): real video through the streaming service (MediaMTX), with a skeleton that can be switched on. It replaces the WebSocket JPEG relay; the control channel no longer carries binary frames.
+
+**Streaming service:** MediaMTX (`bluenviron/mediamtx`, a pinned 1.x tag), one path per camera, `camaras/<camaraId>`. The agent **publishes**; the app plays LL-HLS from the `urlTransmision` the API gives it. MediaMTX asks the API to authorize every publish and read (`authMethod: http`); only the API knows the tokens.
+
+**Control channel** — WebSocket `/api/agente/transmision` (`ws://` or `wss://` on the API's host), handshake with `Authorization: Bearer <camera token>`; **text JSON messages only**, from the API to the agent:
+- `{"transmitir":true,"urlPublicacion":"rtsp://…/camaras/<camaraId>","usuario":"agente","clave":"<publish token>","modo":"VIDEO"}` when the first active session of the camera starts, or when the agent connects while sessions are active.
+- `{"modo":"VIDEO_CON_POSTURA"}` when the mode changes during a transmission.
+- `{"transmitir":false}` when the last session ends or expires, when the camera is paused, or when consent is revoked. On pause or revocation the API also kicks the publisher and the readers through MediaMTX's control API.
+- A new connection of the same camera replaces the previous one. The agent reconnects with backoff and, on `401`, registers again (see "Token expiry").
+
+**Publishing:** H.264, no audio, the agent's 480p frames at about 8 fps, low-latency settings (`zerolatency`, GOP ≈ 1 s), to `urlPublicacion` with `usuario`/`clave` as the RTSP credentials. RTSP over TCP locally; production may use RTSPS: the agent opens whatever URL it gets. MediaMTX allows a publish only for `camaras/<camaraId>` with `user=agente` and the publish token the API issued for that camera's current transmission. The agent also stops publishing at once when its own capture state does not allow capture (CA-23.4), and when the control channel closes.
+
+**Modes** — drawn by the agent on the frames it publishes, from the MediaPipe landmarks it already computes; the mode applies to the camera's stream (all viewers) **[implementation choice]**:
+- `VIDEO` (default): the camera frame.
+- `VIDEO_CON_POSTURA`: the camera frame with the skeleton drawn on top.
+- `SOLO_POSTURA`: the skeleton on a plain neutral background (brand colours), **no camera pixels**: no image of the home leaves the PC.

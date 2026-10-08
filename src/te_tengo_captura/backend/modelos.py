@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from pydantic.alias_generators import to_camel
 
 from te_tengo_deteccion.clasificacion.estados import TipoEvento
@@ -92,3 +92,26 @@ class SubidaClip(_Cuerpo):
 class ConfiguracionRemota(_Cuerpo):
     version_agente: str
     umbrales: dict[str, Any] = {}
+
+
+class ModoVista(StrEnum):
+    """What the live view shows (``docs/AGENT_CONTRACT.md``, "Live view")."""
+
+    VIDEO = "VIDEO"
+    VIDEO_CON_POSTURA = "VIDEO_CON_POSTURA"
+    SOLO_POSTURA = "SOLO_POSTURA"
+
+
+class OrdenTransmision(_Cuerpo):
+    """A text message of the control channel ``/api/agente/transmision``.
+
+    ``{"transmitir": true, "urlPublicacion", "usuario", "clave", "modo"?}`` starts publishing,
+    ``{"transmitir": false}`` stops it and ``{"modo": …}`` alone changes the mode. ``clave`` is
+    the publish token: never logged.
+    """
+
+    transmitir: bool | None = None
+    url_publicacion: str | None = None
+    usuario: str | None = None
+    clave: str | None = Field(default=None, repr=False)
+    modo: ModoVista | None = None
