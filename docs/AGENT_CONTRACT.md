@@ -1,6 +1,6 @@
 # Household agent contract (Te Tengo Captura)
 
-> The team decided to process video on the household PC (MediaPipe on CPU), so the agent sends **events**, not video (ADR 0004; the change request to the project charter is pending). Event names and fields come from the validated classifier in `te-tengo-desktop-pywebview` (`docs/classification-spec.md`).
+> The team decided to process video on the household PC (MediaPipe on CPU), so the agent sends **events**, not video (ADR 0004; the only video it sends is live view, published to MediaMTX while a family member watches; the change request to the project charter is pending). Event names and fields come from the validated classifier in `te-tengo-desktop-pywebview` (`docs/classification-spec.md`).
 
 ## Authentication
 - **Installation:** the project team installs the agent with a fixed configuration (household, webcam and room) and an installation credential.
@@ -15,7 +15,6 @@
 | `POST /api/agente/eventos` | Detected event (body below); idempotent by `eventoId` | US-11 to US-21 |
 | `POST /api/agente/eventos/{eventoId}/clip` | Returns a pre-signed S3 PUT URL to upload the 6 s + 6 s clip | US-18 |
 | `GET /api/agente/configuracion` | Current classification thresholds and agent version, so agents can update themselves | — |
-| WebSocket `/api/agente/transmision` | Live view control channel: when to publish to the streaming service and in which mode (see "Live view") | US-23 |
 
 ## Detected event
 ```json
@@ -31,7 +30,7 @@
 - `caida_confirmada` (30 s on the floor)
 - `movimiento_inestable`
 - `recuperacion`
-- `deteccion_no_confiable` (5 min without seeing the person)
+- `deteccion_no_confiable` (5 min without seeing the person); its `ocurridoEn` becomes the camera's `noConfiableDesde` (API contract)
 
 **Backend rules:**
 - **Disconnection:** if no heartbeat arrives in time, or a heartbeat reports `webcamConectada: false`, the camera becomes `DESCONECTADA` and push `CAMARA_DESCONECTADA` is sent (CA-07.2). The heartbeat timeout **[implementation choice]** is 3 missed heartbeats, with a heartbeat every 30 s.
@@ -79,20 +78,28 @@
 
 **Token expiry:** any `401` other than `CREDENCIAL_INVALIDA` makes the agent register again with its installation credential (an expired or invalid token answers `401 SESION_EXPIRADA`). Agent tokens only open `/api/agente/**`; family members' tokens get `403` there.
 
-## Live view (US-23)
-> Decision of 2026-10-07 (project owner): real video through the streaming service (MediaMTX), with a skeleton that can be switched on. It replaces the WebSocket JPEG relay; the control channel no longer carries binary frames.
+## Live view (MediaMTX)
+Decided by the project owner on 2026-10-07; it replaces the WebSocket JPEG relay (binary frames are no longer accepted). The video goes to **MediaMTX**, the system's live streaming service; the API only controls the agent and authorizes MediaMTX (ADR 0007 of the backend).
 
-**Streaming service:** MediaMTX (`bluenviron/mediamtx`, a pinned 1.x tag), one path per camera, `camaras/<camaraId>`. The agent **publishes**; the app plays LL-HLS from the `urlTransmision` the API gives it. MediaMTX asks the API to authorize every publish and read (`authMethod: http`); only the API knows the tokens.
+**Control channel:** `wss://…/api/agente/transmision`, opened with `Authorization: Bearer <camera token>` in the handshake.
+- The agent keeps one connection open, and reconnects with backoff. A `401` follows the "Token expiry" rule above: register again. A new connection of the same camera replaces the previous one.
+- Messages are **text JSON only**, from the API to the agent:
 
-**Control channel** — WebSocket `/api/agente/transmision` (`ws://` or `wss://` on the API's host), handshake with `Authorization: Bearer <camera token>`; **text JSON messages only**, from the API to the agent:
-- `{"transmitir":true,"urlPublicacion":"rtsp://…/camaras/<camaraId>","usuario":"agente","clave":"<publish token>","modo":"VIDEO"}` when the first active session of the camera starts, or when the agent connects while sessions are active.
-- `{"modo":"VIDEO_CON_POSTURA"}` when the mode changes during a transmission.
-- `{"transmitir":false}` when the last session ends or expires, when the camera is paused, or when consent is revoked. On pause or revocation the API also kicks the publisher and the readers through MediaMTX's control API.
-- A new connection of the same camera replaces the previous one. The agent reconnects with backoff and, on `401`, registers again (see "Token expiry").
+| Message | When |
+|---|---|
+| `{"transmitir":true,"urlPublicacion":"rtsp://…/camaras/<camaraId>","usuario":"agente","clave":"<publish token>","modo":"VIDEO"}` | The first open live view session of the camera starts. Also on every connection while sessions are open, with a **new** `clave` (the previous one stops working) |
+| `{"modo":"VIDEO_CON_POSTURA"}` | The mode changes during a transmission |
+| `{"transmitir":false}` | The last session ends or expires, the camera is paused, or the consent is revoked. On pause and revocation the API also disconnects the publisher through MediaMTX |
 
-**Publishing:** H.264, no audio, the agent's 480p frames at about 8 fps, low-latency settings (`zerolatency`, GOP ≈ 1 s), to `urlPublicacion` with `usuario`/`clave` as the RTSP credentials. RTSP over TCP locally; production may use RTSPS: the agent opens whatever URL it gets. MediaMTX allows a publish only for `camaras/<camaraId>` with `user=agente` and the publish token the API issued for that camera's current transmission. The agent also stops publishing at once when its own capture state does not allow capture (CA-23.4), and when the control channel closes.
+**Publishing:**
+- The agent publishes to `urlPublicacion` with `usuario` and `clave` as the RTSP credentials.
+  - Locally the URL is RTSP over TCP: `rtsp://localhost:8554/camaras/<camaraId>`.
+  - Production may send RTSPS (`rtsps://<host>:8322/…`): the agent opens whatever URL it gets.
+- Video: H.264, no audio, the agent's 480p frames at about 8 fps, low latency (`zerolatency`, GOP of about 1 s), with PyAV.
+- The agent stops publishing at once on `{"transmitir":false}`, and also whenever its own capture state does not allow capture (`capturaPermitida: false`).
+- MediaMTX asks the API before every publish (`POST /api/interno/mediamtx/autorizar`, internal). The API allows it only for the camera's own path, user `agente` and the current `clave`, while capture is allowed.
 
-**Modes** — drawn by the agent on the frames it publishes, from the MediaPipe landmarks it already computes; the mode applies to the camera's stream (all viewers) **[implementation choice]**:
+**Modes** (`modo`), drawn by the agent on the frames it publishes, from the MediaPipe landmarks it already computes. A mode applies to the camera's stream, so every viewer sees the same one (implementation choice):
 - `VIDEO` (default): the camera frame.
 - `VIDEO_CON_POSTURA`: the camera frame with the skeleton drawn on top.
-- `SOLO_POSTURA`: the skeleton on a plain neutral background (brand colours), **no camera pixels**: no image of the home leaves the PC.
+- `SOLO_POSTURA`: the skeleton on a plain neutral background, in the brand colours. **No camera pixels**: no image of the home leaves the PC.
