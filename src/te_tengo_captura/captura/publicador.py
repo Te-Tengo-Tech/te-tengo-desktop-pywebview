@@ -7,6 +7,11 @@ percent-encoded, which is how FFmpeg's RTSP client sends credentials; the URL is
 Encoder settings (implementation choice, low latency): ``libx264`` with the ``veryfast`` preset
 and ``zerolatency`` tune (no B-frames, no lookahead), one keyframe per second (``GOP_S``) so a
 new viewer starts within a second, about 8 fps from the capture loop and no audio.
+
+Timestamps follow a constant frame rate (frame number × 1/fps), not the capture clock: the
+sampler's real intervals jitter (8 fps taken from a 30 fps source alternates 100 and 133 ms), and
+Apple's low-latency HLS player rejects a stream whose parts change duration (MediaMTX warns
+"part duration changed … this will cause an error in iOS clients").
 """
 
 import logging
@@ -54,20 +59,16 @@ class PublicadorPyAV:
         self._fps = fps
         self._contenedor: Any = None
         self._flujo: Any = None
-        self._inicio: float | None = None
-        self._ultimo_pts = -1
+        self._cuadros = 0
 
     def publicar(self, imagen: Imagen, instante: float) -> None:
         import av
 
         if self._contenedor is None:
             self._abrir(imagen)
-        if self._inicio is None:
-            self._inicio = instante
-        pts = max(self._ultimo_pts + 1, round((instante - self._inicio) * 1000))
-        self._ultimo_pts = pts
         cuadro = av.VideoFrame.from_ndarray(imagen, format="bgr24")
-        cuadro.pts = pts
+        cuadro.pts = round(self._cuadros * 1000 / self._fps)  # constant frame rate, see above
+        self._cuadros += 1
         cuadro.time_base = BASE_TIEMPO
         for paquete in self._flujo.encode(cuadro):
             self._contenedor.mux(paquete)
