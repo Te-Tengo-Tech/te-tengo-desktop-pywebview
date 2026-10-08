@@ -1,0 +1,249 @@
+name: Release Windows
+
+# Builds the Windows installer of Te Tengo Captura (docs/RELEASE_WINDOWS.md):
+# PyInstaller one-folder build → smoke test → Inno Setup installer (packaging/te-tengo-captura.iss)
+# → silent install and uninstall test → run artifact. On a tag `v<version>` it also creates a
+# **draft** GitHub Release with the installer; a person reviews and publishes it.
+#
+# Code signing is optional and inert until configured (Settings → Secrets and variables → Actions):
+#   Azure Artifact Signing (formerly Trusted Signing): secrets AZURE_TENANT_ID, AZURE_CLIENT_ID,
+#     AZURE_CLIENT_SECRET; variables AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT,
+#     AZURE_CERTIFICATE_PROFILE
+#   or a code signing certificate: secrets WINDOWS_PFX_BASE64 and WINDOWS_PFX_PASSWORD
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+  # Pull requests that touch the packaging build the installer, without releasing anything.
+  pull_request:
+    paths:
+      - packaging/**
+      - .github/workflows/release-windows.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  installer:
+    name: Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+      AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+      AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+      WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+      WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/te_tengo_captura/__init__.py)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]] && [ "${GITHUB_REF#refs/tags/v}" != "$version" ]; then
+            echo "::error::Tag ${GITHUB_REF#refs/tags/} does not match __version__ $version (src/te_tengo_captura/__init__.py)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Te Tengo Captura $version"
+
+      - name: Code signing configuration
+        id: signing
+        shell: bash
+        run: |
+          if [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_CLIENT_SECRET" ] \
+            && [ -n "$AZURE_SIGNING_ENDPOINT" ] && [ -n "$AZURE_SIGNING_ACCOUNT" ] && [ -n "$AZURE_CERTIFICATE_PROFILE" ]; then
+            echo "mode=azure" >> "$GITHUB_OUTPUT"
+          elif [ -n "$WINDOWS_PFX_BASE64" ] && [ -n "$WINDOWS_PFX_PASSWORD" ]; then
+            echo "mode=pfx" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=none" >> "$GITHUB_OUTPUT"
+            if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+              echo "::notice title=Installer not signed::Windows SmartScreen will warn on first run. To sign, set the Azure Artifact Signing secrets and variables or WINDOWS_PFX_BASE64 and WINDOWS_PFX_PASSWORD (docs/RELEASE_WINDOWS.md)."
+            fi
+          fi
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked --group empaquetado
+      - name: Download the MediaPipe model
+        shell: bash
+        run: ./scripts/descargar_modelo.sh
+      - name: Build with PyInstaller
+        run: uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
+      - name: Smoke test the executable
+        shell: pwsh
+        run: |
+          # A windowed exe does not block the shell: wait for it and check the exit code.
+          $exe = "dist/te-tengo-captura/te-tengo-captura.exe"
+          $version = Start-Process -FilePath $exe -ArgumentList "--version" -Wait -PassThru
+          if ($version.ExitCode -ne 0) { throw "--version terminó con $($version.ExitCode)" }
+          $prueba = Start-Process -FilePath $exe -ArgumentList "--autoprueba","--logs","logs" -Wait -PassThru
+          Get-Content logs/te-tengo-captura.log
+          if ($prueba.ExitCode -ne 0) { throw "--autoprueba terminó con $($prueba.ExitCode)" }
+
+      # 1) Sign the agent executable (before it goes into the installer).
+      - name: Sign the executable (Azure Artifact Signing)
+        if: steps.signing.outputs.mode == 'azure'
+        uses: Azure/artifact-signing-action@v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          files: ${{ github.workspace }}\dist\te-tengo-captura\te-tengo-captura.exe
+          file-digest: SHA256
+          timestamp-digest: SHA256
+      - name: Sign the executable (PFX certificate)
+        if: steps.signing.outputs.mode == 'pfx'
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "firma.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign /f $pfx /p $env:WINDOWS_PFX_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d "Te Tengo Captura" dist\te-tengo-captura\te-tengo-captura.exe
+          if ($LASTEXITCODE -ne 0) { throw "signtool terminó con $LASTEXITCODE" }
+
+      # 2) Compile the installer with Inno Setup 6 (preinstalled on windows-latest; installed if not).
+      - name: Compile the installer (Inno Setup)
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup --no-progress -y
+            $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          & $iscc.FullName /Qp "/DAppVersion=$env:VERSION" packaging\te-tengo-captura.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC terminó con $LASTEXITCODE" }
+          Get-ChildItem dist\instalador
+
+      # 3) Sign the installer.
+      - name: Sign the installer (Azure Artifact Signing)
+        if: steps.signing.outputs.mode == 'azure'
+        uses: Azure/artifact-signing-action@v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist\instalador
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-digest: SHA256
+      - name: Sign the installer (PFX certificate)
+        if: steps.signing.outputs.mode == 'pfx'
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "firma.pfx"
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          $instalador = Get-ChildItem dist\instalador\*.exe | Select-Object -First 1
+          & $signtool.FullName sign /f $pfx /p $env:WINDOWS_PFX_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d "Te Tengo Captura" $instalador.FullName
+          if ($LASTEXITCODE -ne 0) { throw "signtool terminó con $LASTEXITCODE" }
+      - name: Remove the certificate
+        if: always() && steps.signing.outputs.mode == 'pfx'
+        shell: pwsh
+        run: Remove-Item (Join-Path $env:RUNNER_TEMP "firma.pfx") -ErrorAction SilentlyContinue
+
+      # 4) Install silently as this user, check the result, then uninstall and check it is gone.
+      - name: Install and uninstall test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $instalador = Get-ChildItem dist\instalador\*.exe | Select-Object -First 1
+          $p = Start-Process $instalador.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LOG=instalacion.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content instalacion.log; throw "El instalador terminó con $($p.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA "Programs\TeTengoCaptura"
+          $exe = Join-Path $app "te-tengo-captura.exe"
+          if (-not (Test-Path $exe)) { throw "Falta $exe" }
+          $run = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run").TeTengoCaptura
+          # The same value the agent writes itself (src/te_tengo_captura/autoinicio.py).
+          if ($run -ne "`"$exe`"") { throw "Inicio con Windows inesperado: $run" }
+          $atajo = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Te Tengo Captura.lnk"
+          if (-not (Test-Path $atajo)) { throw "Falta el acceso directo $atajo" }
+          $v = Start-Process $exe -ArgumentList "--version" -Wait -PassThru
+          if ($v.ExitCode -ne 0) { throw "--version instalado terminó con $($v.ExitCode)" }
+          Write-Host "Instalado en $app; inicio con Windows: $run"
+
+          $u = Start-Process (Join-Path $app "unins000.exe") -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "El desinstalador terminó con $($u.ExitCode)" }
+          # The uninstaller finishes from a copy in %TEMP%: wait for it.
+          for ($i = 0; $i -lt 60 -and (Test-Path $app); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $app) { throw "La carpeta $app sigue después de desinstalar" }
+          if ((Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run").PSObject.Properties.Name -contains "TeTengoCaptura") {
+            throw "El inicio con Windows sigue después de desinstalar"
+          }
+          if (Test-Path $atajo) { throw "El acceso directo sigue después de desinstalar" }
+          Write-Host "Desinstalado sin restos"
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\instalador\*.exe | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" | Out-File -Encoding ascii -Append dist\instalador\SHA256SUMS.txt
+          }
+          Get-Content dist\instalador\SHA256SUMS.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: te-tengo-captura-${{ steps.version.outputs.version }}-instalador
+          path: dist/instalador/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 30 }}
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "## Te Tengo Captura ${{ steps.version.outputs.version }}: Windows installer"
+            echo "- Signing: ${{ steps.signing.outputs.mode == 'none' && 'not signed (SmartScreen will warn)' || steps.signing.outputs.mode }}"
+            echo "- Install, autostart and uninstall test: passed"
+            echo '```'
+            cat dist/instalador/SHA256SUMS.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    # Only on a version tag, and always as a draft: a person reviews the notes and publishes it.
+    name: Draft GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: installer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: te-tengo-captura-${{ needs.installer.outputs.version }}-instalador
+          path: instalador
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.installer.outputs.version }}
+        run: |
+          # Never touch an existing release (it may already be public): delete it first to rebuild it.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::Release $TAG already exists; delete it on the Releases page to create the draft again."
+            exit 1
+          fi
+          gh release create "$TAG" instalador/* --draft --generate-notes \
+            --title "Te Tengo Captura $VERSION" --repo "$GITHUB_REPOSITORY"
+          echo "Draft release $TAG ready: review the notes and publish it from the Releases page." >> "$GITHUB_STEP_SUMMARY"

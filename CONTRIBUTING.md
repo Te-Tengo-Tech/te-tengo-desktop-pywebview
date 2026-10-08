@@ -26,6 +26,7 @@
 | [CI](.github/workflows/ci.yml) | Push to `main`/`develop`, every PR | `Lint, format and types` (ruff, mypy strict); `Tests and coverage` (pytest, coverage XML/HTML artifact and summary on the run page); then `Windows package` (PyInstaller build, smoke test, app artifact) |
 | [Dependency audit](.github/workflows/audit.yml) | Weekly, manual, PRs that change dependencies | pip-audit of every locked dependency; scheduled runs fail on any known vulnerability |
 | [OSV-Scanner](.github/workflows/osv-scanner.yml) | Weekly, manual, PRs that change dependencies | Scans `uv.lock`; scheduled runs fail on high or critical |
+| [Release Windows](.github/workflows/release-windows.yml) | Manual, tags `v*`, PRs that change `packaging/` | PyInstaller build and smoke test, Inno Setup installer, silent install and uninstall test, installer artifact; optional code signing; on tags a **draft** GitHub Release ([docs/RELEASE_WINDOWS.md](docs/RELEASE_WINDOWS.md)) |
 
 A new push cancels the superseded CI run of the same branch. Dependabot opens weekly update PRs to `develop` (`mediapipe` stays pinned, see ADR 0003).
 
