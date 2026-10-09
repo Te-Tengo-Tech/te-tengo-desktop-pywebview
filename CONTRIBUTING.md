@@ -6,10 +6,10 @@
 |---|---|---|---|
 | `feature/<module>-<topic>` | `develop` | `develop` | New work, e.g. `feature/captura-contrapresion` |
 | `bugfix/<module>-<topic>` | `develop` | `develop` | Fixes found during development, e.g. `bugfix/pose-angulo-vertical` |
-| `hotfix/<topic>` | `main` | `main` **and** `develop` | Urgent fixes to a release |
-| `release/<version>` | `develop` | `main` and `develop` | Release preparation (no releases are cut yet) |
+| `hotfix/<version>` | `main` | `main`, then `develop` (back-merge) | Urgent fixes to a released version, e.g. `hotfix/0.3.1` (the next patch version) |
+| `release/<version>` | `develop` | `main`, then `develop` (back-merge) | Release preparation, e.g. `release/0.3.0`: each push builds a release candidate `v<version>-rc.N`; QA fixes go here (directly or from a `bugfix/*` branch of it) |
 
-`main` only receives releases and hotfixes. Branch prefixes follow git flow; commit messages keep their Conventional Commit types (`feat:`, `fix:`, `ci:`, `docs:` …).
+`main` only receives releases and hotfixes, and only receives the files a candidate was tested with: production refuses a `main` whose tree differs from every candidate ([docs/RELEASES.md](docs/RELEASES.md)). Branch prefixes follow git flow; commit messages keep their Conventional Commit types (`feat:`, `fix:`, `ci:`, `docs:` …).
 
 ## Workflow
 
@@ -23,13 +23,14 @@
 
 | Workflow | Trigger | Jobs |
 |---|---|---|
-| [CI](.github/workflows/ci.yml) | Push to `main`/`develop`, every PR | `Lint, format and types` (ruff, mypy strict); `Tests and coverage` (pytest, coverage XML/HTML artifact and summary on the run page); then `Windows package` (PyInstaller build, smoke test, app artifact) |
+| [CI](.github/workflows/ci.yml) | Push to `main`, `develop`, `release/**`, `hotfix/**`; every PR | `Lint, format and types` (ruff, mypy strict); `Tests and coverage` (pytest, coverage XML/HTML artifact and summary on the run page); then `Windows package` (PyInstaller build, smoke test, app artifact) |
 | [Dependency audit](.github/workflows/audit.yml) | Weekly, manual, PRs that change dependencies | pip-audit of every locked dependency; scheduled runs fail on any known vulnerability |
 | [OSV-Scanner](.github/workflows/osv-scanner.yml) | Weekly, manual, PRs that change dependencies | Scans `uv.lock`; scheduled runs fail on high or critical |
-| [Release](.github/workflows/release.yml) | Push to `release/*` or `hotfix/*`; PRs that change `packaging/` (builds only) | Version check; lint and tests; Windows installer (PyInstaller, smoke test, Inno Setup, install/uninstall test, optional signing) and macOS `.dmg` (`ENABLE_MAC_DMG`; ad-hoc or notarized) built once; `staging` (approval) and `produccion` (approval) upload the same files to Cloudflare R2 and check the downloads; draft GitHub Release; opens the pull request to `main` ([docs/RELEASES.md](docs/RELEASES.md)) |
-| [Etiquetar](.github/workflows/etiquetar.yml) | Push to `main` (a merged release) | Tag `v<version>`, GitHub Release with the CHANGELOG notes (publishing the draft with the approved binaries), back-merge pull request `main → develop`. No deployment |
+| [Release](.github/workflows/release.yml) | Push to `release/*` or `hotfix/*`; PRs that change `packaging/` or `.github/scripts/` (builds only) | Version check; lint and tests; Windows installer (PyInstaller, smoke test, Inno Setup, install/uninstall test, optional signing) and macOS `.dmg` (`ENABLE_MAC_DMG`; ad-hoc or notarized) built once and stored as the pre-release `v<version>-rc.N` (SHA-256, tree hash, build number); `staging` (approval) uploads the candidate to R2 `staging/` and checks the downloads; opens the pull request to `main` ([docs/RELEASES.md](docs/RELEASES.md)) |
+| [Produccion](.github/workflows/produccion.yml) | Push to `main` (a merged release or hotfix) | Finds the candidate whose tree equals main's; `produccion` (approval) verifies its SHA-256 and uploads the same files to the R2 production keys; only then tag `v<version>` and the GitHub Release (CHANGELOG notes, the candidate's binaries with `ENABLE_DESKTOP_GITHUB_RELEASE`); back-merge pull request `main → develop`. Nothing is built |
+| [Rollback](.github/workflows/rollback.yml) | Manual, on `main`, with a version | `produccion` (approval) puts the verified binaries of an earlier release back on the R2 production keys |
 
-A new push cancels the superseded CI run of the same branch. Dependabot opens weekly update PRs to `develop` (`mediapipe` stays pinned, see ADR 0003).
+CI also runs on pushes to `release/**`, `hotfix/**` and `main` because the pull requests the workflows open with `GITHUB_TOKEN` start no workflows: the required checks come from the push run on the same commit. A new push cancels the superseded CI run of the same branch. Dependabot opens weekly update PRs to `develop` (`mediapipe` stays pinned, see ADR 0003).
 
 ## Commit messages
 
