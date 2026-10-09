@@ -5,7 +5,11 @@ token in the handshake (``Authorization: Bearer``) and receives **text JSON only
 
 * ``{"transmitir": true, "urlPublicacion", "usuario", "clave", "modo"?}``: start publishing;
 * ``{"modo": "VIDEO_CON_POSTURA"}``: change the mode during a transmission;
-* ``{"transmitir": false}``: stop publishing.
+* ``{"transmitir": false}``: stop publishing;
+* ``{"preparar": true}``: the app opened the camera screen; get ready without sending video
+  (``captura/en_vivo.py``, "Pre-warm").
+
+Messages with none of these fields are ignored.
 
 The URL is the API's (``api_url``) with ``ws://`` or ``wss://``. A ``401`` in the handshake
 registers the camera again (contract, "Token expiry"). Any other failure, or a closed
@@ -52,6 +56,8 @@ class ReceptorTransmision(Protocol):
     ) -> None: ...
 
     def cambiar_modo(self, modo: ModoVista) -> None: ...
+
+    def preparar(self) -> None: ...
 
     def detener(self) -> None: ...
 
@@ -181,6 +187,8 @@ class CanalTransmision:
             )
         elif orden.transmitir is False:
             self._receptor.detener()
+        elif orden.preparar is True:
+            self._receptor.preparar()
         elif orden.modo is not None:
             self._receptor.cambiar_modo(orden.modo)
 

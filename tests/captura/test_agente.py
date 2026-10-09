@@ -132,7 +132,7 @@ class PublicadorGrabado:
 def test_vista_en_vivo_con_la_captura_y_su_pausa(e: Escenario) -> None:
     publicadores: list[PublicadorGrabado] = []
 
-    def abrir(url: str) -> PublicadorGrabado:
+    def abrir(url: str, fps: float) -> PublicadorGrabado:
         publicadores.append(PublicadorGrabado(url))
         return publicadores[-1]
 

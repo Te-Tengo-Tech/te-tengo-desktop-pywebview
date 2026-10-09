@@ -181,15 +181,21 @@ class FuenteFalsa:
 # ------------------------------------------------------------------ processing
 
 
+def a_480p(imagen: Imagen) -> Imagen:
+    """Downscaled to ``ALTO_MAX`` rows with an even width; smaller images are returned as is."""
+    import cv2
+
+    alto, ancho = imagen.shape[:2]
+    if alto <= ALTO_MAX:
+        return imagen
+    return cast(Imagen, cv2.resize(imagen, (round(ancho * ALTO_MAX / alto / 2) * 2, ALTO_MAX)))
+
+
 def preparar(imagen: Imagen, instante: float) -> Fotograma:
     """480p (even width), JPEG quality 80 and decoding, exactly as in the validation."""
     import cv2
 
-    alto, ancho = imagen.shape[:2]
-    if alto > ALTO_MAX:
-        imagen = cast(
-            Imagen, cv2.resize(imagen, (round(ancho * ALTO_MAX / alto / 2) * 2, ALTO_MAX))
-        )
+    imagen = a_480p(imagen)
     ok, comprimida = cv2.imencode(".jpg", imagen, [cv2.IMWRITE_JPEG_QUALITY, CALIDAD_JPEG])
     decodificada = cv2.imdecode(comprimida, cv2.IMREAD_COLOR) if ok else None
     if decodificada is None:
@@ -222,7 +228,12 @@ class Muestreador:
 
 
 class Captador:
-    """Reads the source, detects disconnection and reconnection, and yields prepared frames."""
+    """Reads the source, detects disconnection and reconnection, and yields prepared frames.
+
+    ``al_leer`` sees every frame the source delivers, before the 8 fps sampling (the live view
+    takes its own, faster rate from them). It runs in the capture thread, so it must only hand
+    the frame over; an error in it is logged and never stops the capture.
+    """
 
     def __init__(
         self,
@@ -231,8 +242,10 @@ class Captador:
         fps: float = FPS,
         segundos_desconexion: float = SEGUNDOS_DESCONEXION,
         segundos_reapertura: float = SEGUNDOS_REAPERTURA,
+        al_leer: Callable[[float, Imagen], None] | None = None,
     ) -> None:
         self._fuente = fuente
+        self._al_leer = al_leer
         self._reloj = reloj
         self._muestreador = Muestreador(fps)
         self._desconexion = segundos_desconexion
@@ -268,6 +281,11 @@ class Captador:
             logger.info("Webcam conectada")
             self.conectada = True
         instante, imagen = lectura
+        if self._al_leer is not None:
+            try:
+                self._al_leer(instante, imagen)
+            except Exception:
+                logger.exception("Error al entregar el fotograma a la vista en vivo")
         if not self._muestreador.tomar(instante):
             return None
         return preparar(imagen, instante)

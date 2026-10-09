@@ -8,7 +8,7 @@ import pytest
 
 from te_tengo_captura.backend.modelos import EventoAgente
 from te_tengo_captura.captura.bucle import BucleCaptura, HiloCaptura
-from te_tengo_captura.captura.fuentes import Captador, Fotograma, FuenteFalsa, Imagen
+from te_tengo_captura.captura.fuentes import Captador, FuenteFalsa, Imagen
 from te_tengo_captura.captura.pose import EstimadorMediaPipe
 from te_tengo_captura.ids import uuid7
 from te_tengo_deteccion.clasificacion.estados import TipoEvento
@@ -293,26 +293,28 @@ class EnVivoGrabado:
         self.poses: list[Pose | None] = []
         self.suspensiones = 0
 
-    def enviar(self, fotograma: Fotograma, pose: Pose | None) -> None:
-        self.instantes.append(fotograma.instante)
+    def ofrecer(self, instante: float, imagen: Imagen) -> None:
+        self.instantes.append(instante)
+
+    def anotar_pose(self, pose: Pose | None) -> None:
         self.poses.append(pose)
 
     def suspender(self) -> None:
         self.suspensiones += 1
 
 
-def test_la_vista_en_vivo_recibe_los_fotogramas_solo_si_alguien_mira(umbrales: Umbrales) -> None:
+def test_la_vista_en_vivo_recibe_las_poses_solo_si_alguien_mira(umbrales: Umbrales) -> None:
     escenario = Escenario(umbrales, [])
     en_vivo = EnVivoGrabado()
     escenario.bucle._en_vivo = en_vivo
     escenario.correr(3)
-    assert en_vivo.instantes == []
+    assert en_vivo.poses == []
     en_vivo.activo = True
     escenario.correr(2)
-    assert len(en_vivo.instantes) == 2
+    assert len(en_vivo.poses) == 2
     escenario.permiso.valor = False  # paused: no live view (CA-23.4)
     escenario.correr(5)
-    assert len(en_vivo.instantes) == 2
+    assert len(en_vivo.poses) == 2
     assert en_vivo.suspensiones == 1  # the publisher is told at once
 
 
@@ -332,5 +334,6 @@ def test_transmisor_nulo() -> None:
 
     nulo = TransmisorNulo()
     assert not nulo.activo
-    nulo.enviar(Fotograma(0.0, b"", np.zeros((1, 1, 3), dtype=np.uint8)), None)
+    nulo.ofrecer(0.0, np.zeros((1, 1, 3), dtype=np.uint8))
+    nulo.anotar_pose(None)
     nulo.suspender()

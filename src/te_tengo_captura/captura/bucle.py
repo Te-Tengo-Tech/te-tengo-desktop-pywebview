@@ -11,8 +11,9 @@ It runs in a worker thread (``HiloCaptura``). Rules (AGENTS.md):
   logs it, resets the loop (webcam, classifier, tracker and clip buffer) and tries again with a
   growing wait (1 s doubling up to 30 s). Until a frame is processed again the webcam is reported
   as not connected, so the window shows the problem and the backend learns about it.
-* **Live view** (US-23): while a family member watches, each processed frame and its pose are
-  handed to the ``TransmisorEnVivo`` after the pose is estimated, without waiting for the
+* **Live view** (US-23): while a family member watches (or the live view is being prepared),
+  ``Captador`` hands every webcam frame to the ``TransmisorEnVivo`` (it takes its own, faster
+  rate) and the loop hands it each estimated pose for the skeleton, without waiting for the
   network; when capture stops being allowed the live view is suspended at once (CA-23.4).
 * **Clips** (CA-18.1): for the events in ``EVENTOS_CON_CLIP`` the frames from 6 s before to 6 s
   after are encoded as MP4 off the loop thread and queued for upload. If encoding fails, the
@@ -138,8 +139,8 @@ class BucleCaptura:
         pose = self._estimador.estimar(fotograma.imagen, fotograma.instante_ms)
         self.fallando = False
         if self._en_vivo.activo:
-            # Only queued: drawing, encoding and the network run in the live view's thread.
-            self._en_vivo.enviar(fotograma, pose)
+            # The skeleton of the live view is drawn from the latest pose, in its own thread.
+            self._en_vivo.anotar_pose(pose)
         if pose is not None:
             self.deteccion_confiable = True
         ocurrido_en = self._reloj_utc()
