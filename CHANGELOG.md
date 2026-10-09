@@ -5,6 +5,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 ## [Unreleased]
 
 ### Changed
+- Release switches: organization Actions variables, explicit opt-in (`true` turns a channel on, unset means off). `ENABLE_DESKTOP_GITHUB_RELEASE` gates the `Draft GitHub Release` job of `release-windows.yml` (the installer summary says when it is off); `ENABLE_WINDOWS_INSTALLER` gates the `publicar-escritorio` dispatch of `notificar-landing.yml`, and a `desactivado` job writes a notice when it is off. Jobs that run still wait for an approval on `produccion`. Table in `docs/RELEASE_WINDOWS.md`.
 - Release flow: a release merged into `main` is published after an approval on the `produccion` environment (required reviewers, `main` only). The new `notificar-landing.yml` sends `repository_dispatch` `publicar-escritorio` with `{ref, version}` (the commit SHA and the `pyproject.toml` version) to `te-tengo-landing-astro` when `CI` succeeds on a push to `main` (needs the `DISPATCH_TOKEN` secret; a notice without it). `release-windows.yml` runs on push to `main` instead of `v*` tags, checks that `pyproject.toml` and `__version__` match, and its `Draft GitHub Release` job runs in `produccion` and drafts `v<version>` on the released commit.
 
 ### Added

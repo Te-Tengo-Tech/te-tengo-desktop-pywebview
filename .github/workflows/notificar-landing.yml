@@ -12,6 +12,12 @@ name: Notify the landing
 #                    repository te-tengo-landing-astro, permission Contents: Read and write. Without
 #                    it the workflow prints a notice and succeeds.
 #
+# Switch (organization variable, Te-Tengo-Tech → Settings → Secrets and variables → Actions →
+# Variables; explicit opt-in, unset means off):
+#   ENABLE_WINDOWS_INSTALLER   'true' sends the dispatch. Any other value skips the notificar job and
+#                              the desactivado job writes a notice instead. The landing's publicar.yml
+#                              gates its own upload to R2 with the same variable.
+#
 # A manual run from main sends the dispatch again for the current main commit (e.g. after adding the
 # token).
 on:
@@ -32,13 +38,15 @@ jobs:
     name: Dispatch publicar-escritorio to the landing
     # workflow_run: only a successful CI run of a push to main of this repository (a pull request from
     # a fork's own main branch also reports head_branch main, so the event and repository are checked).
+    # Only with the ENABLE_WINDOWS_INSTALLER switch on.
     if: >-
-      (github.event_name == 'workflow_run'
+      ((github.event_name == 'workflow_run'
       && github.event.workflow_run.conclusion == 'success'
       && github.event.workflow_run.event == 'push'
       && github.event.workflow_run.head_branch == 'main'
       && github.event.workflow_run.head_repository.full_name == github.repository)
-      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+      && vars.ENABLE_WINDOWS_INSTALLER == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -82,4 +90,30 @@ jobs:
             echo "### Landing notified"
             echo "Sent \`$EVENT_TYPE\` for version \`$VERSION\` (\`${SHA:0:12}\`) to $LANDING_REPO."
             echo "Approve the publication on the \`produccion\` environment of its Publicar run: https://github.com/$LANDING_REPO/actions/workflows/publicar.yml"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  desactivado:
+    name: Landing publication switched off
+    # The same release conditions as notificar, with the ENABLE_WINDOWS_INSTALLER switch off: says why
+    # nothing was sent, so the run does not look as if nothing happened.
+    if: >-
+      ((github.event_name == 'workflow_run'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_branch == 'main'
+      && github.event.workflow_run.head_repository.full_name == github.repository)
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+      && vars.ENABLE_WINDOWS_INSTALLER != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Explain the skipped dispatch
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          echo "::notice title=Landing not notified: switch off::The organization variable ENABLE_WINDOWS_INSTALLER is not 'true', so publicar-escritorio was not sent to $LANDING_REPO."
+          {
+            echo "### Landing not notified: switch off"
+            echo "The organization variable \`ENABLE_WINDOWS_INSTALLER\` is not \`true\`, so \`$EVENT_TYPE\` for \`${SHA:0:12}\` was not sent to $LANDING_REPO."
+            echo "To publish, set it to \`true\` (Te-Tengo-Tech → Settings → Secrets and variables → Actions → Variables) and run this workflow by hand from main."
           } >> "$GITHUB_STEP_SUMMARY"
