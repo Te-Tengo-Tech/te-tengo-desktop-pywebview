@@ -2,19 +2,23 @@
 
 MediaMTX runs without authentication (any user may publish, read and use the control API), so
 this checks the agent's side only: PyAV's RTSP over TCP publishing of the frames ``Captador``
-prepares from ``FuenteFalsa``, and that ``transmitir: false`` ends the stream. Authorization
+sees from ``FuenteFalsa``, the profile MediaMTX hands to viewers, that ``preparar`` opens no
+connection, and that ``transmitir: false`` ends the stream. Authorization
 belongs to the API (``/api/interno/mediamtx/autorizar``).
 """
 
+import itertools
 import json
 import shutil
 import subprocess
+import threading
 import time
 import urllib.request
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
+import av
 import pytest
 
 from te_tengo_captura.backend.modelos import ModoVista
@@ -56,6 +60,12 @@ class MediaMTX:
 
     def rutas(self) -> list[dict[str, Any]]:
         url = f"http://127.0.0.1:{self.api}/v3/paths/list"
+        with urllib.request.urlopen(url, timeout=2) as respuesta:
+            items: list[dict[str, Any]] = json.load(respuesta)["items"]
+            return items
+
+    def conexiones_rtsp(self) -> list[dict[str, Any]]:
+        url = f"http://127.0.0.1:{self.api}/v3/rtspconns/list"
         with urllib.request.urlopen(url, timeout=2) as respuesta:
             items: list[dict[str, Any]] = json.load(respuesta)["items"]
             return items
@@ -105,30 +115,71 @@ def mediamtx() -> Iterator[MediaMTX]:
         subprocess.run(["docker", "rm", "--force", nombre], capture_output=True, timeout=30)
 
 
+def _alimentar(captador: Captador, segundos: float, hasta: Callable[[], bool]) -> bool:
+    """Reads the fake 30 fps webcam in real time for up to ``segundos`` or until ``hasta``."""
+    fin = time.monotonic() + segundos
+    while time.monotonic() < fin:
+        captador.leer()
+        if hasta():
+            return True
+        time.sleep(1 / 30)
+    return False
+
+
 def test_publica_la_vista_en_vivo_en_mediamtx(mediamtx: MediaMTX) -> None:
     vivo = TransmisionEnVivo(permitida=lambda: True)
     vivo.iniciar()
-    captador = Captador(FuenteFalsa(paso=1 / 8))
+    captador = Captador(FuenteFalsa(paso=1 / 30), al_leer=vivo.ofrecer)
+    ruta_url = f"rtsp://127.0.0.1:{mediamtx.rtsp}/{RUTA}"
     try:
-        vivo.transmitir(
-            f"rtsp://127.0.0.1:{mediamtx.rtsp}/{RUTA}", "agente", "sin-auth", ModoVista.VIDEO
+        vivo.transmitir(ruta_url, "agente", "sin-auth", ModoVista.VIDEO)
+        listo = _alimentar(
+            captador, 15, lambda: vivo.publicados >= 30 and mediamtx.lista(RUTA) is not None
         )
-        ruta = None
-        fin = time.monotonic() + 15
-        while time.monotonic() < fin:
-            if (fotograma := captador.leer()) is not None:
-                vivo.enviar(fotograma, None)
-            if vivo.publicados >= 24 and (ruta := mediamtx.lista(RUTA)) is not None:
-                break
-            time.sleep(1 / 8)
-        assert ruta is not None, mediamtx.rutas()
+        ruta = mediamtx.lista(RUTA)
+        assert listo, mediamtx.rutas()
+        assert ruta is not None
         assert ruta["tracks"] == ["H264"]
         assert ruta["source"]["type"] == "rtspSession"
+
+        # What MediaMTX hands to viewers: Constrained Baseline (WebRTC in every browser).
+        leido = threading.Event()
+        alimentador = threading.Thread(target=_alimentar, args=(captador, 10, leido.is_set))
+        alimentador.start()
+        try:
+            lector = av.open(ruta_url, options={"rtsp_transport": "tcp", "timeout": "5000000"})
+            video = lector.streams.video[0]
+            cuadros = [c for p in itertools.islice(lector.demux(video), 20) for c in p.decode()]
+            lector.close()
+        finally:
+            leido.set()
+            alimentador.join()
+        assert cuadros
+        assert video.codec_context.profile == "Constrained Baseline"
 
         vivo.detener()  # {"transmitir": false}
         fin = time.monotonic() + 5
         while mediamtx.lista(RUTA) is not None and time.monotonic() < fin:
             time.sleep(0.2)
         assert mediamtx.lista(RUTA) is None
+    finally:
+        vivo.cerrar()
+
+
+def test_preparar_no_envia_nada_hasta_transmitir(mediamtx: MediaMTX) -> None:
+    ruta = f"{RUTA}-preparada"
+    vivo = TransmisionEnVivo(permitida=lambda: True)
+    vivo.iniciar()
+    captador = Captador(FuenteFalsa(paso=1 / 30), al_leer=vivo.ofrecer)
+    try:
+        vivo.preparar()
+        _alimentar(captador, 1.5, lambda: False)
+        assert vivo.preparada
+        assert mediamtx.lista(ruta) is None
+        assert mediamtx.conexiones_rtsp() == []  # not even a connection before «transmitir»
+        vivo.transmitir(
+            f"rtsp://127.0.0.1:{mediamtx.rtsp}/{ruta}", "agente", "sin-auth", ModoVista.VIDEO
+        )
+        assert _alimentar(captador, 10, lambda: mediamtx.lista(ruta) is not None)
     finally:
         vivo.cerrar()

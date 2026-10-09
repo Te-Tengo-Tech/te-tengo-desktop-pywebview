@@ -106,11 +106,14 @@ class OrdenTransmision(_Cuerpo):
     """A text message of the control channel ``/api/agente/transmision``.
 
     ``{"transmitir": true, "urlPublicacion", "usuario", "clave", "modo"?}`` starts publishing,
-    ``{"transmitir": false}`` stops it and ``{"modo": …}`` alone changes the mode. ``clave`` is
-    the publish token: never logged.
+    ``{"transmitir": false}`` stops it, ``{"modo": …}`` alone changes the mode and
+    ``{"preparar": true}`` asks for the pre-warm (the app opened the camera screen). Unknown
+    fields are ignored, so an agent that does not know a message does nothing with it.
+    ``clave`` is the publish token: never logged.
     """
 
     transmitir: bool | None = None
+    preparar: bool | None = None
     url_publicacion: str | None = None
     usuario: str | None = None
     clave: str | None = Field(default=None, repr=False)

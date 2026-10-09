@@ -12,6 +12,7 @@ from te_tengo_captura.captura.fuentes import (
     FuenteFalsa,
     FuenteWebcam,
     Muestreador,
+    a_480p,
     preparar,
 )
 
@@ -81,6 +82,34 @@ def test_captador_entrega_fotogramas_muestreados() -> None:
     assert c.conectada is True
     assert len(fotogramas) == 16  # 2 s at 8 fps
     assert fotogramas[1].instante == pytest.approx(4 / 30)
+
+
+def test_al_leer_ve_cada_cuadro_sin_cambiar_lo_que_se_clasifica() -> None:
+    vistos: list[float] = []
+    reloj = Reloj()
+    sin_vista = captador(FuenteFalsa(paso=1 / 30), reloj)
+    con_vista = Captador(
+        FuenteFalsa(paso=1 / 30), reloj=reloj, fps=8.0, al_leer=lambda t, _: vistos.append(t)
+    )
+    a = [f for _ in range(60) if (f := sin_vista.leer()) is not None]
+    b = [f for _ in range(60) if (f := con_vista.leer()) is not None]
+    assert len(vistos) == 60  # every webcam frame, before the 8 fps sampling
+    assert [(f.instante, f.jpeg) for f in a] == [(f.instante, f.jpeg) for f in b]
+
+
+def test_un_error_en_al_leer_no_detiene_la_captura(caplog: pytest.LogCaptureFixture) -> None:
+    def roto(instante: float, imagen: object) -> None:
+        raise RuntimeError("vista en vivo rota")
+
+    c = Captador(FuenteFalsa(paso=1 / 8), reloj=Reloj(), fps=8.0, al_leer=roto)
+    assert c.leer() is not None
+    assert "vista en vivo" in caplog.text
+
+
+def test_a_480p() -> None:
+    assert a_480p(np.zeros((720, 1280, 3), dtype=np.uint8)).shape == (480, 854, 3)
+    pequena = np.zeros((480, 640, 3), dtype=np.uint8)
+    assert a_480p(pequena) is pequena
 
 
 def test_detecta_desconexion_tras_n_segundos_y_reconecta_sola() -> None:

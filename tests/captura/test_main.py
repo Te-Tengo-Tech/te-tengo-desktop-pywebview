@@ -86,9 +86,21 @@ def test_construye_el_agente_con_backend_falso_y_video(
     )
     agente = construir_agente(args, configuracion)
     assert isinstance(agente.captador._fuente, FuenteArchivo)
+    assert agente.en_vivo.fps == 15
+    assert not agente.en_vivo._marca_tiempo  # off by default
     assert agente._canal is None  # no WebSocket server behind the fake backend
     assert agente.reintentar_ahora()  # the fake backend answers the heartbeat
     assert agente.estado().situacion.value == "enviando"
+    agente.detener()
+
+
+@pytest.mark.skipif(not MODELO.is_file(), reason="Falta el modelo: ejecuta `make modelo`")
+def test_marca_de_tiempo_solo_con_la_opcion(tmp_path: Path, configuracion: Configuracion) -> None:
+    assert not argumentos([]).marca_tiempo
+    args = argumentos(["--backend-falso", "--marca-tiempo", "--datos", str(tmp_path)])
+    agente = construir_agente(args, configuracion)
+    assert agente.en_vivo._marca_tiempo
+    assert not configuracion.vista_en_vivo.marca_tiempo  # the installation file is not changed
     agente.detener()
 
 

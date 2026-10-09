@@ -41,6 +41,17 @@ class Camara(_Seccion):
     nombre_habitacion: str = Field(min_length=1)
 
 
+class VistaEnVivo(_Seccion):
+    """Optional ``[vista_en_vivo]`` table (``docs/AGENT_CONTRACT.md``, "Live view")."""
+
+    fps: float = Field(
+        default=15.0, ge=1.0, le=30.0, description="Cuadros por segundo de la vista en vivo."
+    )
+    marca_tiempo: bool = Field(
+        default=False, description="Dibuja la hora de captura en ms (solo para medir latencia)."
+    )
+
+
 class Configuracion(_Seccion):
     api_url: str = Field(min_length=1)
     credencial_instalacion: SecretStr
@@ -49,6 +60,7 @@ class Configuracion(_Seccion):
     vivienda: Vivienda
     camara: Camara
     clasificacion: Umbrales = Umbrales(**UMBRALES_CALIBRADOS)
+    vista_en_vivo: VistaEnVivo = VistaEnVivo()
 
     @field_validator("api_url")
     @classmethod
