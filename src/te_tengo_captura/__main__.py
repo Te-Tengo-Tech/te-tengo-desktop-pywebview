@@ -42,6 +42,11 @@ def argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="run without window or tray until Ctrl+C or SIGTERM (no display: end-to-end tests)",
     )
     parser.add_argument(
+        "--marca-tiempo",
+        action="store_true",
+        help="draw the capture time in ms on the live view (debug: glass-to-glass latency)",
+    )
+    parser.add_argument(
         "--autoprueba",
         action="store_true",
         help="check the model, clip encoding and UI libraries, then exit (packaging smoke test)",
@@ -50,6 +55,9 @@ def argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def construir_agente(args: argparse.Namespace, configuracion: config.Configuracion) -> Agente:
+    if args.marca_tiempo:
+        vista = configuracion.vista_en_vivo.model_copy(update={"marca_tiempo": True})
+        configuracion = configuracion.model_copy(update={"vista_en_vivo": vista})
     credencial = configuracion.credencial_instalacion.get_secret_value()
     if args.backend_falso:
         falso = BackendFalso(credencial=credencial)

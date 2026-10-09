@@ -56,6 +56,9 @@ class Receptor:
     def cambiar_modo(self, modo: ModoVista) -> None:
         self.llamadas.put(("modo", modo))
 
+    def preparar(self) -> None:
+        self.llamadas.put(("preparar",))
+
     def detener(self) -> None:
         self.llamadas.put(("detener",))
 
@@ -167,7 +170,21 @@ def test_ordenes_de_la_api(api: ApiFalsa, canal: CanalTransmision, receptor: Rec
     assert receptor.siguiente() == ("modo", ModoVista.SOLO_POSTURA)
     conexion.send(json.dumps({"transmitir": False}))
     assert receptor.siguiente() == ("detener",)
+    conexion.send(json.dumps({"preparar": True}))
+    assert receptor.siguiente() == ("preparar",)
     assert canal.conectado
+
+
+def test_mensajes_desconocidos_se_ignoran(
+    api: ApiFalsa, canal: CanalTransmision, receptor: Receptor
+) -> None:
+    # An API newer than the agent may send messages it does not know: nothing happens.
+    conexion = api.conexion()
+    conexion.send(json.dumps({"otraOrden": True}))
+    conexion.send(json.dumps({"preparar": False}))
+    conexion.send(json.dumps({"transmitir": False}))
+    assert receptor.siguiente() == ("detener",)
+    assert receptor.llamadas.empty()
 
 
 def test_sin_modo_transmite_video(

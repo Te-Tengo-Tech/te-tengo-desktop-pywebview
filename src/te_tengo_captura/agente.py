@@ -54,7 +54,6 @@ class Agente:
         self._zona = zona
         directorio_datos.mkdir(parents=True, exist_ok=True)
         self.cola = ColaEnvios(directorio_datos)
-        self.captador = Captador(fuente)
         self.latido = Latido(
             cliente,
             self._salud,
@@ -62,7 +61,12 @@ class Agente:
             reloj_utc=reloj_utc,
             al_cambiar=self._al_latir,
         )
-        self.en_vivo = TransmisionEnVivo(permitida=self.latido.captura_permitida)
+        self.en_vivo = TransmisionEnVivo(
+            permitida=self.latido.captura_permitida,
+            fps=config.vista_en_vivo.fps,
+            marca_tiempo=config.vista_en_vivo.marca_tiempo,
+        )
+        self.captador = Captador(fuente, al_leer=self.en_vivo.ofrecer)
         self.bucle = BucleCaptura(
             self.captador,
             estimador,

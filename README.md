@@ -167,7 +167,7 @@ Protocol, results per activity and limitations: [docs/validation.md](docs/valida
 
 ## Status
 
-Version 0.3.0. The agent is complete except for what needs real hardware (webcam, display, Windows packaging run); the live view publishes to MediaMTX on the API's request (`docs/AGENT_CONTRACT.md`, "Live view"). Open items: [docs/BLOCKERS.md](docs/BLOCKERS.md). Changes: [CHANGELOG.md](CHANGELOG.md).
+Version 0.4.0. The agent is complete except for what needs real hardware (webcam, display, Windows packaging run); the live view publishes to MediaMTX on the API's request (`docs/AGENT_CONTRACT.md`, "Live view"). Open items: [docs/BLOCKERS.md](docs/BLOCKERS.md). Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 

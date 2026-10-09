@@ -2,8 +2,8 @@
 ; (docs/RELEASES.md). It needs no administrator rights.
 ;
 ;   uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
-;   iscc /DAppVersion=0.3.0 packaging\te-tengo-captura.iss
-;   → dist\instalador\te-tengo-captura-0.3.0-instalador.exe
+;   iscc /DAppVersion=0.4.0 packaging\te-tengo-captura.iss
+;   → dist\instalador\te-tengo-captura-0.4.0-instalador.exe
 ;
 ; What it does, consistent with docs/INSTALLATION.md:
 ; - installs dist\te-tengo-captura\ into %LOCALAPPDATA%\Programs\TeTengoCaptura (per user);

@@ -8,6 +8,16 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 - Validate the unstable movement rule with our own recordings.
 - Frame quality control, motion detection and backpressure.
 
+## [0.4.0] - 2026-10-09
+
+### Added
+- Live view pre-warm: the control message `{"preparar":true}` (the app opened the camera screen) gets everything local ready for up to 60 s (PyAV and libx264 loaded and run once on a grey picture, the webcam frames flowing at the live rate with only the newest kept in memory, the last publish host resolved again) and `transmitir` then publishes that frame at once. No frame leaves the PC and no connection to MediaMTX is opened before `transmitir`; the warm state is dropped on timeout, pause, consent revocation, `transmitir:false` and when the channel closes. Agents without it ignore the message.
+- `--marca-tiempo` and `[vista_en_vivo] marca_tiempo` (off by default): the capture time in epoch milliseconds drawn on the live view, to measure glass-to-glass latency.
+
+### Changed
+- Live view at 15 fps (`[vista_en_vivo] fps`, 1–30), taken from every webcam frame through `Captador`'s new `al_leer` hook instead of the 8 fps detection frames; the classifier's input (480p, 8 fps, JPEG 80) does not change. The frame is downscaled to 480p in the live view's thread and the skeleton is drawn from the latest pose. Frames keep a constant-rate grid (`Ritmo`): one per 1/15 s slot, slots skipped after a webcam stall.
+- Live view encoder: H.264 Constrained Baseline (WebRTC-compatible), keyframe every 0.5 s with no extra scene-cut keyframes, peak bitrate capped at 1.5 Mbit/s; every publication starts with a keyframe.
+
 ## [0.3.0] - 2026-10-09
 
 ### Changed

@@ -87,15 +87,19 @@ Decided by the project owner on 2026-10-07; it replaces the WebSocket JPEG relay
 
 | Message | When |
 |---|---|
+| `{"preparar":true}` | Live view v3: a member opened the camera screen in the app (`POST /api/vista-en-vivo/preparar`), so a live view may start soon. Never sent while the camera is already transmitting. Agents that do not know it ignore it (it carries neither `transmitir` nor `modo`) |
 | `{"transmitir":true,"urlPublicacion":"rtsp://…/camaras/<camaraId>","usuario":"agente","clave":"<publish token>","modo":"VIDEO"}` | The first open live view session of the camera starts. Also on every connection while sessions are open, with a **new** `clave` (the previous one stops working) |
 | `{"modo":"VIDEO_CON_POSTURA"}` | The mode changes during a transmission |
 | `{"transmitir":false}` | The last session ends or expires, the camera is paused, or the consent is revoked. On pause and revocation the API also disconnects the publisher through MediaMTX |
+
+**Preparing (`preparar`, live view v3):** the agent warms up **only what stays on the PC**, so that the publication starts at once on `transmitir`: open the capture at the live view rate in memory, create the H.264 encoder, resolve the MediaMTX host and, if it can be done without publishing, open the TLS connection. **No frame leaves the PC before `transmitir`** (privacy rule of the product: video leaves the PC only during a live view); an RTSP publish session cannot be opened without sending media, so it is not opened early. The warm state lasts at most 60 s (implementation choice) and is discarded on timeout, on `{"transmitir":false}`, on a pause, on a revoked consent (`capturaPermitida: false`) and when the agent stops. A new `preparar` restarts the 60 s.
 
 **Publishing:**
 - The agent publishes to `urlPublicacion` with `usuario` and `clave` as the RTSP credentials.
   - Locally the URL is RTSP over TCP: `rtsp://localhost:8554/camaras/<camaraId>`.
   - Production may send RTSPS (`rtsps://<host>:8322/…`): the agent opens whatever URL it gets.
-- Video: H.264, no audio, the agent's 480p frames at about 8 fps, low latency (`zerolatency`, GOP of about 1 s), with PyAV.
+- Video: H.264, no audio, 480p, low latency (`zerolatency`), with PyAV. Live view v3: **Constrained Baseline** profile (no B-frames: every browser and WebRTC stack decodes it, and MediaMTX offers H.264 over WebRTC only as `profile-level-id=42e01f`), about **15 fps** at a constant rate taken from the webcam independently of the detection rate (detection keeps its own 480p, 8 fps sampling), and a **keyframe every 0.5 s** (GOP = fps / 2), the first frame of every publication being a keyframe: WebRTC and LL-HLS viewers start at a keyframe. Earlier agents publish the 8 fps detection frames with a GOP of about 1 s; MediaMTX serves either.
+- The app plays the stream over WebRTC (WHEP) first and LL-HLS as the fallback; both come from the same publication, so nothing changes for the agent.
 - The agent stops publishing at once on `{"transmitir":false}`, and also whenever its own capture state does not allow capture (`capturaPermitida: false`).
 - MediaMTX asks the API before every publish (`POST /api/interno/mediamtx/autorizar`, internal). The API allows it only for the camera's own path, user `agente` and the current `clave`, while capture is allowed.
 

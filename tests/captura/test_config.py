@@ -53,6 +53,19 @@ def test_sin_clasificacion_usa_los_valores_calibrados(tmp_path: Path) -> None:
     assert umbrales.confirmacion_suelo_s == 30.0
 
 
+def test_vista_en_vivo_por_defecto_a_15_fps_sin_marca_de_tiempo(tmp_path: Path) -> None:
+    vista = cargar(escribir(tmp_path, MINIMO)).vista_en_vivo
+    assert (vista.fps, vista.marca_tiempo) == (15.0, False)
+
+
+def test_vista_en_vivo_configurable(tmp_path: Path) -> None:
+    texto = MINIMO + "\n[vista_en_vivo]\nfps = 10\nmarca_tiempo = true\n"
+    vista = cargar(escribir(tmp_path, texto)).vista_en_vivo
+    assert (vista.fps, vista.marca_tiempo) == (10.0, True)
+    with pytest.raises(ConfiguracionInvalidaError, match=r"vista_en_vivo\.fps"):
+        cargar(escribir(tmp_path, MINIMO + "\n[vista_en_vivo]\nfps = 60\n"))
+
+
 def test_clasificacion_sobrescribe_solo_lo_indicado(tmp_path: Path) -> None:
     texto = MINIMO + "\n[clasificacion]\nconfirmacion_suelo_s = 20\n"
     umbrales = cargar(escribir(tmp_path, texto)).clasificacion

@@ -38,3 +38,11 @@ nombre_habitacion = "Sala"
 # razon_ancho_alto_min = 1
 # confirmacion_suelo_s = 30
 # sin_deteccion_confiable_s = 300
+
+# Optional live view settings (docs/AGENT_CONTRACT.md, "Live view"). Detection always samples at
+# 8 fps; the live view takes its own rate from the webcam.
+# [vista_en_vivo]
+# fps = 15
+# Debug only: draws the capture time in ms on the live view to measure latency. Never on in
+# a household installation (also: te-tengo-captura --marca-tiempo).
+# marca_tiempo = false
