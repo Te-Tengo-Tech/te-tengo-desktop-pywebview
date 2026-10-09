@@ -2,8 +2,12 @@ name: Release Windows
 
 # Builds the Windows installer of Te Tengo Captura (docs/RELEASE_WINDOWS.md):
 # PyInstaller one-folder build → smoke test → Inno Setup installer (packaging/te-tengo-captura.iss)
-# → silent install and uninstall test → run artifact. On a tag `v<version>` it also creates a
-# **draft** GitHub Release with the installer; a person reviews and publishes it.
+# → silent install and uninstall test → run artifact. When a release reaches main it also creates a
+# **draft** GitHub Release `v<version>` with the installer, in the `produccion` environment: that job
+# waits until a required reviewer approves it on the run page (the environment only accepts main), and
+# a person then reviews the notes and publishes the draft, which creates the tag on the released
+# commit. (The download on the landing is published by the landing's publicar.yml, started by
+# notificar-landing.yml.)
 #
 # Code signing is optional and inert until configured (Settings → Secrets and variables → Actions):
 #   Azure Artifact Signing (formerly Trusted Signing): secrets AZURE_TENANT_ID, AZURE_CLIENT_ID,
@@ -12,9 +16,10 @@ name: Release Windows
 #   or a code signing certificate: secrets WINDOWS_PFX_BASE64 and WINDOWS_PFX_PASSWORD
 on:
   workflow_dispatch:
+  # A release merged into main. (Version tags are not pushed by hand: the produccion environment only
+  # accepts the main branch, and publishing the draft release creates the tag.)
   push:
-    tags:
-      - "v*"
+    branches: [main]
   # Pull requests that touch the packaging build the installer, without releasing anything.
   pull_request:
     paths:
@@ -52,8 +57,9 @@ jobs:
         shell: bash
         run: |
           version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/te_tengo_captura/__init__.py)
-          if [[ "$GITHUB_REF" == refs/tags/v* ]] && [ "${GITHUB_REF#refs/tags/v}" != "$version" ]; then
-            echo "::error::Tag ${GITHUB_REF#refs/tags/} does not match __version__ $version (src/te_tengo_captura/__init__.py)"
+          proyecto=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -n1)
+          if [ "$version" != "$proyecto" ]; then
+            echo "::error::__version__ $version (src/te_tengo_captura/__init__.py) does not match pyproject.toml version $proyecto"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -221,10 +227,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   release:
-    # Only on a version tag, and always as a draft: a person reviews the notes and publishes it.
+    # Only on main (a release), after approval on the produccion environment, and always as a draft:
+    # a person reviews the notes and publishes it.
     name: Draft GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: installer
+    environment:
+      name: produccion
+      url: https://github.com/${{ github.repository }}/releases
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -236,14 +246,17 @@ jobs:
       - name: Create the draft release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
           VERSION: ${{ needs.installer.outputs.version }}
         run: |
-          # Never touch an existing release (it may already be public): delete it first to rebuild it.
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "::error::Release $TAG already exists; delete it on the Releases page to create the draft again."
+          set -euo pipefail
+          tag="v$VERSION"
+          # Never touch an existing release (it may already be public): delete it first to rebuild it,
+          # or bump the version for a new release.
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::Release $tag already exists. Bump the version in pyproject.toml and __version__ for a new release, or delete the release on the Releases page to create the draft again."
             exit 1
           fi
-          gh release create "$TAG" instalador/* --draft --generate-notes \
+          # The tag is created on this commit when a person publishes the draft.
+          gh release create "$tag" instalador/* --draft --generate-notes --target "$GITHUB_SHA" \
             --title "Te Tengo Captura $VERSION" --repo "$GITHUB_REPOSITORY"
-          echo "Draft release $TAG ready: review the notes and publish it from the Releases page." >> "$GITHUB_STEP_SUMMARY"
+          echo "Draft release $tag ready: review the notes and publish it from the Releases page." >> "$GITHUB_STEP_SUMMARY"
