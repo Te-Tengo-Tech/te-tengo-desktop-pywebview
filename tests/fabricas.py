@@ -1,6 +1,6 @@
 """Synthetic poses for the tests (640 × 480 px image, coordinates in pixels)."""
 
-from detection_worker.pose.schemas import TOTAL_LANDMARKS, Indice, Landmark, Pose
+from te_tengo_deteccion.pose.schemas import TOTAL_LANDMARKS, Indice, Landmark, Pose
 
 ANCHO, ALTO = 640, 480
 Px = tuple[float, float]

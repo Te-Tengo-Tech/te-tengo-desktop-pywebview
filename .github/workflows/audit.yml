@@ -1,0 +1,38 @@
+name: Dependency audit
+
+# pip-audit checks every locked Python dependency (all groups, all platforms) against the
+# PyPI advisory database. Scheduled and manual runs fail on any known vulnerability;
+# pull request runs (only when dependencies change) report without failing.
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Mondays 08:00 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pip-audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Export the locked dependencies
+        run: uv export --frozen --format requirements-txt --all-groups --no-emit-project --quiet -o requirements-audit.txt
+      - name: Run pip-audit
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        run: |
+          set -o pipefail
+          echo "## pip-audit" >> "$GITHUB_STEP_SUMMARY"
+          uvx pip-audit@2.10.1 -r requirements-audit.txt --disable-pip --progress-spinner off --format markdown --desc on \
+            | tee -a "$GITHUB_STEP_SUMMARY"

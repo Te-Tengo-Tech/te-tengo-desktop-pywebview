@@ -18,5 +18,6 @@
 - The validation (`scripts/evaluar.py`) and the specification remain valid, because the classification code does not change.
 - The fps must be measured on the real pilot PC.
 - The thresholds and updates must be distributed from the backend.
+- **The ingestion service was retired** (2026-10-07, task T02): the FastAPI app, the WebSocket ingestion endpoint and its binary protocol, `/health`, the S3 clip storage, the provisional `/internal/v1/eventos` publisher, the Docker image and the simulated agent script were deleted. The camera orchestration (`ProcesadorCamara`) moved to `te_tengo_captura/captura/procesador.py`; events and clips now go to the backend through the agent contract (`docs/AGENT_CONTRACT.md`).
 
 Mundody, S., & Guddeti, R. M. R. (2026). Pose-based fall detection with robust feature analysis and privacy-aware edge-fog-cloud deployment. *IEEE Access, 14*, 114183–114208. https://doi.org/10.1109/ACCESS.2026.3716718

@@ -1,7 +1,9 @@
 """Local test of the classifier with the webcam or a video, without the backend or the agent.
 
-It uses the same worker code (MediaPipe + parameters + state machine) and draws on screen the
-skeleton, the center line, the body rectangle and the measured values.
+It processes frames exactly as the desktop agent does (``te_tengo_captura.captura.fuentes``:
+sampling by time at ``--fps``, 480p, JPEG quality 80 and MediaPipe on the decoded image, with
+the validation's confidences), so a clip that triggers a fall here triggers it in the agent too.
+It draws on screen the skeleton, the center line, the body rectangle and the measured values.
 
 Examples:
     # Webcam with the calibrated threshold (0.01 bodies/s)
@@ -27,12 +29,13 @@ from typing import Any
 import cv2
 from visor import Estado, Visor
 
-from detection_worker.clasificacion.estados import ClasificadorCinematico, Evento
-from detection_worker.clasificacion.medicion import MedidorCinematico
-from detection_worker.clasificacion.umbrales import Umbrales
-from detection_worker.pose.service import crear_landmarker, detectar
+from te_tengo_captura.captura.fuentes import Muestreador
+from te_tengo_captura.captura.fuentes import preparar as preparar_como_agente
+from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico, Evento
+from te_tengo_deteccion.clasificacion.medicion import MedidorCinematico
+from te_tengo_deteccion.clasificacion.umbrales import Umbrales
+from te_tengo_deteccion.pose.service import crear_landmarker, detectar
 
-ALTO_MAX = 480  # the agent sends 480p
 VELOCIDAD_CALIBRADA = 0.01  # docs/validation.md
 
 
@@ -66,14 +69,12 @@ def argumentos() -> argparse.Namespace:
     return a.parse_args()
 
 
-def preparar(imagen: Any, recorte: tuple[int, int, int, int] | None) -> Any:
+def preparar(imagen: Any, recorte: tuple[int, int, int, int] | None, instante: float) -> Any:
+    """Crop, then the agent's processing: 480p, JPEG quality 80 and decoding."""
     if recorte:
         x, y, w, h = recorte
         imagen = imagen[y : y + h, x : x + w]
-    alto, ancho = imagen.shape[:2]
-    if alto > ALTO_MAX:
-        imagen = cv2.resize(imagen, (round(ancho * ALTO_MAX / alto / 2) * 2, ALTO_MAX))
-    return imagen
+    return preparar_como_agente(imagen, instante).imagen
 
 
 def leer_recorte(texto: str | None) -> tuple[int, int, int, int] | None:
@@ -137,7 +138,8 @@ def main() -> int:
         return 1
     fps_fuente = captura.get(cv2.CAP_PROP_FPS) or 30.0
     nombre_fuente = args.video.name if args.video else f"Cámara {args.camara}"
-    landmarker = crear_landmarker(str(args.modelo), umbrales.visibilidad_min, modo="video")
+    # The validation's and the agent's confidences (0.5), not the classifier's visibilidad_min.
+    landmarker = crear_landmarker(str(args.modelo), modo="video")
     visor = Visor(umbrales)
     archivo_csv = args.csv.open("w", newline="", encoding="utf-8") if args.csv else None
     escritor = csv.writer(archivo_csv) if archivo_csv else None
@@ -146,7 +148,8 @@ def main() -> int:
             ["instante_s", "angulo_grados", "razon_ancho_alto", "velocidad", "fase", "eventos"]
         )
 
-    inicio, siguiente, indice = time.monotonic(), 0.0, 0
+    inicio, indice = time.monotonic(), 0
+    muestreador = Muestreador(args.fps)  # the agent's sampler: one frame every 1/fps seconds
     fps_medido, ultimo = 0.0, None
     eventos_vistos: list[tuple[float, str]] = []
     titulo = "Te Tengo - prueba del clasificador"
@@ -157,9 +160,8 @@ def main() -> int:
                 break
             instante = indice / fps_fuente if args.video else time.monotonic() - inicio
             indice += 1
-            if instante < siguiente:
+            if not muestreador.tomar(instante):
                 continue
-            siguiente = instante + 1 / args.fps
             if ultimo is not None and instante > ultimo:
                 fps_medido = (
                     0.8 * fps_medido + 0.2 / (instante - ultimo)
@@ -168,7 +170,7 @@ def main() -> int:
                 )
             ultimo = instante
 
-            imagen = preparar(imagen, recorte)
+            imagen = preparar(imagen, recorte, instante)
             pose = detectar(landmarker, imagen, round(instante * 1000))
             eventos: list[Evento] = []
             if clasificador is not None:

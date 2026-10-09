@@ -2,14 +2,39 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # release/hotfix pushes too: the release PR is opened with GITHUB_TOKEN, which starts no PR
+    # workflows, so the required checks must come from the push run on the same commit.
+    branches: [main, develop, "release/**", "hotfix/**"]
   pull_request:
 
 permissions:
   contents: read
 
+# A new push to the same branch or pull request cancels the run it supersedes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  calidad:
+  lint:
+    name: Lint, format and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Ruff lint
+        run: uv run ruff check --output-format=github .
+      - name: Ruff format
+        run: uv run ruff format --check .
+      - name: Mypy (strict)
+        run: uv run mypy
+
+  test:
+    name: Tests and coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -17,24 +42,62 @@ jobs:
         with:
           enable-cache: true
       - name: System libraries for MediaPipe on Linux (OpenGL ES and EGL, even on CPU)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgles2 libegl1 ffmpeg
-      - name: Instalar dependencias
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgles2 libegl1
+      - name: Install dependencies
         run: uv sync --locked
-      - name: Lint y formato
-        run: |
-          uv run ruff check .
-          uv run ruff format --check .
-      - name: Tipos
-        run: uv run mypy
-      - name: Descargar modelo de MediaPipe
+      - name: Download the MediaPipe model
         run: ./scripts/descargar_modelo.sh
-      - name: Pruebas
-        run: uv run pytest
+      - name: Tests with coverage
+        run: uv run pytest --cov-report=xml --cov-report=html --junitxml=build/junit.xml
+      - name: Coverage summary
+        if: always()
+        run: |
+          {
+            echo "## Coverage"
+            echo
+            uv run coverage report --format=markdown --skip-covered --sort=cover || echo "No coverage data."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            htmlcov/
+            build/junit.xml
+          if-no-files-found: warn
+          retention-days: 14
 
-  imagen:
-    runs-on: ubuntu-latest
-    needs: calidad
+  package:
+    # The packaged Windows app (PyInstaller one-folder build), with a smoke test.
+    name: Windows package
+    runs-on: windows-latest
+    needs: [lint, test]
     steps:
       - uses: actions/checkout@v7
-      - name: Construir imagen Docker
-        run: docker build -t te-tengo-service-detection-worker .
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked --group empaquetado
+      - name: Download the MediaPipe model
+        shell: bash
+        run: ./scripts/descargar_modelo.sh
+      - name: Build with PyInstaller
+        run: uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          # A windowed exe does not block the shell: wait for it and check the exit code.
+          $exe = "dist/te-tengo-captura/te-tengo-captura.exe"
+          $version = Start-Process -FilePath $exe -ArgumentList "--version" -Wait -PassThru
+          if ($version.ExitCode -ne 0) { throw "--version terminó con $($version.ExitCode)" }
+          $prueba = Start-Process -FilePath $exe -ArgumentList "--autoprueba","--logs","logs" -Wait -PassThru
+          Get-Content logs/te-tengo-captura.log
+          if ($prueba.ExitCode -ne 0) { throw "--autoprueba terminó con $($prueba.ExitCode)" }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: te-tengo-captura-windows
+          path: dist/te-tengo-captura/
+          if-no-files-found: error

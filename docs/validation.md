@@ -7,6 +7,7 @@ To reproduce it:
 ```bash
 make datasets   # downloads URFD and CAUCAFall into datos/ (about 220 MB)
 make validar    # extracts poses and generates resultados/reporte.md
+uv run python scripts/comparar_pipelines.py --todos --guardar   # agent vs validation, frame by frame (section 3.5)
 ```
 
 ## 1. Data
@@ -20,7 +21,7 @@ Neither one includes older adults or real falls; this limitation is declared in 
 
 ## 2. Protocol
 
-1. **Same processing as in production.** Each video is downscaled to 480p and 8 fps (6 and 10 fps were also tested). It is compressed as JPEG with quality 80, as the agent does, and passed through MediaPipe Pose Landmarker *lite* in VIDEO mode. The poses are saved once and then replayed in **the same `ClasificadorCinematico` as the worker**.
+1. **Same processing as in production.** Each video is downscaled to 480p and 8 fps (6 and 10 fps were also tested). It is compressed as JPEG with quality 80, as the agent does, and passed through MediaPipe Pose Landmarker *lite* in VIDEO mode. The poses are saved once and then replayed in **the same `ClasificadorCinematico` as the agent**.
 2. **Per-video criterion.** A fall video is a true positive if the classifier emits at least one `caida` event. A daily activity video is a false positive if it emits any.
 3. **Metrics.** Sensitivity = TP/(TP+FN), specificity = TN/(TN+FP) and accuracy = (TP+TN)/total, the same definitions as Chen et al. (2020, eq. 6–8) and the charter.
 4. **Calibration.** The only calibrated threshold is the minimum descent speed (R1). 100 values (0.01–1.0) are tested and the one with the highest **Youden index** is chosen (J = sensitivity + specificity − 1; Youden, 1950). The angle (45°) and the ratio (1) are left at the published values: tuning them did not improve the cross-dataset validation.
@@ -77,7 +78,17 @@ The agent sends between 5 and 10 fps, per the architecture.
 **A threshold calibrated with a camera at body height (URFD) does not work for an elevated camera (CAUCAFall).** From above, the descent of the hip looks shorter in the image. The threshold must be calibrated with a camera placed as in the home: that is why the CAUCAFall and full-set value (0.01) is used.
 
 ### 3.4. Live service check
-24 videos (12 from URFD and 12 from CAUCAFall) were sent to the running worker, using the simulated agent over WebSocket. The fall events matched the offline evaluation in **24 of 24**.
+24 videos (12 from URFD and 12 from CAUCAFall) were sent to the running worker (the cloud service retired in ADR 0007), using the simulated agent over WebSocket. The fall events matched the offline evaluation in **24 of 24**.
+
+### 3.5. Parity with the desktop agent
+
+The figures above describe the agent only if it gives MediaPipe the same frames as the validation. `scripts/comparar_pipelines.py` runs each video through `evaluar.py extraer` and through the agent's own capture loop (`FuenteArchivo` → `Captador` → `EstimadorMediaPipe` → `BucleCaptura`, with the URFD RGB half cropped in memory) and compares every frame. Measured on 2026-10-07 with MediaPipe 0.10.35:
+
+- **170 of 170 videos** give the same timestamps, images (480p, BGR `uint8`, JPEG quality 80), landmarks, classifier phase and events in both paths; the 11,183 stored poses of the agent are identical to those of the validation.
+- `evaluar.py evaluar --pipeline agente --barrer 0.01 1.0 0.01` on the agent's poses gives the same results as sections 3.1 and 3.3: **81.2% sensitivity and 81.1% specificity** leaving one group out, URFD → CAUCAFall 28.0% / 94.0% (v = 0.45) and CAUCAFall → URFD 76.7% / 77.5% (v = 0.01).
+- A clip must reach the agent without an extra lossy step. Cropping the URFD RGB half to a new file with OpenCV's `mp4v` codec changes the pixels: on `fall-01` MediaPipe then misses the only frame with the person on the floor (30 instead of 31 poses in 43 frames) and the `caida` is lost. The installation guide crops it losslessly (FFV1).
+
+`tests/captura/test_paridad.py` keeps the two paths identical.
 
 ## 4. Changes made based on the validation
 

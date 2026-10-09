@@ -1,8 +1,5 @@
 .DEFAULT_GOAL := ayuda
-.PHONY: ayuda instalar env modelo ejecutar camara agente datasets validar formatear revisar probar imagen
-
-PUERTO ?= 8001
-IMAGEN ?= te-tengo-desktop-pywebview
+.PHONY: ayuda instalar modelo camara datasets validar formatear revisar probar empaquetar
 
 ayuda: ## Lists the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -11,20 +8,11 @@ instalar: ## Installs dependencies and pre-commit hooks
 	uv sync
 	uv run pre-commit install --hook-type pre-commit --hook-type commit-msg
 
-env: ## Creates .env from .env.example with local tokens
-	uv run python scripts/crear_env.py
-
 modelo: ## Downloads the MediaPipe model into models/
 	./scripts/descargar_modelo.sh
 
-ejecutar: ## Starts the service locally with auto-reload
-	uv run uvicorn detection_worker.main:create_app --factory --reload --port $(PUERTO)
-
 camara: ## Tests the classifier with the webcam or a video (ARGS="--video x.mp4 ...")
 	uv run python scripts/probar_camara.py $(ARGS)
-
-agente: ## Sends the webcam or a video to the worker like the real agent (ARGS="...")
-	uv run python scripts/agente_simulado.py $(ARGS)
 
 datasets: ## Downloads URFD and CAUCAFall into datos/ (about 220 MB, not versioned)
 	uv run python scripts/descargar_datasets.py
@@ -45,5 +33,7 @@ revisar: ## Lint, formatting and types
 probar: ## Tests with coverage
 	uv run pytest
 
-imagen: ## Builds the Docker image
-	docker build -t $(IMAGEN) .
+empaquetar: ## Builds the one-folder app with PyInstaller into dist/ (needs the model)
+	uv sync --group empaquetado
+	uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
+	./dist/te-tengo-captura/te-tengo-captura --version

@@ -5,6 +5,8 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+# Release binaries staged by release.yml
+salida/
 
 # Herramientas
 .pytest_cache/
@@ -28,3 +30,4 @@ models/*.task
 # Validation datasets (downloaded with scripts/descargar_datasets.py)
 datos/
 resultados/
+config.local.toml
