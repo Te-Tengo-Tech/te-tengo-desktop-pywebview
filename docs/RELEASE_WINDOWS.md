@@ -28,7 +28,7 @@ How a version of Te Tengo Captura becomes an installer that the project team run
 | Trigger | What happens |
 |---|---|
 | Pull request touching `packaging/` or the workflow | Full build and tests, installer kept as a 3-day artifact. Nothing is released |
-| Push to `main` (a merged `release/*` or `hotfix/*` pull request) | Same, plus the `Draft GitHub Release` job: it **waits for an approval on the `produccion` environment**, then creates a **draft** release `v<version>` with the installer and `SHA256SUMS.txt`, targeting the released commit. A person reviews the notes and publishes it, which creates the tag |
+| Push to `main` (a merged `release/*` or `hotfix/*` pull request) | Same, plus, when the `ENABLE_DESKTOP_GITHUB_RELEASE` switch is on, the `Draft GitHub Release` job: it **waits for an approval on the `produccion` environment**, then creates a **draft** release `v<version>` with the installer and `SHA256SUMS.txt`, targeting the released commit. A person reviews the notes and publishes it, which creates the tag |
 | Manual run (*Actions → Release Windows → Run workflow*) | Same build; the installer is kept as a 30-day artifact. From `main` it also offers the draft release (with approval); from other branches it only builds, because the environment only accepts `main` |
 
 **Steps:**
@@ -48,7 +48,15 @@ How a version of Te Tengo Captura becomes an installer that the project team run
 4. Review and publish the draft release.
 5. Set `TT_AGENTE_VERSION_PUBLICADA=<version>` in the API, so `GET /api/agente/configuracion` announces it (see *Update notices*).
 
-The dispatch needs the secret **`DISPATCH_TOKEN`**: a fine-grained personal access token with resource owner `Te-Tengo-Tech`, access to the single repository `te-tengo-landing-astro` and the repository permission *Contents: Read and write*. Without it `notificar-landing.yml` prints a notice and succeeds; after adding it, run *Actions → Notify the landing → Run workflow* on `main` to send the current release.
+Both channels run only when their switch is on (see *Switches*). The dispatch needs the secret **`DISPATCH_TOKEN`**: a fine-grained personal access token with resource owner `Te-Tengo-Tech`, access to the single repository `te-tengo-landing-astro` and the repository permission *Contents: Read and write*. Without it `notificar-landing.yml` prints a notice and succeeds; after adding it, run *Actions → Notify the landing → Run workflow* on `main` to send the current release.
+
+### Switches
+Each publishing channel has an on/off switch: an **organization** Actions variable of `Te-Tengo-Tech` (*Settings → Secrets and variables → Actions → Variables*), the single control panel for every repository. They are explicit opt-in: only the value `true` turns a channel on, and an unset variable means off. A channel that is off shows its job as skipped and the run summary says why; the installer is still built and tested. With a switch on, publishing still waits for an approval on `produccion` (here for the draft release, in the landing for the upload).
+
+| Variable | What it controls | Suggested value |
+|---|---|---|
+| `ENABLE_DESKTOP_GITHUB_RELEASE` | The `Draft GitHub Release` job of `release-windows.yml` (the draft release `v<version>` with the installer) | `true` |
+| `ENABLE_WINDOWS_INSTALLER` | The `publicar-escritorio` dispatch of `notificar-landing.yml` to `te-tengo-landing-astro`. The landing's `publicar.yml` gates its own upload of `te-tengo-captura-setup.exe` to R2 with the same variable, so one switch freezes the landing download | `true` |
 
 ### Code signing (optional, inert until configured)
 Without signing, the workflow adds a notice and the installer is unsigned. Configure **one** of these under *Settings → Secrets and variables → Actions*:

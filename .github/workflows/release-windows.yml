@@ -9,6 +9,11 @@ name: Release Windows
 # commit. (The download on the landing is published by the landing's publicar.yml, started by
 # notificar-landing.yml.)
 #
+# Switch (organization variable, Te-Tengo-Tech → Settings → Secrets and variables → Actions →
+# Variables; explicit opt-in, unset means off):
+#   ENABLE_DESKTOP_GITHUB_RELEASE   'true' runs the Draft GitHub Release job. Any other value skips
+#                                   it; the installer is still built, tested and kept as an artifact.
+#
 # Code signing is optional and inert until configured (Settings → Secrets and variables → Actions):
 #   Azure Artifact Signing (formerly Trusted Signing): secrets AZURE_TENANT_ID, AZURE_CLIENT_ID,
 #     AZURE_CLIENT_SECRET; variables AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT,
@@ -216,21 +221,33 @@ jobs:
           retention-days: ${{ github.event_name == 'pull_request' && 3 || 30 }}
       - name: Summary
         shell: bash
+        env:
+          ENABLE_DESKTOP_GITHUB_RELEASE: ${{ vars.ENABLE_DESKTOP_GITHUB_RELEASE }}
         run: |
           {
             echo "## Te Tengo Captura ${{ steps.version.outputs.version }}: Windows installer"
             echo "- Signing: ${{ steps.signing.outputs.mode == 'none' && 'not signed (SmartScreen will warn)' || steps.signing.outputs.mode }}"
             echo "- Install, autostart and uninstall test: passed"
+            if [ "$GITHUB_EVENT_NAME" != pull_request ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+              if [ "$ENABLE_DESKTOP_GITHUB_RELEASE" = true ]; then
+                echo "- Draft GitHub Release: on (waits for an approval on \`produccion\`)"
+              else
+                echo "- Draft GitHub Release: **off**, skipped (organization variable \`ENABLE_DESKTOP_GITHUB_RELEASE\` is not \`true\`)"
+              fi
+            fi
             echo '```'
             cat dist/instalador/SHA256SUMS.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
   release:
-    # Only on main (a release), after approval on the produccion environment, and always as a draft:
-    # a person reviews the notes and publishes it.
+    # Only on main (a release), with the ENABLE_DESKTOP_GITHUB_RELEASE switch on, after approval on the
+    # produccion environment, and always as a draft: a person reviews the notes and publishes it.
     name: Draft GitHub Release
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name != 'pull_request'
+      && github.ref == 'refs/heads/main'
+      && vars.ENABLE_DESKTOP_GITHUB_RELEASE == 'true'
     needs: installer
     environment:
       name: produccion
