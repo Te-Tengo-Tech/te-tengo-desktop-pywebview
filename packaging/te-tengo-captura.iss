@@ -1,5 +1,5 @@
 ﻿; Inno Setup 6 script of Te Tengo Captura: a per-user installer of the PyInstaller one-folder build
-; (docs/RELEASE_WINDOWS.md). It needs no administrator rights.
+; (docs/RELEASES.md). It needs no administrator rights.
 ;
 ;   uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
 ;   iscc /DAppVersion=0.2.0 packaging\te-tengo-captura.iss

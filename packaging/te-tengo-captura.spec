@@ -7,6 +7,12 @@
 # Bundles the MediaPipe model (models/), the web UI (te_tengo_captura/ui/web) and MediaPipe's
 # data files. The icon (.ico on Windows, .icns in the macOS .app) is drawn from the brand app icon
 # at build time.
+#
+# macOS: the build is `dist/Te Tengo Captura.app`. PyInstaller signs every binary and the bundle:
+# ad-hoc by default (enough to run on Apple Silicon), or with the Developer ID identity named in the
+# environment variable TT_MACOS_IDENTIDAD_FIRMA (hardened runtime, secure timestamp and
+# packaging/macos/entitlements.plist), which notarization requires (docs/RELEASES.md).
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +21,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 RAIZ = Path(SPECPATH).parent
 sys.path.insert(0, str(RAIZ / "src"))
 
+from te_tengo_captura import __version__  # noqa: E402
 from te_tengo_captura.bandeja.iconos import icono  # noqa: E402
 
 MODELO = RAIZ / "models" / "pose_landmarker_lite.task"
@@ -22,6 +29,9 @@ if not MODELO.is_file():
     raise SystemExit(f"Falta el modelo {MODELO}: ejecuta `make modelo`")
 
 EN_MACOS = sys.platform == "darwin"
+# Developer ID identity (e.g. "Developer ID Application: Name (TEAMID)"); empty: ad-hoc signature.
+IDENTIDAD_FIRMA = os.environ.get("TT_MACOS_IDENTIDAD_FIRMA") or None
+ENTITLEMENTS = str(RAIZ / "packaging" / "macos" / "entitlements.plist") if EN_MACOS else None
 Path(workpath).mkdir(parents=True, exist_ok=True)
 if EN_MACOS:
     ICONO = Path(workpath) / "te-tengo-captura.icns"
@@ -61,19 +71,25 @@ exe = EXE(
     console=False,  # a tray app: no console window
     icon=str(ICONO),
     upx=False,
+    codesign_identity=IDENTIDAD_FIRMA,
+    entitlements_file=ENTITLEMENTS,
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="te-tengo-captura", upx=False)
 
 if EN_MACOS:
     # A .app bundle so Finder and the Dock show the brand icon. [implementation choice] The bundle id
-    # follows the mobile app's (tech.tetengo.teTengo); the camera usage text is pending team review.
+    # follows the mobile app's (tech.tetengo.teTengo). macOS shows NSCameraUsageDescription when it
+    # asks for camera access; the prototype has no copy for it, so this minimal factual sentence is
+    # pending team review (docs/BLOCKERS.md, «macOS camera permission text»).
     app = BUNDLE(
         coll,
         name="Te Tengo Captura.app",
         icon=str(ICONO),
         bundle_identifier="tech.tetengo.captura",
+        version=__version__,  # the signing identity and entitlements come from the EXE
         info_plist={
             "CFBundleDisplayName": "Te Tengo Captura",
+            "CFBundleVersion": __version__,
             "NSCameraUsageDescription": "Te Tengo Captura usa la webcam para detectar caídas.",
             "NSHighResolutionCapable": True,
         },

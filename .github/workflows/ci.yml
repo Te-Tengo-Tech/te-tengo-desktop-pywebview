@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    # release/hotfix pushes too: the release PR is opened with GITHUB_TOKEN, which starts no PR
+    # workflows, so the required checks must come from the push run on the same commit.
+    branches: [main, develop, "release/**", "hotfix/**"]
   pull_request:
 
 permissions:

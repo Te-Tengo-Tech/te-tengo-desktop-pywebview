@@ -1,0 +1,719 @@
+name: Release
+
+# The release pipeline of Te Tengo Captura (docs/RELEASES.md): build once, deploy the same binaries
+# to staging and then to production, and only then open the pull request to main.
+#
+#   push to release/x.y.z or hotfix/x.y.z
+#     preparar     version check (pyproject.toml = __version__) and the switches in the summary
+#     pruebas      lint, types and tests
+#     windows      PyInstaller build → smoke test → optional signing → Inno Setup installer → silent
+#                  install/uninstall test → artifact `windows` (te-tengo-captura-setup.exe + .sha256)
+#     macos        PyInstaller .app → ad-hoc signature, or Developer ID + notarization → smoke test →
+#                  .dmg → artifact `macos` (te-tengo-captura.dmg + .sha256)
+#     staging      environment `staging` (approval): the SAME artifacts to R2 under staging/, then a
+#                  download check of each public URL
+#     produccion   environment `produccion` (approval): the SAME artifacts to the stable R2 keys, a
+#                  download check, and the draft GitHub Release v<version> with the binaries
+#     pull-request opens `release: x.y.z` from the release branch to main (merging it is a person's
+#                  action; etiquetar.yml then tags v<version> and publishes the draft release)
+#   pull request touching the packaging: windows and macos only (nothing is published)
+#
+# Switches (organization variables, Te-Tengo-Tech → Settings → Secrets and variables → Actions →
+# Variables; explicit opt-in: only 'true' turns a channel on, unset means off):
+#   ENABLE_STAGING                  the staging job (off: produccion follows the build directly)
+#   ENABLE_WINDOWS_INSTALLER        te-tengo-captura-setup.exe to R2 (staging/ and the root)
+#   ENABLE_MAC_DMG                  the macOS build and te-tengo-captura.dmg to R2
+#   ENABLE_MAC_NOTARIZE             Developer ID signing + notarization of the .app and the .dmg
+#   ENABLE_DESKTOP_GITHUB_RELEASE   the draft GitHub Release with the binaries (published on main)
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID   R2 uploads (token: Workers R2 Storage: Edit)
+#   MAC_DEVELOPER_ID_P12_BASE64, MAC_DEVELOPER_ID_P12_PASSWORD, APPLE_ID, APPLE_TEAM_ID,
+#   APPLE_APP_SPECIFIC_PASSWORD                   only with ENABLE_MAC_NOTARIZE
+#   Windows signing (optional, inert until set): AZURE_TENANT_ID, AZURE_CLIENT_ID,
+#   AZURE_CLIENT_SECRET + variables AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT,
+#   AZURE_CERTIFICATE_PROFILE; or WINDOWS_PFX_BASE64 and WINDOWS_PFX_PASSWORD
+# Variables: DESCARGAS_BASE_URL (public URL of the bucket, for the download check) and optionally
+# DESCARGAS_R2_BUCKET (default te-tengo-descargas).
+on:
+  push:
+    branches: ["release/*", "hotfix/*"]
+  pull_request:
+    paths:
+      - packaging/**
+      - .github/workflows/release.yml
+      - .github/scripts/publicar_r2.sh
+
+permissions:
+  contents: read
+
+# One pipeline per branch. A new push queues behind a run that is deploying (never cancelled); a run
+# still waiting for an approval may be superseded by the newer one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  WRANGLER_VERSION: 4.149.0
+  R2_BUCKET: ${{ vars.DESCARGAS_R2_BUCKET || 'te-tengo-descargas' }}
+  DESCARGAS_BASE_URL: ${{ vars.DESCARGAS_BASE_URL }}
+
+jobs:
+  preparar:
+    name: Version and switches
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      staging: ${{ steps.switches.outputs.staging }}
+      produccion: ${{ steps.switches.outputs.produccion }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Version
+        id: version
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/te_tengo_captura/__init__.py)
+          proyecto=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -n1)
+          if [ "$version" != "$proyecto" ]; then
+            echo "::error title=Version mismatch::__version__ $version (src/te_tengo_captura/__init__.py) does not match pyproject.toml version $proyecto"
+            exit 1
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error title=Unexpected version::'$version' is not <major>.<minor>.<patch>."
+            exit 1
+          fi
+          rama=${GITHUB_REF_NAME#*/}
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$rama" != "$version" ]; then
+            echo "::warning title=Branch and version differ::Branch $GITHUB_REF_NAME, but pyproject.toml says $version. The release is published as $version."
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Switches
+        id: switches
+        env:
+          ENABLE_STAGING: ${{ vars.ENABLE_STAGING }}
+          ENABLE_WINDOWS_INSTALLER: ${{ vars.ENABLE_WINDOWS_INSTALLER }}
+          ENABLE_MAC_DMG: ${{ vars.ENABLE_MAC_DMG }}
+          ENABLE_MAC_NOTARIZE: ${{ vars.ENABLE_MAC_NOTARIZE }}
+          ENABLE_DESKTOP_GITHUB_RELEASE: ${{ vars.ENABLE_DESKTOP_GITHUB_RELEASE }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          r2=false
+          if [ "$ENABLE_WINDOWS_INSTALLER" = true ] || [ "$ENABLE_MAC_DMG" = true ]; then r2=true; fi
+          staging=false
+          if [ "$ENABLE_STAGING" = true ] && [ "$r2" = true ]; then staging=true; fi
+          produccion=false
+          if [ "$r2" = true ] || [ "$ENABLE_DESKTOP_GITHUB_RELEASE" = true ]; then produccion=true; fi
+          echo "staging=$staging" >> "$GITHUB_OUTPUT"
+          echo "produccion=$produccion" >> "$GITHUB_OUTPUT"
+          estado() { if [ "$1" = true ]; then echo "on"; else echo "**off** ($2 is not \`true\`)"; fi; }
+          {
+            echo "## Te Tengo Captura $VERSION"
+            if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+              echo "Pull request: the installer and the disk image are built and tested; nothing is published."
+            else
+              echo "| Channel | Switch |"
+              echo "|---|---|"
+              echo "| Staging stage | $(estado "$ENABLE_STAGING" ENABLE_STAGING) |"
+              echo "| Windows installer to R2 | $(estado "$ENABLE_WINDOWS_INSTALLER" ENABLE_WINDOWS_INSTALLER) |"
+              echo "| macOS build and .dmg to R2 | $(estado "$ENABLE_MAC_DMG" ENABLE_MAC_DMG) |"
+              echo "| macOS signing and notarization | $(estado "$ENABLE_MAC_NOTARIZE" ENABLE_MAC_NOTARIZE) |"
+              echo "| Draft GitHub Release | $(estado "$ENABLE_DESKTOP_GITHUB_RELEASE" ENABLE_DESKTOP_GITHUB_RELEASE) |"
+              echo
+              if [ "$staging" != true ]; then echo "- The \`staging\` job is skipped: the stage is off or no binary goes to R2."; fi
+              if [ "$produccion" != true ]; then echo "- The \`produccion\` job is skipped: no channel is on. The pull request to main is still opened."; fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  pruebas:
+    name: Lint, types and tests
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - name: System libraries for MediaPipe on Linux (OpenGL ES and EGL, even on CPU)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgles2 libegl1
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Download the MediaPipe model
+        run: ./scripts/descargar_modelo.sh
+      - name: Lint, format and types
+        run: make revisar
+      - name: Tests
+        run: make probar
+
+  windows:
+    name: Windows installer
+    needs: preparar
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.preparar.outputs.version }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+      AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+      AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+      WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+      WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Code signing configuration
+        id: signing
+        shell: bash
+        run: |
+          if [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_CLIENT_SECRET" ] \
+            && [ -n "$AZURE_SIGNING_ENDPOINT" ] && [ -n "$AZURE_SIGNING_ACCOUNT" ] && [ -n "$AZURE_CERTIFICATE_PROFILE" ]; then
+            echo "mode=azure" >> "$GITHUB_OUTPUT"
+          elif [ -n "$WINDOWS_PFX_BASE64" ] && [ -n "$WINDOWS_PFX_PASSWORD" ]; then
+            echo "mode=pfx" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=none" >> "$GITHUB_OUTPUT"
+            if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+              echo "::notice title=Installer not signed::Windows SmartScreen will warn on first run. To sign, set the Azure Artifact Signing secrets and variables or WINDOWS_PFX_BASE64 and WINDOWS_PFX_PASSWORD (docs/RELEASES.md)."
+            fi
+          fi
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked --group empaquetado
+      - name: Download the MediaPipe model
+        shell: bash
+        run: ./scripts/descargar_modelo.sh
+      - name: Build with PyInstaller
+        run: uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
+      - name: Smoke test the executable
+        shell: pwsh
+        run: |
+          # A windowed exe does not block the shell: wait for it and check the exit code.
+          $exe = "dist/te-tengo-captura/te-tengo-captura.exe"
+          $version = Start-Process -FilePath $exe -ArgumentList "--version" -Wait -PassThru
+          if ($version.ExitCode -ne 0) { throw "--version terminó con $($version.ExitCode)" }
+          $prueba = Start-Process -FilePath $exe -ArgumentList "--autoprueba","--logs","logs" -Wait -PassThru
+          Get-Content logs/te-tengo-captura.log
+          if ($prueba.ExitCode -ne 0) { throw "--autoprueba terminó con $($prueba.ExitCode)" }
+
+      # 1) Sign the agent executable (before it goes into the installer).
+      - name: Sign the executable (Azure Artifact Signing)
+        if: steps.signing.outputs.mode == 'azure'
+        uses: Azure/artifact-signing-action@v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          files: ${{ github.workspace }}\dist\te-tengo-captura\te-tengo-captura.exe
+          file-digest: SHA256
+          timestamp-digest: SHA256
+      - name: Sign the executable (PFX certificate)
+        if: steps.signing.outputs.mode == 'pfx'
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "firma.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign /f $pfx /p $env:WINDOWS_PFX_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d "Te Tengo Captura" dist\te-tengo-captura\te-tengo-captura.exe
+          if ($LASTEXITCODE -ne 0) { throw "signtool terminó con $LASTEXITCODE" }
+
+      # 2) Compile the installer with Inno Setup 6 (preinstalled on windows-latest; installed if not).
+      - name: Compile the installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup --no-progress -y
+            $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          & $iscc.FullName /Qp "/DAppVersion=$env:VERSION" packaging\te-tengo-captura.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC terminó con $LASTEXITCODE" }
+          Get-ChildItem dist\instalador
+
+      # 3) Sign the installer.
+      - name: Sign the installer (Azure Artifact Signing)
+        if: steps.signing.outputs.mode == 'azure'
+        uses: Azure/artifact-signing-action@v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist\instalador
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-digest: SHA256
+      - name: Sign the installer (PFX certificate)
+        if: steps.signing.outputs.mode == 'pfx'
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "firma.pfx"
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          $instalador = Get-ChildItem dist\instalador\*.exe | Select-Object -First 1
+          & $signtool.FullName sign /f $pfx /p $env:WINDOWS_PFX_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d "Te Tengo Captura" $instalador.FullName
+          if ($LASTEXITCODE -ne 0) { throw "signtool terminó con $LASTEXITCODE" }
+      - name: Remove the certificate
+        if: always() && steps.signing.outputs.mode == 'pfx'
+        shell: pwsh
+        run: Remove-Item (Join-Path $env:RUNNER_TEMP "firma.pfx") -ErrorAction SilentlyContinue
+
+      # 4) Install silently as this user, check the result, then uninstall and check it is gone.
+      - name: Install and uninstall test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $instalador = Get-ChildItem dist\instalador\*.exe | Select-Object -First 1
+          $p = Start-Process $instalador.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LOG=instalacion.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content instalacion.log; throw "El instalador terminó con $($p.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA "Programs\TeTengoCaptura"
+          $exe = Join-Path $app "te-tengo-captura.exe"
+          if (-not (Test-Path $exe)) { throw "Falta $exe" }
+          $run = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run").TeTengoCaptura
+          # The same value the agent writes itself (src/te_tengo_captura/autoinicio.py).
+          if ($run -ne "`"$exe`"") { throw "Inicio con Windows inesperado: $run" }
+          $atajo = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Te Tengo Captura.lnk"
+          if (-not (Test-Path $atajo)) { throw "Falta el acceso directo $atajo" }
+          $v = Start-Process $exe -ArgumentList "--version" -Wait -PassThru
+          if ($v.ExitCode -ne 0) { throw "--version instalado terminó con $($v.ExitCode)" }
+          Write-Host "Instalado en $app; inicio con Windows: $run"
+
+          $u = Start-Process (Join-Path $app "unins000.exe") -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "El desinstalador terminó con $($u.ExitCode)" }
+          # The uninstaller finishes from a copy in %TEMP%: wait for it.
+          for ($i = 0; $i -lt 60 -and (Test-Path $app); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $app) { throw "La carpeta $app sigue después de desinstalar" }
+          if ((Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run").PSObject.Properties.Name -contains "TeTengoCaptura") {
+            throw "El inicio con Windows sigue después de desinstalar"
+          }
+          if (Test-Path $atajo) { throw "El acceso directo sigue después de desinstalar" }
+          Write-Host "Desinstalado sin restos"
+
+      - name: Stable name and checksum
+        shell: bash
+        run: |
+          mkdir -p salida
+          cp dist/instalador/*.exe salida/te-tengo-captura-setup.exe
+          cd salida
+          sha256sum te-tengo-captura-setup.exe | tee te-tengo-captura-setup.exe.sha256
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: salida/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 30 }}
+      - name: Summary
+        shell: bash
+        env:
+          FIRMA: ${{ steps.signing.outputs.mode == 'none' && 'not signed (SmartScreen will warn)' || steps.signing.outputs.mode }}
+        run: |
+          {
+            echo "### Windows installer $VERSION"
+            echo "- Signing: $FIRMA"
+            echo "- Smoke test and install, autostart and uninstall test: passed"
+            echo "- \`$(cat salida/te-tengo-captura-setup.exe.sha256)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  macos:
+    name: macOS disk image
+    needs: preparar
+    # Built on releases only with its switch on; always on pull requests that touch the packaging.
+    if: vars.ENABLE_MAC_DMG == 'true' || github.event_name == 'pull_request'
+    # Apple Silicon (arm64) runner, pinned so a new macos-latest does not change the build silently.
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.preparar.outputs.version }}
+      APP: dist/Te Tengo Captura.app
+      DMG: salida/te-tengo-captura.dmg
+      # Notarization only on releases (never on pull requests), with its switch on.
+      NOTARIZAR: ${{ github.event_name == 'push' && vars.ENABLE_MAC_NOTARIZE == 'true' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Import the Developer ID certificate
+        if: env.NOTARIZAR == 'true'
+        env:
+          MAC_DEVELOPER_ID_P12_BASE64: ${{ secrets.MAC_DEVELOPER_ID_P12_BASE64 }}
+          MAC_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MAC_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          faltan=()
+          for nombre in MAC_DEVELOPER_ID_P12_BASE64 MAC_DEVELOPER_ID_P12_PASSWORD APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            if [ -z "${!nombre}" ]; then faltan+=("$nombre"); fi
+          done
+          if [ "${#faltan[@]}" -gt 0 ]; then
+            echo "::error title=Notarization secrets missing::ENABLE_MAC_NOTARIZE is 'true' but these secrets are not set: ${faltan[*]}. Add them (docs/RELEASES.md, macOS signing and notarization) or set ENABLE_MAC_NOTARIZE to anything else to ship an ad-hoc signed .dmg."
+            exit 1
+          fi
+          llavero="$RUNNER_TEMP/firma.keychain-db"
+          clave=$(openssl rand -base64 24)
+          security create-keychain -p "$clave" "$llavero"
+          security set-keychain-settings -lut 21600 "$llavero"
+          security unlock-keychain -p "$clave" "$llavero"
+          printf '%s' "$MAC_DEVELOPER_ID_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/firma.p12"
+          security import "$RUNNER_TEMP/firma.p12" -P "$MAC_DEVELOPER_ID_P12_PASSWORD" -f pkcs12 -k "$llavero" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/firma.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$clave" "$llavero" > /dev/null
+          security list-keychains -d user -s "$llavero" login.keychain-db
+          identidad=$(security find-identity -v -p codesigning "$llavero" \
+            | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -n1)
+          if [ -z "$identidad" ]; then
+            echo "::error title=No Developer ID Application identity::MAC_DEVELOPER_ID_P12_BASE64 has no 'Developer ID Application' certificate with its private key."
+            exit 1
+          fi
+          echo "Signing identity: $identidad"
+          # Read by the PyInstaller spec and packaging/macos/crear-dmg.sh.
+          echo "TT_MACOS_IDENTIDAD_FIRMA=$identidad" >> "$GITHUB_ENV"
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked --group empaquetado
+      - name: Download the MediaPipe model
+        run: ./scripts/descargar_modelo.sh
+      - name: Build with PyInstaller
+        # With TT_MACOS_IDENTIDAD_FIRMA PyInstaller signs every binary and the bundle with the Developer
+        # ID, the hardened runtime and packaging/macos/entitlements.plist; without it, ad-hoc.
+        run: uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
+      - name: Ad-hoc signature (not notarized)
+        if: env.NOTARIZAR != 'true'
+        # Apple Silicon only runs signed code; with an ad-hoc signature the app opens after Open Anyway
+        # in System Settings → Privacy & Security. Gatekeeper still warns: it is not notarized.
+        run: codesign --force --deep --sign - --entitlements packaging/macos/entitlements.plist "$APP"
+      - name: Check the bundle
+        run: |
+          set -euo pipefail
+          codesign --verify --deep --strict "$APP" && echo "Signature valid"
+          codesign --display --verbose=2 "$APP" 2>&1 | grep -E '^(Identifier|Format|Authority|Signature|TeamIdentifier|Runtime)'
+          plist="$APP/Contents/Info.plist"
+          echo "NSCameraUsageDescription: $(plutil -extract NSCameraUsageDescription raw "$plist")"
+          version=$(plutil -extract CFBundleShortVersionString raw "$plist")
+          if [ "$version" != "$VERSION" ]; then
+            echo "::error::CFBundleShortVersionString is $version, expected $VERSION"
+            exit 1
+          fi
+          # The MediaPipe model and its native library are bundled (as in the Windows build).
+          test -f "$APP/Contents/Resources/models/pose_landmarker_lite.task"
+          test -f "$APP/Contents/Frameworks/mediapipe/tasks/c/libmediapipe.dylib"
+          lipo -archs "$APP/Contents/MacOS/te-tengo-captura"
+      - name: Smoke test the app
+        run: |
+          set -euo pipefail
+          binario="$APP/Contents/MacOS/te-tengo-captura"
+          "$binario" --version
+          if ! "$binario" --autoprueba --logs logs; then
+            cat logs/te-tengo-captura.log
+            exit 1
+          fi
+          grep "Autoprueba" logs/te-tengo-captura.log
+
+      - name: Disk image
+        run: packaging/macos/crear-dmg.sh "$APP" "$DMG"
+      - name: Notarize and staple
+        if: env.NOTARIZAR == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # notarytool with an Apple ID and an app-specific password (Apple: "Customizing the
+          # notarization workflow"); --wait blocks until Apple accepts or rejects the submission.
+          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait --timeout 1h --output-format json > notarizacion.json
+          cat notarizacion.json
+          estado=$(plutil -extract status raw notarizacion.json)
+          if [ "$estado" != Accepted ]; then
+            id=$(plutil -extract id raw notarizacion.json)
+            xcrun notarytool log "$id" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" || true
+            echo "::error title=Notarization rejected::Apple answered $estado for submission $id (the log is above)."
+            exit 1
+          fi
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+      - name: Test the disk image
+        run: |
+          set -euo pipefail
+          punto=$(mktemp -d)
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$punto"
+          ls -l "$punto"
+          "$punto/Te Tengo Captura.app/Contents/MacOS/te-tengo-captura" --version
+          codesign --verify --deep --strict "$punto/Te Tengo Captura.app"
+          hdiutil detach "$punto"
+      - name: Checksum
+        working-directory: salida
+        run: shasum -a 256 te-tengo-captura.dmg | tee te-tengo-captura.dmg.sha256
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: salida/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 30 }}
+      - name: Summary
+        run: |
+          {
+            echo "### macOS disk image $VERSION"
+            if [ "$NOTARIZAR" = true ]; then
+              echo "- Signing: Developer ID, notarized and stapled"
+            else
+              echo "- Signing: ad-hoc, not notarized (Gatekeeper asks to allow it in Privacy & Security; README, Testing on macOS)"
+            fi
+            echo "- Size: $(du -h "$DMG" | cut -f1); smoke test (\`--version\`, \`--autoprueba\`) passed"
+            echo "- \`$(cat salida/te-tengo-captura.dmg.sha256)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the keychain
+        if: always() && env.NOTARIZAR == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/firma.keychain-db" || true
+
+  staging:
+    name: Staging (R2 staging/)
+    needs: [preparar, pruebas, windows, macos]
+    if: >-
+      !cancelled() && github.event_name == 'push'
+      && needs.preparar.outputs.staging == 'true'
+      && needs.pruebas.result == 'success' && needs.windows.result == 'success'
+      && (needs.macos.result == 'success' || needs.macos.result == 'skipped')
+    environment: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ENABLE_WINDOWS_INSTALLER: ${{ vars.ENABLE_WINDOWS_INSTALLER }}
+      ENABLE_MAC_DMG: ${{ vars.ENABLE_MAC_DMG }}
+    steps:
+      - name: Check the configuration
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error title=Cloudflare secrets missing::Create a Cloudflare API token with Workers R2 Storage: Edit and save it as the CLOUDFLARE_API_TOKEN secret of this repository, with the account ID as CLOUDFLARE_ACCOUNT_ID (docs/RELEASES.md)."
+            exit 1
+          fi
+          if [ -z "$DESCARGAS_BASE_URL" ]; then
+            echo "::error title=DESCARGAS_BASE_URL missing::Set the Actions variable DESCARGAS_BASE_URL to the public URL of the $R2_BUCKET bucket, used to check each upload."
+            exit 1
+          fi
+          echo "## Staging: R2 \`$R2_BUCKET/staging/\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - uses: actions/download-artifact@v8
+        if: vars.ENABLE_WINDOWS_INSTALLER == 'true'
+        with:
+          name: windows
+          path: salida/windows
+      - uses: actions/download-artifact@v8
+        if: vars.ENABLE_MAC_DMG == 'true'
+        with:
+          name: macos
+          path: salida/macos
+      - name: Windows installer to staging/
+        if: vars.ENABLE_WINDOWS_INSTALLER == 'true'
+        run: >-
+          .github/scripts/publicar_r2.sh salida/windows/te-tengo-captura-setup.exe
+          staging/te-tengo-captura-setup.exe application/vnd.microsoft.portable-executable
+      - name: macOS disk image to staging/
+        if: vars.ENABLE_MAC_DMG == 'true'
+        run: >-
+          .github/scripts/publicar_r2.sh salida/macos/te-tengo-captura.dmg
+          staging/te-tengo-captura.dmg application/x-apple-diskimage
+      - name: Switched-off channels
+        run: |
+          {
+            if [ "$ENABLE_WINDOWS_INSTALLER" != true ]; then echo "- Windows installer: skipped (\`ENABLE_WINDOWS_INSTALLER\` is not \`true\`)"; fi
+            if [ "$ENABLE_MAC_DMG" != true ]; then echo "- macOS disk image: skipped (\`ENABLE_MAC_DMG\` is not \`true\`)"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  produccion:
+    name: Production (R2 and draft GitHub Release)
+    needs: [preparar, pruebas, windows, macos, staging]
+    # After staging, or right after the build when the staging stage is off.
+    if: >-
+      !cancelled() && github.event_name == 'push'
+      && needs.preparar.outputs.produccion == 'true'
+      && needs.pruebas.result == 'success' && needs.windows.result == 'success'
+      && (needs.macos.result == 'success' || needs.macos.result == 'skipped')
+      && (needs.staging.result == 'success'
+      || (needs.staging.result == 'skipped' && needs.preparar.outputs.staging != 'true'))
+    environment: produccion
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # the draft GitHub Release
+    env:
+      VERSION: ${{ needs.preparar.outputs.version }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ENABLE_WINDOWS_INSTALLER: ${{ vars.ENABLE_WINDOWS_INSTALLER }}
+      ENABLE_MAC_DMG: ${{ vars.ENABLE_MAC_DMG }}
+      ENABLE_DESKTOP_GITHUB_RELEASE: ${{ vars.ENABLE_DESKTOP_GITHUB_RELEASE }}
+    steps:
+      - name: Check the configuration
+        run: |
+          echo "## Production" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ENABLE_WINDOWS_INSTALLER" != true ] && [ "$ENABLE_MAC_DMG" != true ]; then
+            exit 0
+          fi
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error title=Cloudflare secrets missing::Create a Cloudflare API token with Workers R2 Storage: Edit and save it as the CLOUDFLARE_API_TOKEN secret of this repository, with the account ID as CLOUDFLARE_ACCOUNT_ID (docs/RELEASES.md)."
+            exit 1
+          fi
+          if [ -z "$DESCARGAS_BASE_URL" ]; then
+            echo "::error title=DESCARGAS_BASE_URL missing::Set the Actions variable DESCARGAS_BASE_URL to the public URL of the $R2_BUCKET bucket, used to check each upload."
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows
+          path: salida/windows
+      - uses: actions/download-artifact@v8
+        if: needs.macos.result == 'success'
+        with:
+          name: macos
+          path: salida/macos
+      - name: Windows installer to R2
+        if: vars.ENABLE_WINDOWS_INSTALLER == 'true'
+        run: >-
+          .github/scripts/publicar_r2.sh salida/windows/te-tengo-captura-setup.exe
+          te-tengo-captura-setup.exe application/vnd.microsoft.portable-executable
+      - name: macOS disk image to R2
+        if: vars.ENABLE_MAC_DMG == 'true'
+        run: >-
+          .github/scripts/publicar_r2.sh salida/macos/te-tengo-captura.dmg
+          te-tengo-captura.dmg application/x-apple-diskimage
+      - name: Draft GitHub Release
+        # The SAME binaries, as a draft on this commit. etiquetar.yml publishes it with the CHANGELOG
+        # notes when this release reaches main (which creates the tag there); nothing is rebuilt.
+        if: vars.ENABLE_DESKTOP_GITHUB_RELEASE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          if borrador=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2> /dev/null); then
+            if [ "$borrador" != true ]; then
+              echo "::error title=Release $tag already published::Bump the version in pyproject.toml and __version__ for a new release."
+              exit 1
+            fi
+            # A draft of an earlier run of this release: replace it with these binaries.
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
+          fi
+          mkdir -p release
+          cp salida/windows/te-tengo-captura-setup.exe "release/te-tengo-captura-$VERSION-windows-setup.exe"
+          if [ -f salida/macos/te-tengo-captura.dmg ]; then
+            cp salida/macos/te-tengo-captura.dmg "release/te-tengo-captura-$VERSION-macos.dmg"
+          fi
+          (cd release && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          gh release create "$tag" release/* --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
+            --title "Te Tengo Captura $VERSION" \
+            --notes "Built by the Release workflow from $GITHUB_REF_NAME at $GITHUB_SHA. Published with the CHANGELOG notes when the release reaches main."
+          echo "- Draft GitHub Release \`$tag\` with $(find release -type f | wc -l) files (published by etiquetar.yml on main)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Switched-off channels
+        run: |
+          {
+            if [ "$ENABLE_WINDOWS_INSTALLER" != true ]; then echo "- Windows installer to R2: skipped (\`ENABLE_WINDOWS_INSTALLER\` is not \`true\`)"; fi
+            if [ "$ENABLE_MAC_DMG" != true ]; then echo "- macOS disk image to R2: skipped (\`ENABLE_MAC_DMG\` is not \`true\`)"; fi
+            if [ "$ENABLE_DESKTOP_GITHUB_RELEASE" != true ]; then echo "- Draft GitHub Release: skipped (\`ENABLE_DESKTOP_GITHUB_RELEASE\` is not \`true\`)"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  pull-request:
+    name: Open the pull request to main
+    needs: [preparar, pruebas, windows, macos, staging, produccion]
+    # After production, or after the build when no stage had anything to publish.
+    if: >-
+      !cancelled() && github.event_name == 'push'
+      && needs.pruebas.result == 'success' && needs.windows.result == 'success'
+      && (needs.macos.result == 'success' || needs.macos.result == 'skipped')
+      && (needs.staging.result == 'success'
+      || (needs.staging.result == 'skipped' && needs.preparar.outputs.staging != 'true'))
+      && (needs.produccion.result == 'success'
+      || (needs.produccion.result == 'skipped' && needs.preparar.outputs.produccion != 'true'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.preparar.outputs.version }}
+      STAGING: ${{ needs.staging.result }}
+      PRODUCCION: ${{ needs.produccion.result }}
+      MACOS: ${{ needs.macos.result }}
+      ENABLE_WINDOWS_INSTALLER: ${{ vars.ENABLE_WINDOWS_INSTALLER }}
+      ENABLE_MAC_DMG: ${{ vars.ENABLE_MAC_DMG }}
+      ENABLE_MAC_NOTARIZE: ${{ vars.ENABLE_MAC_NOTARIZE }}
+      ENABLE_DESKTOP_GITHUB_RELEASE: ${{ vars.ENABLE_DESKTOP_GITHUB_RELEASE }}
+    steps:
+      - name: Open or update the pull request
+        run: |
+          set -euo pipefail
+          base=${DESCARGAS_BASE_URL%/}
+          ejecucion="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          {
+            echo "Release $VERSION of Te Tengo Captura from \`$GITHUB_REF_NAME\` at \`$GITHUB_SHA\`."
+            echo
+            echo "Pipeline run: $ejecucion"
+            echo
+            echo "| Binary | Staging | Production |"
+            echo "|---|---|---|"
+            for binario in windows macos; do
+              if [ "$binario" = windows ]; then
+                nombre="Windows installer"; clave=te-tengo-captura-setup.exe; switch=$ENABLE_WINDOWS_INSTALLER
+              else
+                nombre="macOS disk image"; clave=te-tengo-captura.dmg; switch=$ENABLE_MAC_DMG
+                if [ "$ENABLE_MAC_NOTARIZE" = true ]; then nombre="$nombre (notarized)"; else nombre="$nombre (ad-hoc signed)"; fi
+              fi
+              if [ "$switch" != true ]; then
+                echo "| $nombre | not published (switch off) | not published (switch off) |"
+                continue
+              fi
+              if [ "$STAGING" = success ]; then s="$base/staging/$clave"; else s="skipped (\`ENABLE_STAGING\` off)"; fi
+              echo "| $nombre | $s | $base/$clave |"
+            done
+            echo
+            if [ "$ENABLE_DESKTOP_GITHUB_RELEASE" = true ] && [ "$PRODUCCION" = success ]; then
+              echo "Draft GitHub Release \`v$VERSION\` holds the same binaries; merging this pull request tags \`v$VERSION\` on main and publishes it (etiquetar.yml)."
+            else
+              echo "No draft GitHub Release (\`ENABLE_DESKTOP_GITHUB_RELEASE\` off): merging this pull request tags \`v$VERSION\` on main and creates the release without binaries (etiquetar.yml)."
+            fi
+            echo
+            echo "Merging needs the usual review. After merging, set \`TT_AGENTE_VERSION_PUBLICADA=$VERSION\` in the API (docs/RELEASES.md)."
+          } > cuerpo.md
+          cat cuerpo.md >> "$GITHUB_STEP_SUMMARY"
+          existente=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --base main --state open --json url --jq '.[0].url // empty')
+          if [ -n "$existente" ]; then
+            gh pr edit "$existente" --repo "$GITHUB_REPOSITORY" --body-file cuerpo.md
+            echo "Updated $existente"
+          elif ! gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$GITHUB_REF_NAME" \
+            --title "release: $VERSION" --body-file cuerpo.md; then
+            echo "::error title=Pull request not opened::Open $GITHUB_REF_NAME → main by hand. If the error says GitHub Actions cannot create pull requests, enable 'Allow GitHub Actions to create and approve pull requests' (organization or repository Settings → Actions → General)."
+            exit 1
+          fi
