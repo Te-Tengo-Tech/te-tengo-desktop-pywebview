@@ -1,6 +1,6 @@
 [project]
 name = "te-tengo-desktop-pywebview"
-version = "0.3.0"
+version = "0.4.0"
 description = "Te Tengo Captura: household agent that captures the webcam, estimates pose and classifies falls on the PC."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
