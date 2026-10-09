@@ -68,7 +68,7 @@ With a path, it writes a complete agent configuration with the new credential. W
 
 ## 3. Install the program
 
-**With the installer** (`te-tengo-captura-<version>-instalador.exe`, from a GitHub Release or the `Release Windows` workflow; [RELEASE_WINDOWS.md](RELEASE_WINDOWS.md)): run it as the household's Windows user. No administrator rights are needed. It installs into the folder below, creates the Start menu shortcut and the autostart entry (section 10). `te-tengo-captura-<version>-instalador.exe /CONFIG="C:\ruta\config.toml"` also copies the configuration file of section 4. SmartScreen may warn as in step 2.
+**With the installer** (`te-tengo-captura-setup.exe` from the landing's download, or `te-tengo-captura-<version>-windows-setup.exe` from a GitHub Release; [RELEASES.md](RELEASES.md)): run it as the household's Windows user. No administrator rights are needed. It installs into the folder below, creates the Start menu shortcut and the autostart entry (section 10). `te-tengo-captura-setup.exe /CONFIG="C:\ruta\config.toml"` also copies the configuration file of section 4. SmartScreen may warn as in step 2.
 
 **Without the installer** (the `te-tengo-captura-windows` CI artifact):
 
@@ -202,7 +202,7 @@ Nothing is written in these cases:
 The entry starts the agent when **this Windows user** signs in. The PC must sign in to that user after a restart.
 
 ### macOS (LaunchAgent)
-Save as `~/Library/LaunchAgents/pe.tetengo.captura.plist`, adjusting the path, and load it with `launchctl load ~/Library/LaunchAgents/pe.tetengo.captura.plist`:
+With the app installed from `te-tengo-captura.dmg` into *Applications* (README, «Testing on macOS»), save as `~/Library/LaunchAgents/pe.tetengo.captura.plist`, adjusting the path, and load it with `launchctl load ~/Library/LaunchAgents/pe.tetengo.captura.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -211,7 +211,7 @@ Save as `~/Library/LaunchAgents/pe.tetengo.captura.plist`, adjusting the path, a
 <dict>
   <key>Label</key><string>pe.tetengo.captura</string>
   <key>ProgramArguments</key>
-  <array><string>/Applications/TeTengoCaptura/te-tengo-captura</string></array>
+  <array><string>/Applications/Te Tengo Captura.app/Contents/MacOS/te-tengo-captura</string></array>
   <key>RunAtLoad</key><true/>
 </dict>
 </plist>
