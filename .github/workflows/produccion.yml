@@ -1,0 +1,314 @@
+name: Produccion
+
+# Production of Te Tengo Captura (docs/RELEASES.md): a release or hotfix pull request merged into main
+# promotes the candidate that release.yml built and staging tried. Nothing is built here.
+#
+#   push to main
+#     candidata   version check (pyproject.toml = __version__), then the tested candidate: the newest
+#                 pre-release vX.Y.Z-rc.N whose commit tree, and the tree recorded in its notes, equal
+#                 the tree of this commit (git rev-parse HEAD^{tree}) and which passed staging or was
+#                 built with staging off. None: the run fails and nothing is published. Skipped
+#                 (notice) when the tag vX.Y.Z already exists
+#     produccion  environment `produccion` (approval): downloads the candidate, verifies its SHA-256
+#                 (SHA256SUMS.txt and the notes) and uploads the same files to the R2 keys the
+#                 landing links to, each checked by downloading it
+#     release     only when every enabled production channel succeeded: the tag vX.Y.Z on this commit
+#                 and the GitHub Release (CHANGELOG section + candidate id + SHA-256); with
+#                 ENABLE_DESKTOP_GITHUB_RELEASE the candidate's files are attached, unchanged
+#     back-merge  the pull request main → develop
+#
+# A failed job is retried with "Re-run failed jobs": it promotes the same candidate again; no tag
+# exists until everything succeeded. rollback.yml republishes an earlier release.
+#
+# Switches (organization variables; only 'true' turns a channel on, unset means off):
+#   ENABLE_WINDOWS_INSTALLER        te-tengo-captura-setup.exe to the R2 root
+#   ENABLE_MAC_DMG                  te-tengo-captura.dmg to the R2 root (the candidate must have it)
+#   ENABLE_DESKTOP_GITHUB_RELEASE   the candidate's binaries attached to the GitHub Release vX.Y.Z
+# With every switch off, the produccion job is skipped and the tag and the release (without
+# binaries) are still created. Secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, variable
+# DESCARGAS_BASE_URL (and optionally DESCARGAS_R2_BUCKET), as in release.yml.
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+# Production and rollback write the same R2 keys: one at a time, never cancelled while running.
+concurrency:
+  group: produccion-escritorio
+  cancel-in-progress: false
+
+env:
+  WRANGLER_VERSION: 4.149.0
+  R2_BUCKET: ${{ vars.DESCARGAS_R2_BUCKET || 'te-tengo-descargas' }}
+  DESCARGAS_BASE_URL: ${{ vars.DESCARGAS_BASE_URL }}
+
+jobs:
+  candidata:
+    name: Find the tested candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.buscar.outputs.version }}
+      publicar: ${{ steps.buscar.outputs.publicar }}
+      tag: ${{ steps.buscar.outputs.tag }}
+      produccion: ${{ steps.buscar.outputs.produccion }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ENABLE_WINDOWS_INSTALLER: ${{ vars.ENABLE_WINDOWS_INSTALLER }}
+      ENABLE_MAC_DMG: ${{ vars.ENABLE_MAC_DMG }}
+      ENABLE_DESKTOP_GITHUB_RELEASE: ${{ vars.ENABLE_DESKTOP_GITHUB_RELEASE }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Find the candidate
+        id: buscar
+        run: |
+          set -euo pipefail
+          version=$(.github/scripts/version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "::notice title=v$version already released::The tag v$version exists: nothing to promote."
+            echo "Tag \`v$version\` already exists: nothing to promote." >> "$GITHUB_STEP_SUMMARY"
+            echo "publicar=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          arbol=$(git rev-parse 'HEAD^{tree}')
+
+          # The candidates of this version, newest first (published pre-releases only).
+          mapfile -t candidatas < <(
+            gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName,isPrerelease,isDraft \
+              --jq '.[] | select(.isPrerelease and (.isDraft | not)) | .tagName' \
+              | awk -v p="v$version-rc." 'index($0, p) == 1 { n = substr($0, length(p) + 1); if (n ~ /^[0-9]+$/) print n, $0 }' \
+              | sort -rn | cut -d' ' -f2
+          )
+          elegida=""
+          sin_staging=()
+          for tag in "${candidatas[@]}"; do
+            arbol_tag=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .commit.tree.sha)
+            cuerpo=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body --jq .body | tr -d '\r')
+            arbol_notas=$(sed -n 's/^- Tree: \([0-9a-f]\{40,\}\)$/\1/p' <<< "$cuerpo")
+            staging=$(sed -n 's/^- Staging: \([a-z]*\).*/\1/p' <<< "$cuerpo")
+            echo "$tag: tree $arbol_tag (notes: ${arbol_notas:-none}), staging ${staging:-unknown}"
+            if [ "$arbol_tag" != "$arbol" ] || [ "$arbol_notas" != "$arbol" ]; then continue; fi
+            if [ "$staging" = passed ] || [ "$staging" = off ]; then
+              elegida=$tag
+              break
+            fi
+            sin_staging+=("$tag (Staging: ${staging:-unknown})")
+          done
+          if [ -z "$elegida" ]; then
+            if [ "${#sin_staging[@]}" -gt 0 ]; then
+              echo "::error title=Candidate not approved in staging::${sin_staging[*]} has the files of main but did not pass staging. Approve its staging job in the Release run, then re-run this workflow."
+            else
+              echo "::error title=No tested candidate::main differs from the tested candidate (no pre-release v$version-rc.N has the tree $arbol of this commit). Push the change to the release branch to build a new rc, let it pass staging and merge again."
+            fi
+            exit 1
+          fi
+
+          # The binaries the switches will publish must be in the candidate.
+          assets=$(gh release view "$elegida" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          if [ "$ENABLE_MAC_DMG" = true ] && ! grep -q -- '-macos\.dmg$' <<< "$assets"; then
+            echo "::error title=No disk image in the candidate::ENABLE_MAC_DMG is 'true' but $elegida has no .dmg (it was built with the switch off). Push the release branch again to build a candidate with it, or turn the switch off."
+            exit 1
+          fi
+          produccion=false
+          if [ "$ENABLE_WINDOWS_INSTALLER" = true ] || [ "$ENABLE_MAC_DMG" = true ] || [ "$ENABLE_DESKTOP_GITHUB_RELEASE" = true ]; then
+            produccion=true
+          fi
+          {
+            echo "publicar=true"
+            echo "tag=$elegida"
+            echo "produccion=$produccion"
+          } >> "$GITHUB_OUTPUT"
+          estado() { if [ "$1" = true ]; then echo "on"; else echo "**off** ($2 is not \`true\`)"; fi; }
+          {
+            echo "## Te Tengo Captura $version"
+            echo "Candidate [\`$elegida\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$elegida): same tree as \`${GITHUB_SHA:0:12}\` (\`$arbol\`)."
+            echo
+            echo "| Channel | Switch |"
+            echo "|---|---|"
+            echo "| Windows installer to R2 | $(estado "$ENABLE_WINDOWS_INSTALLER" ENABLE_WINDOWS_INSTALLER) |"
+            echo "| macOS disk image to R2 | $(estado "$ENABLE_MAC_DMG" ENABLE_MAC_DMG) |"
+            echo "| Binaries in the GitHub Release | $(estado "$ENABLE_DESKTOP_GITHUB_RELEASE" ENABLE_DESKTOP_GITHUB_RELEASE) |"
+            if [ "$produccion" != true ]; then echo; echo "- The \`produccion\` job is skipped: no channel is on. The tag and the release (without binaries) are still created."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  produccion:
+    name: Production (R2)
+    needs: candidata
+    if: needs.candidata.outputs.publicar == 'true' && needs.candidata.outputs.produccion == 'true'
+    environment: produccion
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.candidata.outputs.tag }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ENABLE_WINDOWS_INSTALLER: ${{ vars.ENABLE_WINDOWS_INSTALLER }}
+      ENABLE_MAC_DMG: ${{ vars.ENABLE_MAC_DMG }}
+    steps:
+      - name: Check the configuration
+        run: |
+          echo "## Production: candidate \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ENABLE_WINDOWS_INSTALLER" != true ] && [ "$ENABLE_MAC_DMG" != true ]; then
+            exit 0
+          fi
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error title=Cloudflare secrets missing::Create a Cloudflare API token with Workers R2 Storage: Edit and save it as the CLOUDFLARE_API_TOKEN secret of this repository, with the account ID as CLOUDFLARE_ACCOUNT_ID (docs/RELEASES.md)."
+            exit 1
+          fi
+          if [ -z "$DESCARGAS_BASE_URL" ]; then
+            echo "::error title=DESCARGAS_BASE_URL missing::Set the Actions variable DESCARGAS_BASE_URL to the public URL of the $R2_BUCKET bucket, used to check each upload."
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Download and verify the candidate
+        run: .github/scripts/descargar_candidata.sh "$TAG" candidata
+      - name: Windows installer to R2
+        if: vars.ENABLE_WINDOWS_INSTALLER == 'true'
+        run: >-
+          .github/scripts/publicar_r2.sh candidata/r2/te-tengo-captura-setup.exe
+          te-tengo-captura-setup.exe application/vnd.microsoft.portable-executable
+      - name: macOS disk image to R2
+        if: vars.ENABLE_MAC_DMG == 'true'
+        run: >-
+          .github/scripts/publicar_r2.sh candidata/r2/te-tengo-captura.dmg
+          te-tengo-captura.dmg application/x-apple-diskimage
+      - name: Switched-off channels
+        run: |
+          {
+            if [ "$ENABLE_WINDOWS_INSTALLER" != true ]; then echo "- Windows installer to R2: skipped (\`ENABLE_WINDOWS_INSTALLER\` is not \`true\`)"; fi
+            if [ "$ENABLE_MAC_DMG" != true ]; then echo "- macOS disk image to R2: skipped (\`ENABLE_MAC_DMG\` is not \`true\`)"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Tag and GitHub Release
+    needs: [candidata, produccion]
+    # Only when every enabled production channel succeeded (or none is on).
+    if: >-
+      !cancelled() && needs.candidata.result == 'success'
+      && needs.candidata.outputs.publicar == 'true'
+      && (needs.produccion.result == 'success'
+      || (needs.produccion.result == 'skipped' && needs.candidata.outputs.produccion != 'true'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.candidata.outputs.version }}
+      CANDIDATA: ${{ needs.candidata.outputs.tag }}
+      ENABLE_DESKTOP_GITHUB_RELEASE: ${{ vars.ENABLE_DESKTOP_GITHUB_RELEASE }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Release notes
+        run: |
+          set -euo pipefail
+          # The lines between "## [<version>]" and the next "## [" heading of the CHANGELOG.
+          awk -v v="$VERSION" '
+            index($0, "## [" v "]") == 1 { dentro = 1; next }
+            dentro && /^## \[/ { exit }
+            dentro { print }
+          ' CHANGELOG.md > notas.md
+          if ! grep -q '[^[:space:]]' notas.md; then
+            echo "::warning title=No CHANGELOG section::CHANGELOG.md has no '## [$VERSION]' section; the release notes point to the CHANGELOG."
+            echo "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/v$VERSION/CHANGELOG.md)." > notas.md
+          fi
+          # The candidate: rollback.yml reads "- Candidate:" and the SHA-256 block.
+          cuerpo=$(gh release view "$CANDIDATA" --repo "$GITHUB_REPOSITORY" --json body --jq .body | tr -d '\r')
+          gh release download "$CANDIDATA" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS.txt --dir sumas
+          {
+            echo
+            echo "---"
+            echo
+            echo "Promoted to production without rebuilding from the release candidate [\`$CANDIDATA\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$CANDIDATA)."
+            echo
+            echo "- Candidate: $CANDIDATA"
+            grep -E '^- (Build|Commit|Tree): ' <<< "$cuerpo" || true
+            echo "- Production run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "SHA-256:"
+            echo
+            echo '```'
+            cat sumas/SHA256SUMS.txt
+            echo '```'
+          } >> notas.md
+          cat notas.md
+      - name: Download and verify the candidate
+        if: vars.ENABLE_DESKTOP_GITHUB_RELEASE == 'true'
+        run: .github/scripts/descargar_candidata.sh "$CANDIDATA" candidata
+      - name: Tag and publish the release
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          if estado=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2> /dev/null); then
+            if [ "$estado" = true ]; then
+              echo "::error title=Draft $tag exists::A draft release $tag (from the earlier pipeline) is in the way. Delete it in the Releases page and re-run this job."
+              exit 1
+            fi
+            echo "::notice title=Release $tag exists::Already published (a re-run): nothing to do."
+            exit 0
+          fi
+          archivos=()
+          if [ "$ENABLE_DESKTOP_GITHUB_RELEASE" = true ]; then
+            # The candidate's files, byte for byte (descargar_candidata.sh verified them).
+            mapfile -t archivos < <(find candidata -maxdepth 1 -type f \( -name 'te-tengo-captura-*' -o -name SHA256SUMS.txt \) | sort)
+          fi
+          # Creating the release creates the tag on this commit.
+          gh release create "$tag" "${archivos[@]}" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Te Tengo Captura $VERSION" --notes-file notas.md --latest
+          {
+            echo "## Released \`$tag\` on \`${GITHUB_SHA:0:12}\`"
+            if [ "${#archivos[@]}" -gt 0 ]; then
+              echo "Binaries of \`$CANDIDATA\` attached: $(basename -a "${archivos[@]}" | paste -sd, - | sed 's/,/, /g')"
+            else
+              echo "Without binaries (\`ENABLE_DESKTOP_GITHUB_RELEASE\` is not \`true\`)."
+            fi
+            echo
+            echo "Next: set \`TT_AGENTE_VERSION_PUBLICADA=$VERSION\` in the API (docs/RELEASES.md, Update notices)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  back-merge:
+    name: Open the back-merge pull request to develop
+    needs: [candidata, release]
+    if: needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.candidata.outputs.version }}
+    steps:
+      - name: Open the pull request
+        run: |
+          set -euo pipefail
+          adelante=$(gh api "repos/$GITHUB_REPOSITORY/compare/develop...main" --jq .ahead_by)
+          if [ "$adelante" = 0 ]; then
+            echo "develop already has every commit of main." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          existente=$(gh pr list --repo "$GITHUB_REPOSITORY" --head main --base develop --state open --json url --jq '.[0].url // empty')
+          if [ -n "$existente" ]; then
+            echo "Back-merge pull request already open: $existente" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if ! gh pr create --repo "$GITHUB_REPOSITORY" --base develop --head main \
+            --title "chore: merge release $VERSION back into develop" \
+            --body "Brings release $VERSION (tag \`v$VERSION\`) from main back into develop. Merge with a merge commit, not a squash."; then
+            echo "::error title=Pull request not opened::Open main → develop by hand. If the error says GitHub Actions cannot create pull requests, enable 'Allow GitHub Actions to create and approve pull requests' (organization or repository Settings → Actions → General)."
+            exit 1
+          fi

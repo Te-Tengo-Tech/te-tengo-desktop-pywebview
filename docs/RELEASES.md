@@ -1,80 +1,138 @@
 # Releasing the agent
 
-How a version of Te Tengo Captura becomes the Windows installer and the macOS disk image that the project team (and, through the landing, households) download. One workflow, [`release.yml`](../.github/workflows/release.yml), builds both binaries **once** from the release branch and promotes the same files to staging and then to production; [`etiquetar.yml`](../.github/workflows/etiquetar.yml) tags the version when the release reaches `main`. Nothing is published from `main`.
+How a version of Te Tengo Captura becomes the Windows installer and the macOS disk image that the project team (and, through the landing, households) download. The model is git flow with **release candidates** and the **tag at the end**:
+
+- [`release.yml`](../.github/workflows/release.yml) builds both binaries **once** on the release branch and stores them as a **release candidate**: the GitHub pre-release `vX.Y.Z-rc.N`. That candidate is tried in **staging** and the pull request to `main` is opened.
+- [`produccion.yml`](../.github/workflows/produccion.yml) runs when that pull request is merged. It promotes **the same files**, without rebuilding, to production. Only if every enabled channel succeeded does it create the tag `vX.Y.Z` and the GitHub Release.
+- [`rollback.yml`](../.github/workflows/rollback.yml) puts an earlier release back in production.
+
+Every Te Tengo repository follows this model (Gitflow, SemVer pre-releases, *build once, deploy many*, approvals in GitHub Environments); this page is how this repository applies it.
 
 ## Release flow
 
 | Branch event | Workflow | What happens |
 |---|---|---|
-| Pull request to `develop` (`feature/*`, `bugfix/*`) | `CI` | Lint, types, tests and the Windows package. Pull requests that touch `packaging/` also run `release.yml`'s two builds; nothing is published |
+| Pull request to `develop` (`feature/*`, `bugfix/*`) | `CI` | Lint, types, tests and the Windows package. Pull requests that touch `packaging/` or `.github/scripts/` also run `release.yml`'s two builds; nothing is stored or published |
 | Push to `develop` | `CI` | Checks only: this repository has no dev deployment |
-| Push to `release/x.y.z` or `hotfix/x.y.z` | `release.yml` | The pipeline below |
-| Push to `main` (the merged release pull request) | `etiquetar.yml` | Tag `vX.Y.Z`, GitHub Release, back-merge pull request to `develop`. **No deployment** |
+| Push to `release/x.y.z` or `hotfix/x.y.z` | `CI`, `release.yml` | Candidate `vX.Y.Z-rc.N` → `staging` (approval) → pull request `release: x.y.z` to `main` |
+| Push to `main` (the merged release or hotfix pull request) | `CI`, `produccion.yml` | The tested candidate → `produccion` (approval) → tag `vX.Y.Z` and GitHub Release → back-merge pull request to `develop` |
+| *Run workflow* on `main` | `rollback.yml` | An earlier release `vX.Y.Z` back to the production keys (approval) |
 
+```mermaid
+flowchart TD
+  subgraph rama["push to release/x.y.z or hotfix/x.y.z (release.yml)"]
+    preparar["preparar<br/>pyproject.toml = __version__<br/>vX.Y.Z must not exist"] --> pruebas["pruebas<br/>make revisar, make probar"]
+    preparar --> windows["windows<br/>installer, install/uninstall test"]
+    preparar --> macos["macos<br/>.app, .dmg (ENABLE_MAC_DMG)"]
+    pruebas --> candidata
+    windows --> candidata
+    macos --> candidata
+    candidata["candidata<br/>GitHub pre-release vX.Y.Z-rc.N<br/>.exe + .dmg + SHA256SUMS.txt<br/>build, commit, tree hash"] --> staging["staging (environment staging, approval)<br/>verify SHA-256, R2 staging/, download check<br/>marks the candidate 'Staging: passed'"]
+    staging --> pr["pull-request<br/>release: x.y.z → main"]
+    candidata -.->|"ENABLE_STAGING off"| pr
+  end
+  pr -->|"a person merges"| buscar
+  subgraph principal["push to main (produccion.yml)"]
+    buscar["candidata<br/>newest rc whose tree = main's tree<br/>and staging passed or off"] --> produccion["produccion (environment produccion, approval)<br/>verify SHA-256, R2 root keys, download check"]
+    produccion -->|"every enabled channel succeeded"| release["release<br/>tag vX.Y.Z + GitHub Release<br/>(same files with ENABLE_DESKTOP_GITHUB_RELEASE)"]
+    release --> backmerge["back-merge<br/>main → develop"]
+  end
+  buscar -.->|"no rc with the tree of main"| fallo["fails: push the change to the<br/>release branch to build rc.N+1"]
 ```
-release/x.y.z ─► preparar ─┬─► pruebas ─────────────┐
-                           ├─► windows (installer) ─┼─► staging ─► produccion ─► pull-request
-                           └─► macos (dmg) ─────────┘   (approval)  (approval)    release/x.y.z → main
-main ─► etiquetar (tag vX.Y.Z + GitHub Release) ─► back-merge (main → develop)
-```
+
+### Push to the release branch (`release.yml`)
 
 | Job | Environment | What it does |
 |---|---|---|
-| `preparar` | — | Checks that `version` in `pyproject.toml` and `__version__` in `src/te_tengo_captura/__init__.py` match (and warns when the branch name says another version); writes the switch table in the run summary |
+| `preparar` | — | Checks that `version` in `pyproject.toml` and `__version__` in `src/te_tengo_captura/__init__.py` match ([`.github/scripts/version.sh`](../.github/scripts/version.sh)), warns when the branch name says another version, fails when the tag `vX.Y.Z` already exists (that version is released: bump it), sets the build number and writes the switch table in the run summary |
 | `pruebas` | — | `make revisar` and `make probar` |
-| `windows` | — | PyInstaller build, smoke test (`--version`, `--autoprueba`), optional signing, Inno Setup installer, silent install and uninstall test. Artifact `windows`: `te-tengo-captura-setup.exe` and its `.sha256` |
-| `macos` | — | Only with `ENABLE_MAC_DMG`. PyInstaller `.app` on an Apple Silicon runner (`macos-15`), signature (ad-hoc, or Developer ID and notarization), bundle checks, smoke test, `.dmg`, a test of the mounted image. Artifact `macos`: `te-tengo-captura.dmg` and its `.sha256` |
-| `staging` | `staging` | Only with `ENABLE_STAGING`. Uploads the **same** artifacts to R2 under `staging/` and downloads each public URL to compare its SHA-256 |
-| `produccion` | `produccion` | After `staging` (or right after the builds when `ENABLE_STAGING` is off). Uploads the same artifacts to the stable R2 keys with the same check, then creates the **draft** GitHub Release `v<version>` with the binaries |
-| `pull-request` | — | Opens `release: x.y.z` from the release branch to `main` (or updates its body), listing what was deployed where |
+| `windows` | — | PyInstaller build, smoke test (`--version`, `--autoprueba`), optional signing, Inno Setup installer, silent install and uninstall test. Run artifact `windows` |
+| `macos` | — | Only with `ENABLE_MAC_DMG`. PyInstaller `.app` on an Apple Silicon runner (`macos-15`), signature (ad-hoc, or Developer ID and notarization), bundle checks, smoke test, `.dmg`, a test of the mounted image. Run artifact `macos` |
+| `candidata` | — | Creates the **pre-release `vX.Y.Z-rc.N`** on this commit (which creates the rc tag) with `te-tengo-captura-X.Y.Z-windows-setup.exe`, `te-tengo-captura-X.Y.Z-macos.dmg` (when built) and `SHA256SUMS.txt`. Its notes record the build number, the branch, the commit, the **git tree hash** (`git rev-parse HEAD^{tree}`), the run, the signing, the SHA-256 of every asset and `Staging: pending` (or `off`) |
+| `staging` | `staging` | Only with `ENABLE_STAGING` and at least one R2 switch. Downloads the candidate, verifies it, uploads it to R2 under `staging/`, downloads each public URL to compare its SHA-256, and marks the candidate `Staging: passed` |
+| `pull-request` | — | Opens `release: x.y.z` from the release branch to `main`, or updates its description: candidate, build, commit, tree, staging URLs, production keys and SHA-256 |
 
-**Releasing a version:**
-1. Create `release/x.y.z` from `develop`. Bump `version` in `pyproject.toml` and `__version__` (they must match, or `preparar` fails), and move the `[Unreleased]` entries of `CHANGELOG.md` under `## [x.y.z] - <date>`: that section becomes the release notes.
-2. Push. The builds run without an environment; `staging` then waits for an approval on the **`staging` environment**, and `produccion` for one on **`produccion`**. A required reviewer (jhosepmyr or elmer-riva) opens the run, chooses *Review deployments*, ticks the environment and approves. Before approving production, try the staging downloads (`<DESCARGAS_BASE_URL>/staging/te-tengo-captura-setup.exe`, `…/staging/te-tengo-captura.dmg`).
-3. The `pull-request` job opens `release: x.y.z` to `main`. Review and merge it (a merge commit; the rulesets require the review).
-4. On `main`, `etiquetar.yml` publishes the draft release, which creates the tag `vX.Y.Z` on the merge commit, and opens `chore: merge release x.y.z back into develop`. Merge that one too.
-5. Set `TT_AGENTE_VERSION_PUBLICADA=x.y.z` in the API, so `GET /api/agente/configuracion` announces it (see *Update notices*).
+### Push to `main` (`produccion.yml`)
 
-**Re-running.** A new push to the same release branch runs the pipeline again (one queue per branch). A run that is deploying is never cancelled; a newer run replaces one that is still waiting for an approval. The draft release of an earlier run of the same version is replaced; a version that is already published is refused (bump it).
+| Job | Environment | What it does |
+|---|---|---|
+| `candidata` | — | Version check, then finds **the tested candidate**: the newest published pre-release `vX.Y.Z-rc.N` whose commit tree **and** the tree recorded in its notes equal `git rev-parse HEAD^{tree}` of the `main` commit, and whose notes say `Staging: passed` or `Staging: off`. If none matches, it fails: *main differs from the tested candidate; push the change to the release branch to build a new rc*. It also fails before any approval when `ENABLE_MAC_DMG` is on and the candidate has no `.dmg`. When the tag `vX.Y.Z` already exists it stops with a notice |
+| `produccion` | `produccion` | Downloads the candidate, verifies it and uploads the **same files** to the R2 root keys, each checked by downloading it. Skipped when every switch is off |
+| `release` | — | Only when `produccion` succeeded (or was skipped because every switch is off): creates the GitHub Release `vX.Y.Z` on the `main` commit, which creates the tag, marked *latest*. Notes: the `CHANGELOG.md` section of the version, the candidate, build, commit, tree and SHA-256. With `ENABLE_DESKTOP_GITHUB_RELEASE` the candidate's files are attached unchanged |
+| `back-merge` | — | Opens `chore: merge release x.y.z back into develop` (`main` → `develop`) |
 
-**The GitHub Release reuses the approved binaries.** Workflow artifacts belong to a run and cannot be looked up from the `main` push by commit, and rebuilding on `main` would ship files nobody approved. So `produccion` attaches the binaries it has just published to a **draft** release `v<version>` whose target is the release-branch commit, and `etiquetar.yml` only publishes that draft. Before publishing it checks that the draft's commit has **the same file tree** as the `main` commit (true for a merge of the release branch, since `main` only receives releases and hotfixes), so the attached files always match the tagged code. If they differ (for example, the branch got a new commit and was merged before its pipeline finished), `etiquetar.yml` fails and asks to push the release branch again.
+### How identity is proven
+- **One build.** The binaries are built once, on the release branch; `produccion.yml` and `rollback.yml` build nothing.
+- **Durable storage.** Run artifacts expire, so the candidate lives in the pre-release `vX.Y.Z-rc.N`. Earlier candidates are never changed or deleted.
+- **The SHA-256 is checked twice.** Every job that publishes runs [`.github/scripts/descargar_candidata.sh`](../.github/scripts/descargar_candidata.sh). It checks each file against the release's `SHA256SUMS.txt`, and that file against the SHA-256 block written in the notes when the candidate was created; an asset replaced later fails both. [`publicar_r2.sh`](../.github/scripts/publicar_r2.sh) then downloads each public R2 URL and compares its SHA-256 with the verified file.
+- **The code is the tested code.** `main` only promotes a candidate whose git tree equals main's tree. A merge commit of the release branch has exactly the branch's files, so this holds unless `main` changed meanwhile (for example, a hotfix released while the release was in QA). Then the run fails and the change must go into the release branch as a new candidate.
+- **The version inside.** The binaries carry the final version `X.Y.Z`: the installer's version and the bundle's `CFBundleShortVersionString`, which the `macos` job checks. "rc" exists only in the pre-release's name, and the asset names never contain it. The **build number** is the Release workflow's run number, recorded as `X.Y.Z+<build>` in the candidate's notes; it grows with every run.
+
+### Releasing a version
+1. Create `release/x.y.z` from `develop` (a hotfix: `hotfix/x.y.z` from `main`, with the next patch version). Bump `version` in `pyproject.toml` and `__version__` (they must match, or `preparar` fails), and move the `[Unreleased]` entries of `CHANGELOG.md` under `## [x.y.z] - <date>`: that section becomes the release notes.
+2. Push. The builds run without an environment and the candidate `vX.Y.Z-rc.1` appears under *Releases* as a pre-release. Then `staging` waits for an approval on the **`staging` environment**. A required reviewer (jhosepmyr or elmer-riva) opens the run, chooses *Review deployments*, ticks the environment and approves.
+3. Try the staging downloads (`<DESCARGAS_BASE_URL>/staging/te-tengo-captura-setup.exe`, `…/staging/te-tengo-captura.dmg`). **A bug found in QA** is fixed on the release branch (directly or with a `bugfix/*` pull request to it). Each push builds the next candidate (`rc.2`, `rc.3`, …) with the same version and updates the pull request; earlier candidates stay as they are.
+4. The `pull-request` job opens `release: x.y.z` to `main`. Review and merge it (a merge commit; the rulesets require the review).
+5. On `main`, `produccion.yml` finds the candidate and waits for an approval on **`produccion`**. After the approval it publishes, tags `vX.Y.Z`, creates the GitHub Release and opens `chore: merge release x.y.z back into develop`. Merge that one too.
+6. Set `TT_AGENTE_VERSION_PUBLICADA=x.y.z` in the API, so `GET /api/agente/configuracion` announces it (see *Update notices*).
+
+**Hotfix.** The same pipeline from `hotfix/x.y.z` (branched from `main`): candidate, a quick staging, pull request to `main`, production, tag, back-merge. In an emergency, `ENABLE_STAGING=false` skips staging (the candidate is marked `Staging: off`); production still needs its approval.
+
+**Re-running.** A new push to the same release branch runs the pipeline again (one queue per branch) and builds a new candidate. A run that is building or deploying is never cancelled; a newer run replaces one that is still waiting for an approval. If a job of `produccion.yml` fails, **no tag is created**. *Re-run failed jobs* promotes the same candidate again (an R2 upload simply overwrites the key with the same bytes); the release is created once everything succeeded.
 
 **Pull requests opened by the workflows.** `pull-request` and `back-merge` use `GITHUB_TOKEN`:
 - the organization (or repository) setting *Settings → Actions → General → Allow GitHub Actions to create and approve pull requests* must be on; otherwise the job fails and says so;
-- GitHub does not start other workflows for events caused by `GITHUB_TOKEN`, so `CI` does not run by itself on these pull requests. If a ruleset requires its checks, close and reopen the pull request (a person's action) to start it.
+- GitHub does not start other workflows for events caused by `GITHUB_TOKEN`, so `CI` does not run on these pull requests. That is why `CI` also runs on every push to `release/**`, `hotfix/**` and `main`: the required checks then exist on the same head commit.
 
 ### Switches
-Each channel has an on/off switch: an **organization** Actions variable of `Te-Tengo-Tech` (*Settings → Secrets and variables → Actions → Variables*), the single control panel for every repository. Only the value `true` turns a channel on; an unset variable means off. A channel that is off is skipped and the run summary says why; the Windows installer is still built and tested.
+Each channel has an on/off switch: an **organization** Actions variable of `Te-Tengo-Tech` (*Settings → Secrets and variables → Actions → Variables*), the single control panel for every repository.
+- **On and off.** Only the value `true` turns a channel on; an unset variable means off.
+- **When a channel is off.** It is skipped and the run summary says why.
+- **Always built.** The Windows installer is always built, tested and stored in the candidate.
 
 | Variable | What it controls |
 |---|---|
-| `ENABLE_STAGING` | The `staging` job. Off: `produccion` follows the builds directly |
+| `ENABLE_STAGING` | The `staging` job. Off: the candidate is marked `Staging: off` and the pull request is opened right after it |
 | `ENABLE_WINDOWS_INSTALLER` | `te-tengo-captura-setup.exe` to R2 (`staging/` and the root) |
-| `ENABLE_MAC_DMG` | The `macos` build and `te-tengo-captura.dmg` to R2 |
+| `ENABLE_MAC_DMG` | The `macos` build (and the `.dmg` in the candidate) and `te-tengo-captura.dmg` to R2 |
 | `ENABLE_MAC_NOTARIZE` | Developer ID signing and notarization of the `.app` and the `.dmg` (needs the Apple secrets below) |
-| `ENABLE_DESKTOP_GITHUB_RELEASE` | The draft GitHub Release with the binaries, published by `etiquetar.yml`. Off: the tag and the release are still created, without binaries |
+| `ENABLE_DESKTOP_GITHUB_RELEASE` | The candidate's binaries attached to the final GitHub Release `vX.Y.Z`. Off: the tag and the release are still created, without binaries |
+
+With every switch of `produccion.yml` off (`ENABLE_WINDOWS_INSTALLER`, `ENABLE_MAC_DMG`, `ENABLE_DESKTOP_GITHUB_RELEASE`), its `produccion` job is skipped, so no approval is asked, and the tag and the release are created without binaries.
 
 ### Secrets and variables
 | Name | Kind | Needed for |
 |---|---|---|
-| `CLOUDFLARE_API_TOKEN` | Secret | R2 uploads. A Cloudflare API token with *Account → Workers R2 Storage: Edit* (the shared token of the Te Tengo repositories also has *Cloudflare Pages: Edit*). Without it, `staging`/`produccion` fail with a clear error |
+| `CLOUDFLARE_API_TOKEN` | Secret | R2 uploads. A Cloudflare API token with *Account → Workers R2 Storage: Edit* (the shared token of the Te Tengo repositories also has *Cloudflare Pages: Edit*). Without it, `staging`, `produccion` and `rollback` fail with a clear error |
 | `CLOUDFLARE_ACCOUNT_ID` | Secret | R2 uploads (the Cloudflare account ID) |
 | `DESCARGAS_BASE_URL` | Variable | The public URL of the bucket, used by the download check (`https://pub-c2d32ffba732437f83ff41fe77c0b9f1.r2.dev`) |
 | `DESCARGAS_R2_BUCKET` | Variable (optional) | The bucket; default `te-tengo-descargas` |
 | `MAC_DEVELOPER_ID_P12_BASE64`, `MAC_DEVELOPER_ID_P12_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD` | Secrets | Only with `ENABLE_MAC_NOTARIZE` (see *macOS signing and notarization*) |
 | Windows signing | Secrets and variables | Optional (see *Windows code signing*) |
 
-R2 keys, uploaded with `npx wrangler@4.149.0 r2 object put --remote` ([`.github/scripts/publicar_r2.sh`](../.github/scripts/publicar_r2.sh)), each with a `.sha256` next to it:
+The GitHub Releases (candidates and final) use the workflow's `GITHUB_TOKEN`; no other token is needed.
 
-| Stage | Windows | macOS |
+### Where the files are
+| What | Where | Written by |
 |---|---|---|
-| Staging | `staging/te-tengo-captura-setup.exe` | `staging/te-tengo-captura.dmg` |
-| Production (the landing's download) | `te-tengo-captura-setup.exe` | `te-tengo-captura.dmg` |
+| Candidate (durable, never changed) | GitHub pre-release `vX.Y.Z-rc.N`: `te-tengo-captura-X.Y.Z-windows-setup.exe`, `te-tengo-captura-X.Y.Z-macos.dmg`, `SHA256SUMS.txt` | `release.yml` → `candidata` |
+| Staging | R2 `staging/te-tengo-captura-setup.exe`, `staging/te-tengo-captura.dmg` | `release.yml` → `staging` |
+| Production (the landing's download) | R2 `te-tengo-captura-setup.exe`, `te-tengo-captura.dmg` | `produccion.yml` → `produccion`, `rollback.yml` |
+| Final release | GitHub Release `vX.Y.Z`: the candidate's files (with `ENABLE_DESKTOP_GITHUB_RELEASE`) | `produccion.yml` → `release` |
 
-`wrangler r2 object put` uploads one object of at most 300 MiB; today the installer and the disk image are well below it (the `.dmg` is about 140 MB).
+- **Uploads.** Each R2 key is uploaded with `npx wrangler@4.149.0 r2 object put --remote` ([`.github/scripts/publicar_r2.sh`](../.github/scripts/publicar_r2.sh)) and gets a `.sha256` file next to it.
+- **Size limit.** `wrangler r2 object put` uploads one object of at most 300 MiB; the installer and the disk image are well below it (the `.dmg` is about 140 MB).
+- **Run artifacts.** The `windows` and `macos` run artifacts only carry the files to `candidata` and expire after 7 days (3 on pull requests).
+
+## Rollback
+*Actions → Rollback → Run workflow*, branch `main`, version `x.y.z` (a published release `vX.Y.Z`). After an approval on `produccion`, it downloads that release's binaries and verifies them like a candidate. When the binaries were not attached (`ENABLE_DESKTOP_GITHUB_RELEASE` off), it uses the candidate named in the release notes (`- Candidate: vX.Y.Z-rc.N`), which holds the same bytes. It then uploads them to the R2 root keys, per switch.
+- **What it does not do.** It builds nothing and changes no tag or GitHub Release: *latest* stays on the newest version.
+- **Installed agents.** R2 only serves new downloads, so installed agents keep their version; the team reinstalls the older installer where needed (Inno Setup accepts installing an older version over a newer one).
+- **Afterwards.** Set `TT_AGENTE_VERSION_PUBLICADA` back in the API and fix forward with a `hotfix/x.y.z` branch.
+- **Data.** The agent has no server database to restore. Its only local data is the SQLite outbox and the clip files (`src/te_tengo_captura/envios/cola.py`, created with `CREATE TABLE IF NOT EXISTS`). A version that changes that schema must say in its CHANGELOG entry whether an older agent can still read it. The API's database belongs to `te-tengo-general-api` and `te-tengo-infra`, which back it up before their own deployments.
 
 ## Windows installer
-Inno Setup builds `te-tengo-captura-<version>-instalador.exe` ([`packaging/te-tengo-captura.iss`](../packaging/te-tengo-captura.iss)); `release.yml` publishes it as `te-tengo-captura-setup.exe` (R2) and `te-tengo-captura-<version>-windows-setup.exe` (GitHub Release). In Spanish, it installs **per user** and needs **no administrator rights**.
+Inno Setup builds `te-tengo-captura-<version>-instalador.exe` ([`packaging/te-tengo-captura.iss`](../packaging/te-tengo-captura.iss)); `release.yml` stores it in the candidate as `te-tengo-captura-<version>-windows-setup.exe` (the name it keeps in the final GitHub Release), and production publishes the same file as `te-tengo-captura-setup.exe` (R2). In Spanish, it installs **per user** and needs **no administrator rights**.
 
 | What | Where / how |
 |---|---|
@@ -146,7 +204,7 @@ A Developer ID certificate needs a paid Apple Developer Program membership (US$9
 
 ## Distribution
 ### GitHub Releases: the common path for the pilot
-- **The pilot.** The project team installs every agent itself ([INSTALLATION.md](INSTALLATION.md)), so a published GitHub Release with the binaries and `SHA256SUMS.txt` is enough. Releases are versioned, immutable once published, and free. Assets: `te-tengo-captura-<v>-windows-setup.exe`, `te-tengo-captura-<v>-macos.dmg` (with `ENABLE_MAC_DMG`) and `SHA256SUMS.txt`.
+- **The pilot.** The project team installs every agent itself ([INSTALLATION.md](INSTALLATION.md)), so a published GitHub Release with the binaries and `SHA256SUMS.txt` is enough (with `ENABLE_DESKTOP_GITHUB_RELEASE`; every candidate pre-release has them too). Releases are versioned and free. Assets: `te-tengo-captura-<v>-windows-setup.exe`, `te-tengo-captura-<v>-macos.dmg` (with `ENABLE_MAC_DMG`) and `SHA256SUMS.txt`.
 - **Public downloads.** The repository is public, so a published release's assets can be downloaded by anyone. For households, the landing page links to the stable copies in Cloudflare R2 (`te-tengo-captura-setup.exe`, `te-tengo-captura.dmg`, each with its `.sha256`), always the latest release approved on `produccion`.
 - **Checking the download.** On Windows: `Get-FileHash .\te-tengo-captura-setup.exe` must match the `.sha256` file. On macOS: `shasum -a 256 te-tengo-captura.dmg`.
 
