@@ -17,7 +17,7 @@
 2. Set up the environment with `make instalar`. This also installs the pre-commit hooks.
 3. Before pushing, `make revisar` and `make probar` must pass.
 4. Open a *pull request* to `develop` using the template: it lists the definition of done from [AGENTS.md](AGENTS.md).
-5. **CI must be green before merging.** The organization is on the GitHub Free plan, where branch protection is not enforced for private repositories: nothing blocks a merge with failing checks, so **reviewers must open the checks tab and confirm every job passed**, including the Windows package, before merging.
+5. **CI must be green before merging.** The rulesets `proteger-develop` and `proteger-main` require a pull request with one approval and the `Lint, format and types` and `Tests and coverage` checks, and block force-pushes and deletions. The Windows package job is not a required check: reviewers confirm it passed too.
 
 ## Continuous integration
 
@@ -26,7 +26,8 @@
 | [CI](.github/workflows/ci.yml) | Push to `main`/`develop`, every PR | `Lint, format and types` (ruff, mypy strict); `Tests and coverage` (pytest, coverage XML/HTML artifact and summary on the run page); then `Windows package` (PyInstaller build, smoke test, app artifact) |
 | [Dependency audit](.github/workflows/audit.yml) | Weekly, manual, PRs that change dependencies | pip-audit of every locked dependency; scheduled runs fail on any known vulnerability |
 | [OSV-Scanner](.github/workflows/osv-scanner.yml) | Weekly, manual, PRs that change dependencies | Scans `uv.lock`; scheduled runs fail on high or critical |
-| [Release Windows](.github/workflows/release-windows.yml) | Manual, tags `v*`, PRs that change `packaging/` | PyInstaller build and smoke test, Inno Setup installer, silent install and uninstall test, installer artifact; optional code signing; on tags a **draft** GitHub Release ([docs/RELEASE_WINDOWS.md](docs/RELEASE_WINDOWS.md)) |
+| [Release Windows](.github/workflows/release-windows.yml) | Push to `main` (a release), manual, PRs that change `packaging/` | PyInstaller build and smoke test, Inno Setup installer, silent install and uninstall test, installer artifact; optional code signing; on `main`, after an approval on the `produccion` environment, a **draft** GitHub Release `v<version>` ([docs/RELEASE_WINDOWS.md](docs/RELEASE_WINDOWS.md)) |
+| [Notify the landing](.github/workflows/notificar-landing.yml) | `CI` succeeded on a push to `main`; manual from `main` | Sends `repository_dispatch` `publicar-escritorio` with `{ref: <commit SHA>, version: <pyproject version>}` to `te-tengo-landing-astro`, whose `publicar.yml` builds the installer and uploads it to R2 after approval. Needs the `DISPATCH_TOKEN` secret; without it, a notice ([README](README.md#release-flow)) |
 
 A new push cancels the superseded CI run of the same branch. Dependabot opens weekly update PRs to `develop` (`mediapipe` stays pinned, see ADR 0003).
 
