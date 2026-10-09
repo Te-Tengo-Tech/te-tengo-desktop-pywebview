@@ -4,6 +4,8 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-08
+
 ### Changed
 - Release flow: a release merged into `main` is published after an approval on the `produccion` environment (required reviewers, `main` only). The new `notificar-landing.yml` sends `repository_dispatch` `publicar-escritorio` with `{ref, version}` (the commit SHA and the `pyproject.toml` version) to `te-tengo-landing-astro` when `CI` succeeds on a push to `main` (needs the `DISPATCH_TOKEN` secret; a notice without it). `release-windows.yml` runs on push to `main` instead of `v*` tags, checks that `pyproject.toml` and `__version__` match, and its `Draft GitHub Release` job runs in `produccion` and drafts `v<version>` on the released commit.
 

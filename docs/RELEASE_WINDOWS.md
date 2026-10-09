@@ -21,7 +21,7 @@ How a version of Te Tengo Captura becomes an installer that the project team run
 - **Build locally** on Windows with Inno Setup 6 installed:
   ```powershell
   make empaquetar   # or: uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
-  & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.2.0 packaging\te-tengo-captura.iss
+  & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.0 packaging\te-tengo-captura.iss
   ```
 
 ## The workflow
