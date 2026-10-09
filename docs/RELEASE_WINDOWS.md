@@ -28,8 +28,8 @@ How a version of Te Tengo Captura becomes an installer that the project team run
 | Trigger | What happens |
 |---|---|
 | Pull request touching `packaging/` or the workflow | Full build and tests, installer kept as a 3-day artifact. Nothing is released |
-| Manual run (*Actions → Release Windows → Run workflow*) | Same; the installer is kept as a 30-day artifact |
-| Tag `v<version>`, e.g. `v0.2.0` | Same, plus a **draft** GitHub Release with the installer and `SHA256SUMS.txt`. A person reviews it and publishes it. The tag must match `__version__` in `src/te_tengo_captura/__init__.py` |
+| Push to `main` (a merged `release/*` or `hotfix/*` pull request) | Same, plus the `Draft GitHub Release` job: it **waits for an approval on the `produccion` environment**, then creates a **draft** release `v<version>` with the installer and `SHA256SUMS.txt`, targeting the released commit. A person reviews the notes and publishes it, which creates the tag |
+| Manual run (*Actions → Release Windows → Run workflow*) | Same build; the installer is kept as a 30-day artifact. From `main` it also offers the draft release (with approval); from other branches it only builds, because the environment only accepts `main` |
 
 **Steps:**
 1. PyInstaller build.
@@ -39,12 +39,16 @@ How a version of Te Tengo Captura becomes an installer that the project team run
 5. Optional signing of the installer.
 6. A **silent install and uninstall test**: it checks the program folder, the autostart value, the shortcut, `--version` from the installed copy, and that nothing remains after uninstalling.
 
-**Releasing a version:**
+**Releasing a version** (no tag is pushed by hand; the version in `pyproject.toml` and `__version__` must match, or the build fails):
 1. Bump `version` in `pyproject.toml` and `__version__`, and update `CHANGELOG.md`.
-2. Merge the release branch to `main` (git flow).
-3. Tag `v<version>` and push the tag.
+2. Merge the release branch to `main` (git flow). Two things start on their own:
+   - here, `Release Windows` builds and tests the installer, and its `Draft GitHub Release` job waits for an approval on `produccion`;
+   - once `CI` passes on `main`, [`notificar-landing.yml`](../.github/workflows/notificar-landing.yml) sends `repository_dispatch` `publicar-escritorio` with `{ref: <commit SHA>, version: <pyproject version>}` to `te-tengo-landing-astro`. Its `Publicar publicar-escritorio <version>` run builds and tests the installer at that commit and waits for an approval on its own `produccion` environment before uploading `te-tengo-captura-setup.exe` to Cloudflare R2, the landing's download.
+3. A required reviewer of `produccion` (jhosepmyr or elmer-riva) approves both runs: open the run, *Review deployments*, tick `produccion`, *Approve and deploy*. Nothing reaches users before that.
 4. Review and publish the draft release.
 5. Set `TT_AGENTE_VERSION_PUBLICADA=<version>` in the API, so `GET /api/agente/configuracion` announces it (see *Update notices*).
+
+The dispatch needs the secret **`DISPATCH_TOKEN`**: a fine-grained personal access token with resource owner `Te-Tengo-Tech`, access to the single repository `te-tengo-landing-astro` and the repository permission *Contents: Read and write*. Without it `notificar-landing.yml` prints a notice and succeeds; after adding it, run *Actions → Notify the landing → Run workflow* on `main` to send the current release.
 
 ### Code signing (optional, inert until configured)
 Without signing, the workflow adds a notice and the installer is unsigned. Configure **one** of these under *Settings → Secrets and variables → Actions*:
@@ -60,9 +64,7 @@ Without signing, the workflow adds a notice and the installer is unsigned. Confi
 ## Distribution
 ### GitHub Releases: the common path for the pilot
 - **The pilot.** The project team installs every agent itself ([INSTALLATION.md](INSTALLATION.md)), so a published GitHub Release with the installer and its checksum is enough. Releases are versioned, immutable once published, and free.
-- **The repository is private.** Its release assets can only be downloaded by organization members, which suits the team-installed pilot. For households to download it themselves, either:
-  - publish the installer from a public repository (for example `te-tengo-releases`), or
-  - host it on the S3 bucket behind a public URL.
+- **Public downloads.** The repository is public, so a published release's assets can be downloaded by anyone. For households, the landing page links to the stable copy that its `publicar.yml` uploads to Cloudflare R2 (`te-tengo-captura-setup.exe` with its `.sha256`), always the latest approved release.
 - **Checking the download.** On the household PC: `Get-FileHash .\te-tengo-captura-<v>-instalador.exe` must match `SHA256SUMS.txt`.
 
 ### SmartScreen without signing

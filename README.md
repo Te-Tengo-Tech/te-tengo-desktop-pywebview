@@ -100,6 +100,19 @@ The spec bundles the model, MediaPipe's data files and the web UI, and draws the
 
 The Windows **installer** (Inno Setup, per user, no administrator rights) and the release workflow that builds it and drafts GitHub Releases are described in [docs/RELEASE_WINDOWS.md](docs/RELEASE_WINDOWS.md).
 
+## Release flow
+
+Publishing needs no manual run: merge a release into `main` and approve it, the same way a pull request is approved.
+
+1. **Release.** Bump `version` in `pyproject.toml` and `__version__` in `src/te_tengo_captura/__init__.py` (they must match), update `CHANGELOG.md`, and merge `release/<version>` (or a `hotfix/*`) into `main`.
+2. **Build.** On that push, `CI` runs on `main` and [`release-windows.yml`](.github/workflows/release-windows.yml) builds and tests the installer.
+3. **Notify the landing.** When `CI` succeeds on `main`, [`notificar-landing.yml`](.github/workflows/notificar-landing.yml) sends `repository_dispatch` `publicar-escritorio` to `Te-Tengo-Tech/te-tengo-landing-astro` with `{ref: <commit SHA>, version: <pyproject version>}`. The landing's `Publicar` run builds and tests the installer at that commit.
+4. **Approve.** Each run that publishes stops at the **`produccion` environment** until one of its required reviewers (jhosepmyr, elmer-riva) opens the run, chooses *Review deployments*, ticks `produccion` and approves:
+   - in **te-tengo-landing-astro**, `Publicar publicar-escritorio <version>`: uploads `te-tengo-captura-setup.exe` to Cloudflare R2, the landing's download;
+   - in **this repository**, `Release Windows`: the `Draft GitHub Release` job creates the draft release `v<version>`, which a person then reviews and publishes.
+
+Nothing reaches users before an approval, a failed build asks for none, and the environment only accepts `main`. The dispatch needs the secret **`DISPATCH_TOKEN`**: a fine-grained personal access token with resource owner `Te-Tengo-Tech`, access to the single repository `te-tengo-landing-astro` and the repository permission *Contents: Read and write*. Without it the workflow prints a notice and succeeds; after adding it, run *Actions → Notify the landing → Run workflow* on `main` to send the current release. Details: [docs/RELEASE_WINDOWS.md](docs/RELEASE_WINDOWS.md).
+
 ## Testing with the webcam or videos
 
 `make camara` opens the webcam or a video and runs the same classifier as the agent. It draws the skeleton, the center line, the hip center and the body box, plus a panel with the phase, the three fall conditions and the events. Keys: `q` quit, `r` reset, `c` screenshot.
