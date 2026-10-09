@@ -1,0 +1,85 @@
+name: Notify the landing
+
+# When a release reaches main (a merged release/* or hotfix/* pull request) and CI passes on that
+# commit, asks the landing repository to publish it: a repository_dispatch of type
+# `publicar-escritorio` to Te-Tengo-Tech/te-tengo-landing-astro with client_payload
+# {ref: <commit SHA>, version: <pyproject.toml version>}. The landing's publicar.yml builds and tests
+# the Windows installer at that commit and waits for an approval on its `produccion` environment
+# before uploading it to R2 as te-tengo-captura-setup.exe (docs/RELEASE_WINDOWS.md).
+#
+# Secret (Settings → Secrets and variables → Actions):
+#   DISPATCH_TOKEN   fine-grained personal access token, resource owner Te-Tengo-Tech, only the
+#                    repository te-tengo-landing-astro, permission Contents: Read and write. Without
+#                    it the workflow prints a notice and succeeds.
+#
+# A manual run from main sends the dispatch again for the current main commit (e.g. after adding the
+# token).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  LANDING_REPO: Te-Tengo-Tech/te-tengo-landing-astro
+  EVENT_TYPE: publicar-escritorio
+
+jobs:
+  notificar:
+    name: Dispatch publicar-escritorio to the landing
+    # workflow_run: only a successful CI run of a push to main of this repository (a pull request from
+    # a fork's own main branch also reports head_branch main, so the event and repository are checked).
+    if: >-
+      (github.event_name == 'workflow_run'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_branch == 'main'
+      && github.event.workflow_run.head_repository.full_name == github.repository)
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+          persist-credentials: false
+          sparse-checkout: pyproject.toml
+          sparse-checkout-cone-mode: false
+      - name: Read the version from pyproject.toml
+        id: version
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+-][0-9A-Za-z.]+)?$ ]]; then
+            echo "::error title=Unexpected version::pyproject.toml version '$version' is not <major>.<minor>.<patch>."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Send the dispatch
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DISPATCH_TOKEN" ]; then
+            echo "::notice title=Landing not notified: DISPATCH_TOKEN is missing::Create a fine-grained token (resource owner Te-Tengo-Tech; repository te-tengo-landing-astro; permission Contents: Read and write) and save it as the DISPATCH_TOKEN secret of this repository. Then run this workflow by hand from main, or publish from the landing (Actions → Publicar)."
+            {
+              echo "### Landing not notified"
+              echo "The \`DISPATCH_TOKEN\` secret is missing, so version \`$VERSION\` (\`${SHA:0:12}\`) was not sent to $LANDING_REPO."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          jq -n --arg type "$EVENT_TYPE" --arg ref "$SHA" --arg version "$VERSION" \
+            '{event_type: $type, client_payload: {ref: $ref, version: $version}}' \
+            | GH_TOKEN=$DISPATCH_TOKEN gh api --method POST "repos/$LANDING_REPO/dispatches" --input -
+          {
+            echo "### Landing notified"
+            echo "Sent \`$EVENT_TYPE\` for version \`$VERSION\` (\`${SHA:0:12}\`) to $LANDING_REPO."
+            echo "Approve the publication on the \`produccion\` environment of its Publicar run: https://github.com/$LANDING_REPO/actions/workflows/publicar.yml"
+          } >> "$GITHUB_STEP_SUMMARY"
