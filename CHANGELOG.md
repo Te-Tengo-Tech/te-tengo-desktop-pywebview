@@ -4,6 +4,10 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+### Pending
+- Validate the unstable movement rule with our own recordings.
+- Frame quality control, motion detection and backpressure.
+
 ## [0.3.0] - 2026-10-09
 
 ### Changed
@@ -45,11 +49,6 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 ### Removed
 - `notificar-landing.yml` (the `publicar-escritorio` dispatch to the landing and its `DISPATCH_TOKEN` secret) and `release-windows.yml`, replaced by `release.yml` and `etiquetar.yml`.
 - Cloud ingestion service (ADR 0007, T02): FastAPI app, WebSocket ingestion and its protocol, `/health`, S3 clip storage, the provisional event publisher, the Docker image and CI job, `scripts/agente_simulado.py` and the `fastapi`, `uvicorn`, `boto3`, `websockets` and `httpx2` dependencies (`websockets` came back for the live view control channel). `ProcesadorCamara` moved to `te_tengo_captura/captura/procesador.py`.
-
-### Pending
-- Validate the unstable movement rule with our own recordings.
-- Frame quality control, motion detection and backpressure.
-- Live view transport (T18, blocked on the team's decision).
 
 ## [0.2.0] - 2026-10-03
 
