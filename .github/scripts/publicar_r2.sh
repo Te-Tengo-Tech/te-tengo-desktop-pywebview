@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Uploads one release binary and its .sha256 file to the public R2 bucket of the downloads, then
 # checks the public copy: it downloads it from DESCARGAS_BASE_URL and compares the SHA-256 with the
-# local file (the smoke check of the staging and produccion stages of release.yml).
+# local file (the smoke check of the staging job of release.yml, the produccion job of
+# produccion.yml and rollback.yml).
 #
 #   publicar_r2.sh <local file> <key> <content type>
-#   e.g. publicar_r2.sh salida/te-tengo-captura.dmg staging/te-tengo-captura.dmg application/x-apple-diskimage
+#   e.g. publicar_r2.sh candidata/r2/te-tengo-captura.dmg staging/te-tengo-captura.dmg application/x-apple-diskimage
 #
 # Environment: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID (read by Wrangler), R2_BUCKET,
 # DESCARGAS_BASE_URL and WRANGLER_VERSION. The <local file>.sha256 next to the file is uploaded as
@@ -19,7 +20,7 @@ tipo="$3"
 : "${WRANGLER_VERSION:?WRANGLER_VERSION is not set}"
 
 if [[ ! -f "$archivo" ]]; then
-  echo "::error title=Missing binary::$archivo is not in the build artifact."
+  echo "::error title=Missing binary::$archivo is not in the candidate: its switch was off when the candidate was built. Push the release branch again with the switch on to build a new candidate."
   exit 1
 fi
 nombre=$(basename "$clave")
