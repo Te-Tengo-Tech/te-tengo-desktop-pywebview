@@ -1,0 +1,50 @@
+name: Release gate
+
+# Required check `release-gate` of the pull requests into main (docs/RELEASES.md). A release or hotfix
+# pull request may be merged only when merging it puts into main exactly the tree of an approved release
+# candidate (built once by release.yml, passed staging or staging switched off), which is the candidate
+# produccion.yml then promotes: both look for it with .github/scripts/buscar_candidata.sh. It fails while
+# the candidate of the head commit is still being built or waits for staging; release.yml edits the pull
+# request when the candidate is ready (as te-tengo-release-bot), and that `edited` event runs this check
+# again. Nothing is built or tested here: CI already tested the candidate's commit when release.yml
+# called it.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: release-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  release-gate:
+    name: release-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            pyproject.toml
+            src/te_tengo_captura/__init__.py
+            .github/scripts
+          sparse-checkout-cone-mode: false
+      - name: An approved candidate has the tree this merge puts into main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          version=$(.github/scripts/version.sh)
+          .github/scripts/release-gate.sh "$version" .github/scripts/buscar_candidata.sh

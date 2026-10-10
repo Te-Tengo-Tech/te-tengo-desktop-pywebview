@@ -1,35 +1,42 @@
 name: Produccion
 
 # Production of Te Tengo Captura (docs/RELEASES.md): a release or hotfix pull request merged into main
-# promotes the candidate that release.yml built and staging tried. Nothing is built here.
+# promotes the candidate that release.yml built and staging tried. Nothing is built or tested here: the
+# candidate's commit was tested when release.yml built it, and release-gate proved before the merge that
+# main gets exactly its tree.
 #
-#   push to main
-#     candidata   version check (pyproject.toml = __version__), then the tested candidate: the newest
+#   push to main (or Run workflow on main)
+#     candidata   version check (pyproject.toml = __version__), then the approved candidate, found with
+#                 .github/scripts/buscar_candidata.sh (the same command as release-gate): the newest
 #                 pre-release vX.Y.Z-rc.N whose commit tree, and the tree recorded in its notes, equal
-#                 the tree of this commit (git rev-parse HEAD^{tree}) and which passed staging or was
-#                 built with staging off. None: the run fails and nothing is published. Skipped
-#                 (notice) when the tag vX.Y.Z already exists
+#                 the tree of this commit and which passed staging or was built with staging off. None:
+#                 the run fails and nothing is published. Skipped (notice) when vX.Y.Z already exists
 #     produccion  environment `produccion` (approval): downloads the candidate, verifies its SHA-256
 #                 (SHA256SUMS.txt and the notes) and uploads the same files to the R2 keys the
-#                 landing links to, each checked by downloading it
-#     release     only when every enabled production channel succeeded: the tag vX.Y.Z on this commit
-#                 and the GitHub Release (CHANGELOG section + candidate id + SHA-256); with
-#                 ENABLE_DESKTOP_GITHUB_RELEASE the candidate's files are attached, unchanged
-#     back-merge  the pull request main → develop
+#                 landing links to, each checked by downloading it and comparing its SHA-256
+#     release     only after produccion succeeded: the tag vX.Y.Z on this commit and the GitHub Release
+#                 (CHANGELOG section + candidate id + SHA-256); with ENABLE_DESKTOP_GITHUB_RELEASE the
+#                 candidate's files (installer, disk image, SBOM, SHA256SUMS.txt) are attached, unchanged
+#     back-merge  the pull request main → develop as te-tengo-release-bot, with auto-merge (merge
+#                 commit); after a hotfix also main → any newer open release/* branch
 #
-# A failed job is retried with "Re-run failed jobs": it promotes the same candidate again; no tag
-# exists until everything succeeded. rollback.yml republishes an earlier release.
+# Tag at the end: a version gets vX.Y.Z only when it is in production. A failed or rejected produccion
+# job leaves no tag; "Re-run failed jobs" promotes the same candidate again. rollback.yml republishes an
+# earlier release.
 #
 # Switches (organization variables; only 'true' turns a channel on, unset means off):
 #   ENABLE_WINDOWS_INSTALLER        te-tengo-captura-setup.exe to the R2 root
 #   ENABLE_MAC_DMG                  te-tengo-captura.dmg to the R2 root (the candidate must have it)
-#   ENABLE_DESKTOP_GITHUB_RELEASE   the candidate's binaries attached to the GitHub Release vX.Y.Z
-# With every switch off, the produccion job is skipped and the tag and the release (without
-# binaries) are still created. Secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, variable
-# DESCARGAS_BASE_URL (and optionally DESCARGAS_R2_BUCKET), as in release.yml.
+#   ENABLE_DESKTOP_GITHUB_RELEASE   the candidate's files attached to the GitHub Release vX.Y.Z
+# With every switch off nothing goes to production: the produccion job is skipped and so are the tag,
+# the release and the back-merge (the run summary says so). Turn a switch on and run this workflow on
+# main again. Secrets: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID of the `produccion` environment;
+# RELEASE_APP_PRIVATE_KEY + variable RELEASE_APP_ID for the back-merge. Variable DESCARGAS_BASE_URL
+# (and optionally DESCARGAS_R2_BUCKET), as in release.yml.
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions: {}
 
@@ -46,6 +53,7 @@ env:
 jobs:
   candidata:
     name: Find the tested candidate
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -55,17 +63,17 @@ jobs:
       publicar: ${{ steps.buscar.outputs.publicar }}
       tag: ${{ steps.buscar.outputs.tag }}
       produccion: ${{ steps.buscar.outputs.produccion }}
-    env:
-      GH_TOKEN: ${{ github.token }}
-      ENABLE_WINDOWS_INSTALLER: ${{ vars.ENABLE_WINDOWS_INSTALLER }}
-      ENABLE_MAC_DMG: ${{ vars.ENABLE_MAC_DMG }}
-      ENABLE_DESKTOP_GITHUB_RELEASE: ${{ vars.ENABLE_DESKTOP_GITHUB_RELEASE }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Find the candidate
         id: buscar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENABLE_WINDOWS_INSTALLER: ${{ vars.ENABLE_WINDOWS_INSTALLER }}
+          ENABLE_MAC_DMG: ${{ vars.ENABLE_MAC_DMG }}
+          ENABLE_DESKTOP_GITHUB_RELEASE: ${{ vars.ENABLE_DESKTOP_GITHUB_RELEASE }}
         run: |
           set -euo pipefail
           version=$(.github/scripts/version.sh)
@@ -78,36 +86,13 @@ jobs:
           fi
           arbol=$(git rev-parse 'HEAD^{tree}')
 
-          # The candidates of this version, newest first (published pre-releases only).
-          mapfile -t candidatas < <(
-            gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName,isPrerelease,isDraft \
-              --jq '.[] | select(.isPrerelease and (.isDraft | not)) | .tagName' \
-              | awk -v p="v$version-rc." 'index($0, p) == 1 { n = substr($0, length(p) + 1); if (n ~ /^[0-9]+$/) print n, $0 }' \
-              | sort -rn | cut -d' ' -f2
-          )
-          elegida=""
-          sin_staging=()
-          for tag in "${candidatas[@]}"; do
-            arbol_tag=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .commit.tree.sha)
-            cuerpo=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body --jq .body | tr -d '\r')
-            arbol_notas=$(sed -n 's/^- Tree: \([0-9a-f]\{40,\}\)$/\1/p' <<< "$cuerpo")
-            staging=$(sed -n 's/^- Staging: \([a-z]*\).*/\1/p' <<< "$cuerpo")
-            echo "$tag: tree $arbol_tag (notes: ${arbol_notas:-none}), staging ${staging:-unknown}"
-            if [ "$arbol_tag" != "$arbol" ] || [ "$arbol_notas" != "$arbol" ]; then continue; fi
-            if [ "$staging" = passed ] || [ "$staging" = off ]; then
-              elegida=$tag
-              break
-            fi
-            sin_staging+=("$tag (Staging: ${staging:-unknown})")
-          done
-          if [ -z "$elegida" ]; then
-            if [ "${#sin_staging[@]}" -gt 0 ]; then
-              echo "::error title=Candidate not approved in staging::${sin_staging[*]} has the files of main but did not pass staging. Approve its staging job in the Release run, then re-run this workflow."
-            else
-              echo "::error title=No tested candidate::main differs from the tested candidate (no pre-release v$version-rc.N has the tree $arbol of this commit). Push the change to the release branch to build a new rc, let it pass staging and merge again."
-            fi
+          # The same search as release-gate.yml; it writes tag=vX.Y.Z-rc.N to this step's outputs.
+          echo "## Te Tengo Captura $version" >> "$GITHUB_STEP_SUMMARY"
+          if ! .github/scripts/buscar_candidata.sh "$version" "$arbol"; then
+            echo "::error title=No tested candidate for this commit::main (${GITHUB_SHA:0:12}, tree ${arbol:0:12}) is not the tree of any candidate of $version that passed staging. Push the change to the release branch to build a new rc, let it pass staging and merge again."
             exit 1
           fi
+          elegida=$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT" | tail -n1)
 
           # The binaries the switches will publish must be in the candidate.
           assets=$(gh release view "$elegida" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
@@ -121,21 +106,24 @@ jobs:
           fi
           {
             echo "publicar=true"
-            echo "tag=$elegida"
             echo "produccion=$produccion"
           } >> "$GITHUB_OUTPUT"
           estado() { if [ "$1" = true ]; then echo "on"; else echo "**off** ($2 is not \`true\`)"; fi; }
           {
-            echo "## Te Tengo Captura $version"
-            echo "Candidate [\`$elegida\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$elegida): same tree as \`${GITHUB_SHA:0:12}\` (\`$arbol\`)."
             echo
             echo "| Channel | Switch |"
             echo "|---|---|"
             echo "| Windows installer to R2 | $(estado "$ENABLE_WINDOWS_INSTALLER" ENABLE_WINDOWS_INSTALLER) |"
             echo "| macOS disk image to R2 | $(estado "$ENABLE_MAC_DMG" ENABLE_MAC_DMG) |"
             echo "| Binaries in the GitHub Release | $(estado "$ENABLE_DESKTOP_GITHUB_RELEASE" ENABLE_DESKTOP_GITHUB_RELEASE) |"
-            if [ "$produccion" != true ]; then echo; echo "- The \`produccion\` job is skipped: no channel is on. The tag and the release (without binaries) are still created."; fi
+            if [ "$produccion" != true ]; then
+              echo
+              echo "- **Nothing goes to production:** every channel is off, so the \`produccion\` job is skipped and there is **no tag \`v$version\`, no GitHub Release and no back-merge**. Turn a switch on and run Produccion on main again (Run workflow)."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$produccion" != true ]; then
+            echo "::notice title=Nothing goes to production::ENABLE_WINDOWS_INSTALLER, ENABLE_MAC_DMG and ENABLE_DESKTOP_GITHUB_RELEASE are all off: no tag v$version, no release and no back-merge. Turn a switch on and run Produccion on main again."
+          fi
 
   produccion:
     name: Production (R2)
@@ -149,38 +137,49 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ needs.candidata.outputs.tag }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       ENABLE_WINDOWS_INSTALLER: ${{ vars.ENABLE_WINDOWS_INSTALLER }}
       ENABLE_MAC_DMG: ${{ vars.ENABLE_MAC_DMG }}
     steps:
       - name: Check the configuration
+        env:
+          HAS_CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+          HAS_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
         run: |
           echo "## Production: candidate \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
           if [ "$ENABLE_WINDOWS_INSTALLER" != true ] && [ "$ENABLE_MAC_DMG" != true ]; then
-            exit 0
+            exit 0 # only the GitHub Release channel is on
           fi
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::error title=Cloudflare secrets missing::Create a Cloudflare API token with Workers R2 Storage: Edit and save it as the CLOUDFLARE_API_TOKEN secret of this repository, with the account ID as CLOUDFLARE_ACCOUNT_ID (docs/RELEASES.md)."
+          faltan=()
+          [ "$HAS_CLOUDFLARE_API_TOKEN" = true ] || faltan+=(CLOUDFLARE_API_TOKEN)
+          [ "$HAS_CLOUDFLARE_ACCOUNT_ID" = true ] || faltan+=(CLOUDFLARE_ACCOUNT_ID)
+          if [ "${#faltan[@]}" -gt 0 ]; then
+            echo "::error title=Cloudflare secrets missing::Not set: ${faltan[*]}. Save a Cloudflare API token with Workers R2 Storage: Edit as CLOUDFLARE_API_TOKEN and the account ID as CLOUDFLARE_ACCOUNT_ID, as secrets of the environment produccion (docs/RELEASES.md)."
             exit 1
           fi
           if [ -z "$DESCARGAS_BASE_URL" ]; then
             echo "::error title=DESCARGAS_BASE_URL missing::Set the Actions variable DESCARGAS_BASE_URL to the public URL of the $R2_BUCKET bucket, used to check each upload."
             exit 1
           fi
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: .github/scripts
       - name: Download and verify the candidate
         run: .github/scripts/descargar_candidata.sh "$TAG" candidata
+      # publicar_r2.sh downloads each public URL again and compares its SHA-256 (post-deploy check).
       - name: Windows installer to R2
         if: vars.ENABLE_WINDOWS_INSTALLER == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: >-
           .github/scripts/publicar_r2.sh candidata/r2/te-tengo-captura-setup.exe
           te-tengo-captura-setup.exe application/vnd.microsoft.portable-executable
       - name: macOS disk image to R2
         if: vars.ENABLE_MAC_DMG == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: >-
           .github/scripts/publicar_r2.sh candidata/r2/te-tengo-captura.dmg
           te-tengo-captura.dmg application/x-apple-diskimage
@@ -191,26 +190,25 @@ jobs:
             if [ "$ENABLE_MAC_DMG" != true ]; then echo "- macOS disk image to R2: skipped (\`ENABLE_MAC_DMG\` is not \`true\`)"; fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # Tag at the end: only a version that is in production gets vX.Y.Z.
   release:
-    name: Tag and GitHub Release
+    name: Tag vX.Y.Z and GitHub Release
     needs: [candidata, produccion]
-    # Only when every enabled production channel succeeded (or none is on).
     if: >-
       !cancelled() && needs.candidata.result == 'success'
       && needs.candidata.outputs.publicar == 'true'
-      && (needs.produccion.result == 'success'
-      || (needs.produccion.result == 'skipped' && needs.candidata.outputs.produccion != 'true'))
+      && needs.produccion.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write
+      contents: write # creates the tag vX.Y.Z and its GitHub Release
     env:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.candidata.outputs.version }}
       CANDIDATA: ${{ needs.candidata.outputs.tag }}
       ENABLE_DESKTOP_GITHUB_RELEASE: ${{ vars.ENABLE_DESKTOP_GITHUB_RELEASE }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Release notes
@@ -263,7 +261,8 @@ jobs:
           fi
           archivos=()
           if [ "$ENABLE_DESKTOP_GITHUB_RELEASE" = true ]; then
-            # The candidate's files, byte for byte (descargar_candidata.sh verified them).
+            # The candidate's files, byte for byte (descargar_candidata.sh verified them): the installer,
+            # the disk image, the SBOM and SHA256SUMS.txt. Their attestations stay valid.
             mapfile -t archivos < <(find candidata -maxdepth 1 -type f \( -name 'te-tengo-captura-*' -o -name SHA256SUMS.txt \) | sort)
           fi
           # Creating the release creates the tag on this commit.
@@ -272,7 +271,7 @@ jobs:
           {
             echo "## Released \`$tag\` on \`${GITHUB_SHA:0:12}\`"
             if [ "${#archivos[@]}" -gt 0 ]; then
-              echo "Binaries of \`$CANDIDATA\` attached: $(basename -a "${archivos[@]}" | paste -sd, - | sed 's/,/, /g')"
+              echo "Files of \`$CANDIDATA\` attached: $(basename -a "${archivos[@]}" | paste -sd, - | sed 's/,/, /g')"
             else
               echo "Without binaries (\`ENABLE_DESKTOP_GITHUB_RELEASE\` is not \`true\`)."
             fi
@@ -281,34 +280,38 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   back-merge:
-    name: Open the back-merge pull request to develop
+    name: Back-merge into develop
     needs: [candidata, release]
     if: needs.release.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ needs.candidata.outputs.version }}
     steps:
-      - name: Open the pull request
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Check the release bot configuration
+        env:
+          APP_ID: ${{ vars.RELEASE_APP_ID }}
+          HAS_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY != '' }}
         run: |
-          set -euo pipefail
-          adelante=$(gh api "repos/$GITHUB_REPOSITORY/compare/develop...main" --jq .ahead_by)
-          if [ "$adelante" = 0 ]; then
-            echo "develop already has every commit of main." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          existente=$(gh pr list --repo "$GITHUB_REPOSITORY" --head main --base develop --state open --json url --jq '.[0].url // empty')
-          if [ -n "$existente" ]; then
-            echo "Back-merge pull request already open: $existente" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if ! gh pr create --repo "$GITHUB_REPOSITORY" --base develop --head main \
-            --title "chore: merge release $VERSION back into develop" \
-            --body "Brings release $VERSION (tag \`v$VERSION\`) from main back into develop. Merge with a merge commit, not a squash."; then
-            echo "::error title=Pull request not opened::Open main → develop by hand. If the error says GitHub Actions cannot create pull requests, enable 'Allow GitHub Actions to create and approve pull requests' (organization or repository Settings → Actions → General)."
+          if [ -z "$APP_ID" ] || [ "$HAS_KEY" != true ]; then
+            echo "::error title=Release bot not configured::The organization variable RELEASE_APP_ID and the organization secret RELEASE_APP_PRIVATE_KEY (GitHub App te-tengo-release-bot) are required to open the back-merge pull request. Nothing falls back to GITHUB_TOKEN: its pull requests start no workflows."
             exit 1
           fi
+      - name: Mint the release bot token
+        id: bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          # The App ID; GitHub accepts it as the JWT issuer like the client ID.
+          client-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write # auto-merge
+          permission-pull-requests: write
+      - name: Open the back-merge pull requests
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          VERSION: ${{ needs.candidata.outputs.version }}
+        run: .github/scripts/back-merge.sh "$VERSION"
