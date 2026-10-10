@@ -150,7 +150,7 @@ Inno Setup builds `te-tengo-captura-<version>-instalador.exe` ([`packaging/te-te
 - **Build locally** on Windows with Inno Setup 6 installed:
   ```powershell
   make empaquetar   # or: uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
-  & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.4.0 packaging\te-tengo-captura.iss
+  & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.4.1 packaging\te-tengo-captura.iss
   ```
 
 
