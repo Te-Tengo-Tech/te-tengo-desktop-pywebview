@@ -9,6 +9,7 @@ from te_tengo_captura.backend.falso import URL_API, BackendFalso
 from te_tengo_captura.backend.modelos import EventoAgente
 from te_tengo_captura.envios.cola import (
     ESPERA_MAXIMA_S,
+    ESPERA_MAXIMA_URGENTE_S,
     MAX_INTENTOS_CLIP,
     ColaEnvios,
     EnviadorPendientes,
@@ -134,7 +135,7 @@ def test_el_clip_espera_a_su_evento(
 def test_la_espera_crece_con_tope_y_se_reinicia(
     cola: ColaEnvios, cliente: ClienteBackend, backend: BackendFalso, reloj: Reloj
 ) -> None:
-    cola.agregar_evento(evento(1))
+    cola.agregar_evento(evento(1, TipoEvento.DETECCION_NO_CONFIABLE))
     backend.sin_conexion = True
     esperas = []
     for _ in range(10):
@@ -147,6 +148,107 @@ def test_la_espera_crece_con_tope_y_se_reinicia(
     backend.sin_conexion = False
     cola.enviar(cliente)
     assert cola.espera() == 0.0
+
+
+def test_un_evento_urgente_pendiente_espera_como_mucho_unos_segundos(
+    cola: ColaEnvios, cliente: ClienteBackend, backend: BackendFalso, reloj: Reloj
+) -> None:
+    cola.agregar_evento(evento(1))
+    backend.sin_conexion = True
+    esperas = []
+    for _ in range(10):
+        cola.enviar(cliente)
+        esperas.append(cola.espera())
+        reloj.ahora += cola.espera()
+    assert esperas[:2] == [2.0, 4.0]
+    assert max(esperas) == ESPERA_MAXIMA_URGENTE_S
+    backend.sin_conexion = False
+    reloj.ahora += cola.espera()
+    assert cola.enviar(cliente).eventos_enviados == 1
+
+
+def test_una_caida_nueva_no_espera_la_pausa_tras_volver_la_conexion(
+    cola: ColaEnvios, cliente: ClienteBackend, backend: BackendFalso, reloj: Reloj
+) -> None:
+    # A long outage: the other events' lane is at its 300 s wait.
+    cola.agregar_evento(evento(1, TipoEvento.DETECCION_NO_CONFIABLE))
+    backend.sin_conexion = True
+    for _ in range(10):
+        cola.enviar(cliente)
+        reloj.ahora += cola.espera()
+    cola.enviar(cliente)
+    assert cola.espera() == ESPERA_MAXIMA_S
+
+    backend.sin_conexion = False  # the API is back, mid-wait
+    reloj.ahora += 1.0
+    cola.agregar_evento(evento(2))  # a new fall
+    resumen = cola.enviar(cliente)  # no clock advance: sent at once
+    assert resumen.eventos_enviados == 1
+    assert list(backend.eventos) == [evento(2).evento_id]
+    assert cola.eventos_pendientes() == [evento(1).evento_id]  # the notice keeps its wait
+    reloj.ahora += cola.espera()
+    assert cola.enviar(cliente).eventos_enviados == 1
+
+
+def test_una_caida_durante_el_corte_sale_segundos_despues_de_volver(
+    cola: ColaEnvios, cliente: ClienteBackend, backend: BackendFalso, reloj: Reloj
+) -> None:
+    backend.sin_conexion = True
+    cola.agregar_evento(evento(1))  # the fall and, later, its confirmation, while the API is down
+    for _ in range(10):
+        cola.enviar(cliente)
+        reloj.ahora += cola.espera()
+    cola.agregar_evento(evento(2, TipoEvento.CAIDA_CONFIRMADA))
+    cola.enviar(cliente)
+    backend.sin_conexion = False
+    assert 0 < cola.espera() <= ESPERA_MAXIMA_URGENTE_S
+    reloj.ahora += cola.espera()
+    resumen = cola.enviar(cliente)
+    assert resumen.eventos_enviados == 2
+    assert list(backend.eventos) == [evento(1).evento_id, evento(2).evento_id]
+
+
+def test_un_clip_que_falla_no_retrasa_los_eventos(
+    cola: ColaEnvios, cliente: ClienteBackend, backend: BackendFalso, reloj: Reloj
+) -> None:
+    cola.agregar_evento(evento(1))
+    cola.agregar_clip(evento(1).evento_id, b"mp4")
+    backend.almacen_falla = 503
+    for _ in range(5):
+        resumen = cola.enviar(cliente)
+        assert resumen.error is not None
+        reloj.ahora += cola.espera()
+    assert list(backend.eventos) == [evento(1).evento_id]
+    assert cola.enviar(cliente).clips_subidos == 0
+    assert cola.espera() > 0  # the clip lane waits ...
+
+    cola.agregar_evento(evento(2))
+    cola.agregar_evento(evento(3, TipoEvento.DETECCION_NO_CONFIABLE))
+    resumen = cola.enviar(cliente)  # ... but no event does
+    assert resumen.eventos_enviados == 2
+    assert list(backend.eventos) == [evento(n).evento_id for n in (1, 2, 3)]
+    assert cola.clips_pendientes() == [evento(1).evento_id]
+
+    backend.almacen_falla = None
+    reloj.ahora += cola.espera()
+    assert cola.enviar(cliente).clips_subidos == 1
+    assert backend.clips[evento(1).evento_id].contenido == b"mp4"
+
+
+def test_reenviar_una_caida_urgente_sigue_siendo_idempotente(
+    cola: ColaEnvios, cliente: ClienteBackend, backend: BackendFalso, reloj: Reloj
+) -> None:
+    backend.sin_conexion = True
+    cola.agregar_evento(evento(1))
+    cola.enviar(cliente)
+    backend.sin_conexion = False
+    cliente.publicar_evento(evento(1))  # an earlier attempt arrived; its answer was lost
+    cola.agregar_evento(evento(1))  # queued again: still one row, tried at once
+    assert cola.eventos_pendientes() == [evento(1).evento_id]
+    resumen = cola.enviar(cliente)
+    assert (resumen.eventos_enviados, resumen.pendientes) == (1, 0)
+    assert len(backend.eventos) == 1
+    assert cola.enviar(cliente).eventos_enviados == 0
 
 
 def test_jitter_espera_entre_la_mitad_y_el_total(
