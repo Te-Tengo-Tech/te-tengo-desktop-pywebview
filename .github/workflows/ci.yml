@@ -1,27 +1,45 @@
 name: CI
 
+# Lint, types, tests and the packaged Windows app. Tested once per commit (docs/RELEASES.md):
+#   - pull requests into develop (and into a release branch): the full CI;
+#   - push to develop: the full CI on the merged commit (it also refreshes the caches pull requests read);
+#   - release/x.y.z and hotfix/x.y.z: release.yml calls this workflow (workflow_call, `package: false`)
+#     on the candidate's commit; its `windows` job builds, smoke-tests and install-tests the installer
+#     itself, so the Windows package job is not repeated there;
+#   - pull requests into main (release and hotfix): nothing is tested again. Their head is that tested
+#     candidate commit and release-gate.yml proves it; only `ci-ok` runs.
+# `ci-ok` is the single required check of the rulesets: it fails unless every job it needs passed.
 on:
-  push:
-    # release/hotfix pushes too: the release PR is opened with GITHUB_TOKEN, which starts no PR
-    # workflows, so the required checks must come from the push run on the same commit.
-    branches: [main, develop, "release/**", "hotfix/**"]
   pull_request:
+  push:
+    branches: [develop]
+  workflow_call:
+    inputs:
+      package:
+        description: Build and smoke-test the PyInstaller Windows package (release.yml builds its own installer)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
-# A new push to the same branch or pull request cancels the run it supersedes.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
     name: Lint, format and types
+    if: github.event_name != 'pull_request' || github.base_ref != 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Install dependencies
@@ -35,10 +53,16 @@ jobs:
 
   test:
     name: Tests and coverage
+    if: github.event_name != 'pull_request' || github.base_ref != 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: System libraries for MediaPipe on Linux (OpenGL ES and EGL, even on CPU)
@@ -59,7 +83,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-report
           path: |
@@ -70,13 +94,24 @@ jobs:
           retention-days: 14
 
   package:
-    # The packaged Windows app (PyInstaller one-folder build), with a smoke test.
+    # The packaged Windows app (PyInstaller one-folder build), with a smoke test. Not when release.yml
+    # calls this workflow with `package: false` (its `windows` job builds and tests the installer).
+    # `inputs.package` is null outside workflow_call, and the expression `null == false` is true (both
+    # become 0), so the input is compared as text: only an explicit false turns the job off.
     name: Windows package
-    runs-on: windows-latest
     needs: [lint, test]
+    if: >-
+      (github.event_name != 'pull_request' || github.base_ref != 'main')
+      && format('{0}', inputs.package) != 'false'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Install dependencies
@@ -96,8 +131,46 @@ jobs:
           $prueba = Start-Process -FilePath $exe -ArgumentList "--autoprueba","--logs","logs" -Wait -PassThru
           Get-Content logs/te-tengo-captura.log
           if ($prueba.ExitCode -ne 0) { throw "--autoprueba terminó con $($prueba.ExitCode)" }
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: te-tengo-captura-windows
           path: dist/te-tengo-captura/
           if-no-files-found: error
+
+  # The single required check (rulesets of develop and main). It always runs, so a skipped or cancelled
+  # job can never pass for a green one.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [lint, test, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Every CI job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          RELEASE_PR: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
+          HEAD_REF: ${{ github.head_ref }}
+          # release.yml calls this workflow with `package: false`: only then may the package job be skipped.
+          PACKAGE_OFF: ${{ format('{0}', inputs.package) == 'false' }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          if [ "$RELEASE_PR" = true ]; then
+            # Pull requests into main carry an already tested candidate; release-gate.yml checks it.
+            if [[ ! "$HEAD_REF" =~ ^(release|hotfix)/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error title=Not a release branch::Only release/x.y.z and hotfix/x.y.z are merged into main; open the pull request from $HEAD_REF against develop."
+              exit 1
+            fi
+            echo "Release pull request from $HEAD_REF: its candidate's commit was tested by release.yml; release-gate decides."
+            exit 0
+          fi
+          failed=$(jq -r --arg off "$PACKAGE_OFF" '[to_entries[]
+            | select(.value.result != "success")
+            | select(($off == "true" and .key == "package" and .value.result == "skipped") | not)
+            | "\(.key) (\(.value.result))"] | join(", ")' <<< "$NEEDS")
+          if [ -n "$failed" ]; then
+            echo "::error title=CI failed::Not passed: $failed."
+            exit 1
+          fi
+          echo "Every CI job passed."

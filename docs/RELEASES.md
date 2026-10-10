@@ -2,87 +2,157 @@
 
 How a version of Te Tengo Captura becomes the Windows installer and the macOS disk image that the project team (and, through the landing, households) download. The model is git flow with **release candidates** and the **tag at the end**:
 
-- [`release.yml`](../.github/workflows/release.yml) builds both binaries **once** on the release branch and stores them as a **release candidate**: the GitHub pre-release `vX.Y.Z-rc.N`. That candidate is tried in **staging** and the pull request to `main` is opened.
-- [`produccion.yml`](../.github/workflows/produccion.yml) runs when that pull request is merged. It promotes **the same files**, without rebuilding, to production. Only if every enabled channel succeeded does it create the tag `vX.Y.Z` and the GitHub Release.
+- [`release.yml`](../.github/workflows/release.yml) tests the release branch's commit once, builds both binaries **once** and stores them as a **release candidate**: the GitHub pre-release `vX.Y.Z-rc.N`. That candidate is tried in **staging** and the pull request to `main` is opened.
+- [`produccion.yml`](../.github/workflows/produccion.yml) runs when that pull request is merged. It promotes **the same files**, without rebuilding, to production. Only when something went to production does it create the tag `vX.Y.Z` and the GitHub Release.
 - [`rollback.yml`](../.github/workflows/rollback.yml) puts an earlier release back in production.
 
 Every Te Tengo repository follows this model (Gitflow, SemVer pre-releases, *build once, deploy many*, approvals in GitHub Environments); this page is how this repository applies it.
+
+## Workflows
+
+| Workflow | Runs on | What it does |
+|---|---|---|
+| [`ci.yml`](../.github/workflows/ci.yml) | Pull requests, push to `develop`, called by `release.yml` | Lint, format and types; tests and coverage; the Windows package (PyInstaller + smoke test); `ci-ok`, the single required check |
+| [`release.yml`](../.github/workflows/release.yml) | Push to `release/*` and `hotfix/*`; pull requests that touch `packaging/`, `.github/scripts/` or itself | The candidate pipeline (below). On pull requests only the `windows` and `macos` builds, unsigned; nothing is stored |
+| [`release-gate.yml`](../.github/workflows/release-gate.yml) | Pull requests into `main` | `release-gate`: the merge puts into `main` exactly the tree of an approved candidate |
+| [`pr-title.yml`](../.github/workflows/pr-title.yml) | Pull requests | `pr-title`: the title is a Conventional Commit (it becomes the squash commit) |
+| [`produccion.yml`](../.github/workflows/produccion.yml) | Push to `main`; *Run workflow* on `main` | The approved candidate to production, then the tag, the GitHub Release and the back-merge |
+| [`rollback.yml`](../.github/workflows/rollback.yml) | *Run workflow* on `main` | An earlier release back to the production keys |
+| [`audit.yml`](../.github/workflows/audit.yml), [`osv-scanner.yml`](../.github/workflows/osv-scanner.yml) | Weekly, manual, pull requests that change the dependencies | pip-audit and OSV-Scanner on `uv.lock`; scheduled and manual runs fail on findings, pull request runs only report |
+
+Every workflow pins its actions by full commit SHA (Dependabot keeps them current), starts with no permissions or `contents: read` and gives each job only what it uses, checks out with `persist-credentials: false` and reads each secret only in the step that needs it.
 
 ## Release flow
 
 | Branch event | Workflow | What happens |
 |---|---|---|
-| Pull request to `develop` (`feature/*`, `bugfix/*`) | `CI` | Lint, types, tests and the Windows package. Pull requests that touch `packaging/` or `.github/scripts/` also run `release.yml`'s two builds; nothing is stored or published |
-| Push to `develop` | `CI` | Checks only: this repository has no dev deployment |
-| Push to `release/x.y.z` or `hotfix/x.y.z` | `CI`, `release.yml` | Candidate `vX.Y.Z-rc.N` → `staging` (approval) → pull request `release: x.y.z` to `main` |
-| Push to `main` (the merged release or hotfix pull request) | `CI`, `produccion.yml` | The tested candidate → `produccion` (approval) → tag `vX.Y.Z` and GitHub Release → back-merge pull request to `develop` |
+| Pull request to `develop` (`feature/*`, `bugfix/*`) | `CI`, `PR title` | Lint, types, tests and the Windows package, then `ci-ok`. Pull requests that touch `packaging/` or `.github/scripts/` also run `release.yml`'s two builds; nothing is stored or published |
+| Push to `develop` | `CI` | The same checks on the merged commit: this repository has no dev deployment |
+| Push to `release/x.y.z` or `hotfix/x.y.z` | `release.yml` | CI on this commit (called, not triggered), end-to-end test, builds, candidate `vX.Y.Z-rc.N` → `staging` (approval) → pull request `release: x.y.z` to `main` |
+| Pull request into `main` (`release: x.y.z`) | `CI`, `Release gate`, `PR title` | Nothing is tested again: `ci-ok` only checks the head branch, `release-gate` checks the candidate |
+| Push to `main` (the merged release or hotfix pull request) | `produccion.yml` | The approved candidate → `produccion` (approval) → tag `vX.Y.Z` and GitHub Release → back-merge pull request to `develop` |
 | *Run workflow* on `main` | `rollback.yml` | An earlier release `vX.Y.Z` back to the production keys (approval) |
+
+### Jobs per event
+
+```text
+pull request → develop      CI: lint ─┬─ package ── ci-ok        PR title: pr-title
+                                test ─┘
+push develop                CI: lint, test → package → ci-ok
+push release/* | hotfix/*   Release: preparar ─┬─ ci (calls ci.yml, package: false: lint, test, ci-ok)
+                                               ├─ e2e (agent of this commit → production API image)
+                                               ├─ windows (environment firma)
+                                               └─ macos   (environment firma, ENABLE_MAC_DMG)
+                                      all green → candidata (pre-release, SBOM, attestations)
+                                               → staging (environment staging, ENABLE_STAGING)
+                                               → pull-request (te-tengo-release-bot)
+pull request → main         CI: ci-ok only (lint, test, package skipped)
+                            Release gate: release-gate    PR title: pr-title
+push main                   Produccion: candidata → produccion (environment produccion)
+                                        → release (tag vX.Y.Z) → back-merge (te-tengo-release-bot)
+Run workflow (rollback)     Rollback: verificar → rollback (environment produccion)
+```
 
 ```mermaid
 flowchart TD
   subgraph rama["push to release/x.y.z or hotfix/x.y.z (release.yml)"]
-    preparar["preparar<br/>pyproject.toml = __version__<br/>vX.Y.Z must not exist"] --> pruebas["pruebas<br/>make revisar, make probar"]
-    preparar --> windows["windows<br/>installer, install/uninstall test"]
-    preparar --> macos["macos<br/>.app, .dmg (ENABLE_MAC_DMG)"]
-    pruebas --> candidata
+    preparar["preparar<br/>branch x.y.z = pyproject.toml = __version__<br/>vX.Y.Z must not exist"] --> ci["ci<br/>calls ci.yml: lint, types, tests"]
+    preparar --> e2e["e2e<br/>agent of this commit → production API image"]
+    preparar --> windows["windows (environment firma)<br/>installer, install/uninstall test"]
+    preparar --> macos["macos (environment firma)<br/>.app, .dmg (ENABLE_MAC_DMG)"]
+    ci --> candidata
+    e2e --> candidata
     windows --> candidata
     macos --> candidata
-    candidata["candidata<br/>GitHub pre-release vX.Y.Z-rc.N<br/>.exe + .dmg + SHA256SUMS.txt<br/>build, commit, tree hash"] --> staging["staging (environment staging, approval)<br/>verify SHA-256, R2 staging/, download check<br/>marks the candidate 'Staging: passed'"]
-    staging --> pr["pull-request<br/>release: x.y.z → main"]
+    candidata["candidata<br/>GitHub pre-release vX.Y.Z-rc.N<br/>.exe + .dmg + SBOM + SHA256SUMS.txt<br/>provenance and SBOM attestations<br/>build, commit, tree hash"] --> staging["staging (environment staging, approval)<br/>verify SHA-256, R2 staging/, download check<br/>marks the candidate 'Staging: passed'"]
+    staging --> pr["pull-request (te-tengo-release-bot)<br/>release: x.y.z → main"]
     candidata -.->|"ENABLE_STAGING off"| pr
   end
-  pr -->|"a person merges"| buscar
+  pr --> gate["release-gate<br/>merge tree = an approved candidate's tree"]
+  gate -->|"a person merges"| buscar
   subgraph principal["push to main (produccion.yml)"]
-    buscar["candidata<br/>newest rc whose tree = main's tree<br/>and staging passed or off"] --> produccion["produccion (environment produccion, approval)<br/>verify SHA-256, R2 root keys, download check"]
-    produccion -->|"every enabled channel succeeded"| release["release<br/>tag vX.Y.Z + GitHub Release<br/>(same files with ENABLE_DESKTOP_GITHUB_RELEASE)"]
-    release --> backmerge["back-merge<br/>main → develop"]
+    buscar["candidata<br/>buscar_candidata.sh: newest rc whose tree = main's<br/>and staging passed or off"] --> produccion["produccion (environment produccion, approval)<br/>verify SHA-256, R2 root keys, download check"]
+    produccion -->|"success"| release["release<br/>tag vX.Y.Z + GitHub Release<br/>(same files with ENABLE_DESKTOP_GITHUB_RELEASE)"]
+    release --> backmerge["back-merge (te-tengo-release-bot)<br/>main → develop, auto-merge"]
   end
   buscar -.->|"no rc with the tree of main"| fallo["fails: push the change to the<br/>release branch to build rc.N+1"]
+  buscar -.->|"every channel off"| nada["nothing deployed:<br/>no tag, no release, no back-merge"]
 ```
 
 ### Push to the release branch (`release.yml`)
 
 | Job | Environment | What it does |
 |---|---|---|
-| `preparar` | — | Checks that `version` in `pyproject.toml` and `__version__` in `src/te_tengo_captura/__init__.py` match ([`.github/scripts/version.sh`](../.github/scripts/version.sh)), warns when the branch name says another version, fails when the tag `vX.Y.Z` already exists (that version is released: bump it), sets the build number and writes the switch table in the run summary |
-| `pruebas` | — | `make revisar` and `make probar` |
-| `windows` | — | PyInstaller build, smoke test (`--version`, `--autoprueba`), optional signing, Inno Setup installer, silent install and uninstall test. Run artifact `windows` |
-| `macos` | — | Only with `ENABLE_MAC_DMG`. PyInstaller `.app` on an Apple Silicon runner (`macos-15`), signature (ad-hoc, or Developer ID and notarization), bundle checks, smoke test, `.dmg`, a test of the mounted image. Run artifact `macos` |
-| `candidata` | — | Creates the **pre-release `vX.Y.Z-rc.N`** on this commit (which creates the rc tag) with `te-tengo-captura-X.Y.Z-windows-setup.exe`, `te-tengo-captura-X.Y.Z-macos.dmg` (when built) and `SHA256SUMS.txt`. Its notes record the build number, the branch, the commit, the **git tree hash** (`git rev-parse HEAD^{tree}`), the run, the signing, the SHA-256 of every asset and `Staging: pending` (or `off`) |
+| `preparar` | — | Checks that the branch's `x.y.z`, `version` in `pyproject.toml` and `__version__` in `src/te_tengo_captura/__init__.py` are the same version ([`.github/scripts/version.sh`](../.github/scripts/version.sh); a different branch name is an error), fails when the tag `vX.Y.Z` already exists (that version is released: bump it), warns when `CHANGELOG.md` has no section for it, sets the build number and writes the switch table in the run summary |
+| `ci` | — | Calls [`ci.yml`](../.github/workflows/ci.yml) on this commit with `package: false`: lint, format, types and tests, and its `ci-ok`. The Windows package job is not repeated, because `windows` builds and tests the installer |
+| `e2e` | — | The end-to-end test of the candidate against production (see *End-to-end test*) |
+| `windows` | `firma` (push only) | PyInstaller build, smoke test (`--version`, `--autoprueba`), optional signing, Inno Setup installer, silent install and uninstall test. Run artifact `windows` |
+| `macos` | `firma` (push only) | Only with `ENABLE_MAC_DMG`. PyInstaller `.app` on an Apple Silicon runner (`macos-15`), signature (ad-hoc, or Developer ID and notarization), bundle checks, smoke test, `.dmg`, a test of the mounted image. Run artifact `macos` |
+| `candidata` | — | Only when `ci`, `e2e`, `windows` (and `macos`, when built) passed. Creates the **pre-release `vX.Y.Z-rc.N`** on this commit (which creates the rc tag) with `te-tengo-captura-X.Y.Z-windows-setup.exe`, `te-tengo-captura-X.Y.Z-macos.dmg` (when built), the SBOM `te-tengo-captura-X.Y.Z-sbom.spdx.json` and `SHA256SUMS.txt` (which covers the SBOM too). It adds a build provenance attestation of those files and an SBOM attestation of the binaries. Its notes record the build number, the branch, the commit, the **git tree hash** (`git rev-parse HEAD^{tree}`), the run, the tests, the signing, the SHA-256 of every asset and `Staging: pending` (or `off`) |
 | `staging` | `staging` | Only with `ENABLE_STAGING` and at least one R2 switch. Downloads the candidate, verifies it, uploads it to R2 under `staging/`, downloads each public URL to compare its SHA-256, and marks the candidate `Staging: passed` |
-| `pull-request` | — | Opens `release: x.y.z` from the release branch to `main`, or updates its description: candidate, build, commit, tree, staging URLs, production keys and SHA-256 |
+| `pull-request` | — | As `te-tengo-release-bot`, opens `release: x.y.z` from the release branch to `main`, or updates its title and description ([`open-release-pr.sh`](../.github/scripts/open-release-pr.sh)): candidate, build, commit, tree, tests, the run URL with its attempt, staging URLs, production keys and SHA-256 |
 
 ### Push to `main` (`produccion.yml`)
 
 | Job | Environment | What it does |
 |---|---|---|
-| `candidata` | — | Version check, then finds **the tested candidate**: the newest published pre-release `vX.Y.Z-rc.N` whose commit tree **and** the tree recorded in its notes equal `git rev-parse HEAD^{tree}` of the `main` commit, and whose notes say `Staging: passed` or `Staging: off`. If none matches, it fails: *main differs from the tested candidate; push the change to the release branch to build a new rc*. It also fails before any approval when `ENABLE_MAC_DMG` is on and the candidate has no `.dmg`. When the tag `vX.Y.Z` already exists it stops with a notice |
-| `produccion` | `produccion` | Downloads the candidate, verifies it and uploads the **same files** to the R2 root keys, each checked by downloading it. Skipped when every switch is off |
-| `release` | — | Only when `produccion` succeeded (or was skipped because every switch is off): creates the GitHub Release `vX.Y.Z` on the `main` commit, which creates the tag, marked *latest*. Notes: the `CHANGELOG.md` section of the version, the candidate, build, commit, tree and SHA-256. With `ENABLE_DESKTOP_GITHUB_RELEASE` the candidate's files are attached unchanged |
-| `back-merge` | — | Opens `chore: merge release x.y.z back into develop` (`main` → `develop`) |
+| `candidata` | — | Version check, then finds **the approved candidate** with [`buscar_candidata.sh`](../.github/scripts/buscar_candidata.sh), the same command `release-gate` uses: the newest published pre-release `vX.Y.Z-rc.N` whose commit tree **and** the tree recorded in its notes equal `git rev-parse HEAD^{tree}` of the `main` commit, and whose notes say `Staging: passed` or `Staging: off`. If none matches, it fails: *main differs from the tested candidate; push the change to the release branch to build a new rc*. It also fails before any approval when `ENABLE_MAC_DMG` is on and the candidate has no `.dmg`. When the tag `vX.Y.Z` already exists it stops with a notice |
+| `produccion` | `produccion` | Downloads the candidate, verifies it and uploads the **same files** to the R2 root keys; each upload is checked by downloading the public URL and comparing its SHA-256. Skipped when every switch is off |
+| `release` (*Tag vX.Y.Z and GitHub Release*) | — | Only when `produccion` succeeded: creates the GitHub Release `vX.Y.Z` on the `main` commit, which creates the tag, marked *latest*. Notes: the `CHANGELOG.md` section of the version, the candidate, build, commit, tree and SHA-256. With `ENABLE_DESKTOP_GITHUB_RELEASE` the candidate's files (installer, disk image, SBOM, `SHA256SUMS.txt`) are attached unchanged, so their attestations stay valid |
+| `back-merge` (*Back-merge into develop*) | — | As `te-tengo-release-bot`, runs [`back-merge.sh`](../.github/scripts/back-merge.sh): `chore: merge release x.y.z back into develop` (`main` → `develop`) with auto-merge (merge commit) when the repository allows it; after a hotfix, also `main` → any newer open `release/*` branch |
+
+### Tested once
+- **Where.** A commit is tested by `ci.yml` on its pull request into `develop`, again after the merge (push to `develop`), and on the release branch, where `release.yml` calls `ci.yml` on the candidate's commit. Release and hotfix branches have no `CI` run of their own.
+- **Pull requests into `main`.** Their head is the commit the candidate was built from, already tested there, so `ci.yml` skips its jobs and `ci-ok` only checks that the head is `release/x.y.z` or `hotfix/x.y.z`. `release-gate` proves the rest.
+- **`ci-ok`.** It always runs, needs every other `CI` job and fails unless each one passed: a skipped or cancelled job never counts as green. The only exception is the Windows package job when `release.yml` calls `ci.yml` with `package: false`. It is the single required check of `develop` and `main`.
+
+### Release gate
+`release-gate` ([`release-gate.yml`](../.github/workflows/release-gate.yml), [`release-gate.sh`](../.github/scripts/release-gate.sh), the same in every Te Tengo repository) is the required check of pull requests into `main`. It passes only when:
+1. the pull request comes from `release/x.y.z` or `hotfix/x.y.z` of this repository, and `x.y.z` is the version of its head;
+2. `vX.Y.Z` is not released yet;
+3. GitHub's test merge has exactly the tree of the head, so `main` has nothing the branch lacks;
+4. `buscar_candidata.sh` finds an approved candidate (staging passed or switched off) of that version with that tree, which is the candidate `produccion.yml` will promote.
+
+A push to the release branch turns the gate red until its candidate is ready. The `pull-request` job then edits the pull request (the description names the run and its attempt, so it always changes), and that `edited` event runs the gate again.
 
 ### How identity is proven
 - **One build.** The binaries are built once, on the release branch; `produccion.yml` and `rollback.yml` build nothing.
 - **Durable storage.** Run artifacts expire, so the candidate lives in the pre-release `vX.Y.Z-rc.N`. Earlier candidates are never changed or deleted.
 - **The SHA-256 is checked twice.** Every job that publishes runs [`.github/scripts/descargar_candidata.sh`](../.github/scripts/descargar_candidata.sh). It checks each file against the release's `SHA256SUMS.txt`, and that file against the SHA-256 block written in the notes when the candidate was created; an asset replaced later fails both. [`publicar_r2.sh`](../.github/scripts/publicar_r2.sh) then downloads each public R2 URL and compares its SHA-256 with the verified file.
-- **The code is the tested code.** `main` only promotes a candidate whose git tree equals main's tree. A merge commit of the release branch has exactly the branch's files, so this holds unless `main` changed meanwhile (for example, a hotfix released while the release was in QA). Then the run fails and the change must go into the release branch as a new candidate.
+- **Attestations.** `gh attestation verify te-tengo-captura-X.Y.Z-windows-setup.exe --repo Te-Tengo-Tech/te-tengo-desktop-pywebview` shows that the file was built by `release.yml` of this repository (build provenance, Sigstore). The SBOM lists the Python dependencies from `uv.lock`.
+- **The code is the tested code.** `main` only promotes a candidate whose git tree equals main's tree, and `release-gate` checks the same before the merge. A merge commit of the release branch has exactly the branch's files, so this holds unless `main` changed meanwhile (for example, a hotfix released while the release was in QA). Then the gate stays red and the change must go into the release branch as a new candidate (`back-merge.sh` opens that pull request).
 - **The version inside.** The binaries carry the final version `X.Y.Z`: the installer's version and the bundle's `CFBundleShortVersionString`, which the `macos` job checks. "rc" exists only in the pre-release's name, and the asset names never contain it. The **build number** is the Release workflow's run number, recorded as `X.Y.Z+<build>` in the candidate's notes; it grows with every run.
 
+### End-to-end test
+Hosted runners cannot install the Windows installer or open the `.app` against a Docker stack. So the `e2e` job ("End-to-end: candidate agent → production API image") tests the **source of the candidate commit**: the agent of this commit, headless on Linux (`--sin-interfaz`). It runs `scripts/e2e.sh` of `te-tengo-general-api` (`main`, checked out with the workflow's token; the repository is public), the same way the API's own `e2e.yml` does:
+- The API runs from the image in production: `ghcr.io/te-tengo-tech/te-tengo-general-api:latest`, which the API's `produccion.yml` moves only after a production deployment. It is resolved to its digest anonymously (`docker buildx imagetools inspect`), so the package must stay public.
+- The agent plays the URFD `fall-03-cam0` clip (cached between runs) with the MediaPipe model and the `libgles2`/`libegl1` libraries.
+- The test asserts the CAIDA alert, its push, its confirmation, its clip and the live view wiring.
+
+The candidate is built only when it passes. **Limitation:** it proves the agent's code against the production API, not the packaged binaries. The `windows` and `macos` jobs smoke-test those (`--version`, `--autoprueba`, install and uninstall).
+
 ### Releasing a version
-1. Create `release/x.y.z` from `develop` (a hotfix: `hotfix/x.y.z` from `main`, with the next patch version). Bump `version` in `pyproject.toml` and `__version__` (they must match, or `preparar` fails), and move the `[Unreleased]` entries of `CHANGELOG.md` under `## [x.y.z] - <date>`: that section becomes the release notes.
-2. Push. The builds run without an environment and the candidate `vX.Y.Z-rc.1` appears under *Releases* as a pre-release. Then `staging` waits for an approval on the **`staging` environment**. A required reviewer (jhosepmyr or elmer-riva) opens the run, chooses *Review deployments*, ticks the environment and approves.
+1. Create `release/x.y.z` from `develop` (a hotfix: `hotfix/x.y.z` from `main`, with the next patch version). Bump `version` in `pyproject.toml` and `__version__` to `x.y.z` (they must match each other and the branch, or `preparar` fails), and move the `[Unreleased]` entries of `CHANGELOG.md` under `## [x.y.z] - <date>`: that section becomes the release notes.
+2. Push. CI, the end-to-end test and the builds run, and the candidate `vX.Y.Z-rc.1` appears under *Releases* as a pre-release. Then `staging` waits for an approval on the **`staging` environment**. A required reviewer (jhosepmyr or elmer-riva) opens the run, chooses *Review deployments*, ticks the environment and approves.
 3. Try the staging downloads (`<DESCARGAS_BASE_URL>/staging/te-tengo-captura-setup.exe`, `…/staging/te-tengo-captura.dmg`). **A bug found in QA** is fixed on the release branch (directly or with a `bugfix/*` pull request to it). Each push builds the next candidate (`rc.2`, `rc.3`, …) with the same version and updates the pull request; earlier candidates stay as they are.
-4. The `pull-request` job opens `release: x.y.z` to `main`. Review and merge it (a merge commit; the rulesets require the review).
-5. On `main`, `produccion.yml` finds the candidate and waits for an approval on **`produccion`**. After the approval it publishes, tags `vX.Y.Z`, creates the GitHub Release and opens `chore: merge release x.y.z back into develop`. Merge that one too.
+4. The `pull-request` job opens `release: x.y.z` to `main`. When `release-gate` is green, review and merge it (a merge commit; the rulesets require the review).
+5. On `main`, `produccion.yml` finds the candidate and waits for an approval on **`produccion`**. After the approval it publishes, tags `vX.Y.Z`, creates the GitHub Release and opens `chore: merge release x.y.z back into develop`, which merges itself once approved and green when auto-merge is allowed (otherwise merge it with a merge commit).
 6. Set `TT_AGENTE_VERSION_PUBLICADA=x.y.z` in the API, so `GET /api/agente/configuracion` announces it (see *Update notices*).
 
 **Hotfix.** The same pipeline from `hotfix/x.y.z` (branched from `main`): candidate, a quick staging, pull request to `main`, production, tag, back-merge. In an emergency, `ENABLE_STAGING=false` skips staging (the candidate is marked `Staging: off`); production still needs its approval.
 
-**Re-running.** A new push to the same release branch runs the pipeline again (one queue per branch) and builds a new candidate. A run that is building or deploying is never cancelled; a newer run replaces one that is still waiting for an approval. If a job of `produccion.yml` fails, **no tag is created**. *Re-run failed jobs* promotes the same candidate again (an R2 upload simply overwrites the key with the same bytes); the release is created once everything succeeded.
+**Re-running.** A new push to the same release branch runs the pipeline again (one queue per branch) and builds a new candidate. A run that is building or deploying is never cancelled; a newer run replaces one that is still waiting for an approval. If a job of `produccion.yml` fails, **no tag is created**. *Re-run failed jobs* promotes the same candidate again (an R2 upload simply overwrites the key with the same bytes); the release is created once production succeeded.
 
-**Pull requests opened by the workflows.** `pull-request` and `back-merge` use `GITHUB_TOKEN`:
-- the organization (or repository) setting *Settings → Actions → General → Allow GitHub Actions to create and approve pull requests* must be on; otherwise the job fails and says so;
-- GitHub does not start other workflows for events caused by `GITHUB_TOKEN`, so `CI` does not run on these pull requests. That is why `CI` also runs on every push to `release/**`, `hotfix/**` and `main`: the required checks then exist on the same head commit.
+### Tag at the end
+`vX.Y.Z` and its GitHub Release exist only for a version that reached production. The `release` job runs only when the `produccion` job **succeeded**:
+- **Failed or rejected.** No tag.
+- **Every channel off** (`ENABLE_WINDOWS_INSTALLER`, `ENABLE_MAC_DMG` and `ENABLE_DESKTOP_GITHUB_RELEASE` all not `true`). Nothing goes to production: `produccion` is skipped, and so are the tag, the release and the back-merge. The run summary and a notice say so. Turn a switch on and run *Produccion* on `main` again (*Run workflow*).
+
+### Pull requests opened by the workflows: the release bot
+`pull-request` (release → `main`) and `back-merge` (`main` → `develop`) act as the GitHub App **te-tengo-release-bot**, never as `GITHUB_TOKEN`: GitHub starts no workflows for pull requests opened or edited with `GITHUB_TOKEN`, so `ci-ok`, `release-gate` and `pr-title` would never report.
+- **Configuration.** The organization variable `RELEASE_APP_ID` (the App ID) and the organization secret `RELEASE_APP_PRIVATE_KEY`. Without them, the job fails with *Release bot not configured*; nothing falls back to `GITHUB_TOKEN`.
+- **Token.** Each job mints a short-lived token with `actions/create-github-app-token` that has only *Pull requests: write* (`pull-request`), or *Contents: write* and *Pull requests: write* (`back-merge`, for auto-merge). It is passed only to the step that opens or edits the pull request.
+- **Shared scripts.** [`open-release-pr.sh`](../.github/scripts/open-release-pr.sh), [`back-merge.sh`](../.github/scripts/back-merge.sh) and [`release-gate.sh`](../.github/scripts/release-gate.sh) are the same in every Te Tengo repository.
 
 ### Switches
 Each channel has an on/off switch: an **organization** Actions variable of `Te-Tengo-Tech` (*Settings → Secrets and variables → Actions → Variables*), the single control panel for every repository.
@@ -96,40 +166,58 @@ Each channel has an on/off switch: an **organization** Actions variable of `Te-T
 | `ENABLE_WINDOWS_INSTALLER` | `te-tengo-captura-setup.exe` to R2 (`staging/` and the root) |
 | `ENABLE_MAC_DMG` | The `macos` build (and the `.dmg` in the candidate) and `te-tengo-captura.dmg` to R2 |
 | `ENABLE_MAC_NOTARIZE` | Developer ID signing and notarization of the `.app` and the `.dmg` (needs the Apple secrets below) |
-| `ENABLE_DESKTOP_GITHUB_RELEASE` | The candidate's binaries attached to the final GitHub Release `vX.Y.Z`. Off: the tag and the release are still created, without binaries |
+| `ENABLE_DESKTOP_GITHUB_RELEASE` | The candidate's files attached to the final GitHub Release `vX.Y.Z`. Off: the release is created without them (when another channel went to production) |
 
-With every switch of `produccion.yml` off (`ENABLE_WINDOWS_INSTALLER`, `ENABLE_MAC_DMG`, `ENABLE_DESKTOP_GITHUB_RELEASE`), its `produccion` job is skipped, so no approval is asked, and the tag and the release are created without binaries.
+With every switch of `produccion.yml` off (`ENABLE_WINDOWS_INSTALLER`, `ENABLE_MAC_DMG`, `ENABLE_DESKTOP_GITHUB_RELEASE`), nothing goes to production: no approval is asked and no tag, release or back-merge is created (*Tag at the end*).
 
 ### Secrets and variables
-| Name | Kind | Needed for |
-|---|---|---|
-| `CLOUDFLARE_API_TOKEN` | Secret | R2 uploads. A Cloudflare API token with *Account → Workers R2 Storage: Edit* (the shared token of the Te Tengo repositories also has *Cloudflare Pages: Edit*). Without it, `staging`, `produccion` and `rollback` fail with a clear error |
-| `CLOUDFLARE_ACCOUNT_ID` | Secret | R2 uploads (the Cloudflare account ID) |
-| `DESCARGAS_BASE_URL` | Variable | The public URL of the bucket, used by the download check (`https://pub-c2d32ffba732437f83ff41fe77c0b9f1.r2.dev`) |
-| `DESCARGAS_R2_BUCKET` | Variable (optional) | The bucket; default `te-tengo-descargas` |
-| `MAC_DEVELOPER_ID_P12_BASE64`, `MAC_DEVELOPER_ID_P12_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD` | Secrets | Only with `ENABLE_MAC_NOTARIZE` (see *macOS signing and notarization*) |
-| Windows signing | Secrets and variables | Optional (see *Windows code signing*) |
+Each secret is read only by the step that needs it, and only by a job that runs in its environment:
 
-The GitHub Releases (candidates and final) use the workflow's `GITHUB_TOKEN`; no other token is needed.
+| Name | Kind | Where | Needed for |
+|---|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | Secret | Environments `staging` and `produccion` | R2 uploads. A Cloudflare API token with *Account → Workers R2 Storage: Edit* (the shared token of the Te Tengo repositories also has *Cloudflare Pages: Edit*). Without it, `staging`, `produccion` and `rollback` fail with an error that names it |
+| `CLOUDFLARE_ACCOUNT_ID` | Secret | Environments `staging` and `produccion` | R2 uploads (the Cloudflare account ID) |
+| `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY` | Variable, secret | Organization | The release bot (pull request to `main`, back-merge) |
+| `DESCARGAS_BASE_URL` | Variable | Organization or repository | The public URL of the bucket, used by the download check (`https://pub-c2d32ffba732437f83ff41fe77c0b9f1.r2.dev`) |
+| `DESCARGAS_R2_BUCKET` | Variable (optional) | Organization or repository | The bucket; default `te-tengo-descargas` |
+| `MAC_DEVELOPER_ID_P12_BASE64`, `MAC_DEVELOPER_ID_P12_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD` | Secrets | Environment `firma` | Only with `ENABLE_MAC_NOTARIZE` (see *macOS signing and notarization*) |
+| Windows signing | Secrets and variables | Environment `firma` | Optional (see *Windows code signing*) |
+
+- **Environment `firma`.** The `windows` and `macos` jobs run in `firma` on push (`environment: ${{ github.event_name == 'push' && 'firma' || '' }}`) and in no environment on pull requests. With the signing secrets stored in `firma` and its deployment branches limited to `release/*` and `hotfix/*`, a pull request run cannot read them. The workflow also reads each one only when the event is a push. Until the secrets are moved there, the repository secrets of the same names still resolve.
+- **Deploy tokens.** `CLOUDFLARE_*` are read only by jobs in `staging` or `produccion`, whose approvals guard them.
+- **Workflow token.** The GitHub Releases (candidates and final) and the attestations use the workflow's `GITHUB_TOKEN`, with `contents: write`, `id-token: write` and `attestations: write` in `candidata` only.
 
 ### Where the files are
 | What | Where | Written by |
 |---|---|---|
-| Candidate (durable, never changed) | GitHub pre-release `vX.Y.Z-rc.N`: `te-tengo-captura-X.Y.Z-windows-setup.exe`, `te-tengo-captura-X.Y.Z-macos.dmg`, `SHA256SUMS.txt` | `release.yml` → `candidata` |
+| Candidate (durable, never changed except its `Staging:` line) | GitHub pre-release `vX.Y.Z-rc.N`: `te-tengo-captura-X.Y.Z-windows-setup.exe`, `te-tengo-captura-X.Y.Z-macos.dmg`, `te-tengo-captura-X.Y.Z-sbom.spdx.json`, `SHA256SUMS.txt` | `release.yml` → `candidata` |
 | Staging | R2 `staging/te-tengo-captura-setup.exe`, `staging/te-tengo-captura.dmg` | `release.yml` → `staging` |
 | Production (the landing's download) | R2 `te-tengo-captura-setup.exe`, `te-tengo-captura.dmg` | `produccion.yml` → `produccion`, `rollback.yml` |
 | Final release | GitHub Release `vX.Y.Z`: the candidate's files (with `ENABLE_DESKTOP_GITHUB_RELEASE`) | `produccion.yml` → `release` |
 
-- **Uploads.** Each R2 key is uploaded with `npx wrangler@4.149.0 r2 object put --remote` ([`.github/scripts/publicar_r2.sh`](../.github/scripts/publicar_r2.sh)) and gets a `.sha256` file next to it.
+- **Uploads.** Each R2 key is uploaded with `npx wrangler@4.149.0 r2 object put --remote` ([`.github/scripts/publicar_r2.sh`](../.github/scripts/publicar_r2.sh)) and gets a `.sha256` file next to it. Only the installer and the disk image go to R2; the SBOM stays in the GitHub Releases.
 - **Size limit.** `wrangler r2 object put` uploads one object of at most 300 MiB; the installer and the disk image are well below it (the `.dmg` is about 140 MB).
 - **Run artifacts.** The `windows` and `macos` run artifacts only carry the files to `candidata` and expire after 7 days (3 on pull requests).
 
 ## Rollback
-*Actions → Rollback → Run workflow*, branch `main`, version `x.y.z` (a published release `vX.Y.Z`). After an approval on `produccion`, it downloads that release's binaries and verifies them like a candidate. When the binaries were not attached (`ENABLE_DESKTOP_GITHUB_RELEASE` off), it uses the candidate named in the release notes (`- Candidate: vX.Y.Z-rc.N`), which holds the same bytes. It then uploads them to the R2 root keys, per switch.
+*Actions → Rollback → Run workflow*, branch `main`, version `x.y.z` (a published release `vX.Y.Z`). After an approval on `produccion`, it downloads that release's binaries and verifies them like a candidate. When the binaries were not attached (`ENABLE_DESKTOP_GITHUB_RELEASE` off), it uses the candidate named in the release notes (`- Candidate: vX.Y.Z-rc.N`), which holds the same bytes. It then uploads them to the R2 root keys, per switch, and downloads each public URL to compare its SHA-256.
 - **What it does not do.** It builds nothing and changes no tag or GitHub Release: *latest* stays on the newest version.
 - **Installed agents.** R2 only serves new downloads, so installed agents keep their version; the team reinstalls the older installer where needed (Inno Setup accepts installing an older version over a newer one).
 - **Afterwards.** Set `TT_AGENTE_VERSION_PUBLICADA` back in the API and fix forward with a `hotfix/x.y.z` branch.
-- **Data.** The agent has no server database to restore. Its only local data is the SQLite outbox and the clip files (`src/te_tengo_captura/envios/cola.py`, created with `CREATE TABLE IF NOT EXISTS`). A version that changes that schema must say in its CHANGELOG entry whether an older agent can still read it. The API's database belongs to `te-tengo-general-api` and `te-tengo-infra`, which back it up before their own deployments.
+- **Data.** The agent has no server database to restore. Its only local data is the SQLite outbox and the clip files (`src/te_tengo_captura/envios/cola.py`, created with `CREATE TABLE IF NOT EXISTS`). A version that changes that schema must say in its CHANGELOG entry whether an older agent can still read it. The API's database belongs to `te-tengo-general-api` and `te-tengo-infra`, which back them up before their own deployments.
+- **Permissions.** `verificar` and `rollback` have only `contents: read`; the Cloudflare secrets are read only by the upload steps, in environment `produccion`. It shares the concurrency group `produccion-escritorio` with `produccion.yml`, so the two never write the R2 keys at the same time.
+
+### Rollback rehearsal
+Rehearse the rollback once these workflows are on `main`, and again after any change to `rollback.yml` or the scripts it runs. Rolling back to the **current** release republishes the same bytes, so households see no change:
+1. Note the current release `vX.Y.Z` (the *latest* GitHub Release) and the SHA-256 the landing serves: `curl -fsSL <DESCARGAS_BASE_URL>/te-tengo-captura-setup.exe.sha256`.
+2. *Actions → Rollback → Run workflow*, branch `main`, version `x.y.z`, and approve it on `produccion`.
+3. Check the run: `descargar_candidata.sh` verified the release's `SHA256SUMS.txt` and notes, and `publicar_r2.sh` reported *Published and checked* for each key with the same SHA-256 as step 1.
+4. Check it yourself: `curl -fsSL -o setup.exe <DESCARGAS_BASE_URL>/te-tengo-captura-setup.exe && sha256sum setup.exe` matches step 1 and the `SHA256SUMS.txt` of `vX.Y.Z`.
+5. Record it below.
+
+| Date | Version | Run | Result |
+|---|---|---|---|
+| — | — | — | Not rehearsed yet with the hardened workflows |
 
 ## Windows installer
 Inno Setup builds `te-tengo-captura-<version>-instalador.exe` ([`packaging/te-tengo-captura.iss`](../packaging/te-tengo-captura.iss)); `release.yml` stores it in the candidate as `te-tengo-captura-<version>-windows-setup.exe` (the name it keeps in the final GitHub Release), and production publishes the same file as `te-tengo-captura-setup.exe` (R2). In Spanish, it installs **per user** and needs **no administrator rights**.
@@ -155,7 +243,7 @@ Inno Setup builds `te-tengo-captura-<version>-instalador.exe` ([`packaging/te-te
 
 
 ### Windows code signing (optional, inert until configured)
-Without signing, the workflow adds a notice and the installer is unsigned. Configure **one** of these under *Settings → Secrets and variables → Actions*:
+Without signing, the workflow adds a notice and the installer is unsigned. Configure **one** of these as secrets of the environment **`firma`** (*Settings → Environments → firma*; deployment branches `release/*` and `hotfix/*`) and as Actions variables:
 
 | Option | Secrets | Variables |
 |---|---|---|
@@ -184,7 +272,7 @@ Without signing, the workflow adds a notice and the installer is unsigned. Confi
 With `ENABLE_MAC_NOTARIZE` off, PyInstaller signs the app **ad-hoc** and the workflow signs it ad-hoc again (`codesign --force --deep --sign -`, with the entitlements): Apple silicon only runs signed code, and an ad-hoc signature is enough for it. The app is not notarized, so Gatekeeper blocks the first open; the tester allows it once in *System Settings → Privacy & Security → Open Anyway* ([README, Testing on macOS](../README.md#testing-on-macos)). Fine for testing; not for households.
 
 ### macOS signing and notarization
-With `ENABLE_MAC_NOTARIZE` = `true` (releases only, never pull requests), the `macos` job:
+With `ENABLE_MAC_NOTARIZE` = `true` (releases only, never pull requests), the `macos` job (environment `firma`, which holds the secrets below):
 1. Fails at once, naming what is missing, unless all five secrets are set.
 2. Imports the certificate into a temporary keychain and finds the *Developer ID Application* identity.
 3. Builds with that identity: PyInstaller signs every binary and the bundle with the **hardened runtime**, a **secure timestamp** and the entitlements, as notarization requires ([Apple: Notarizing macOS software before distribution](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)). The `.dmg` is signed with the same identity.

@@ -6,22 +6,30 @@ name: Release
 # promotes the same candidate when the pull request is merged; nothing here reaches users.
 #
 #   push to release/x.y.z or hotfix/x.y.z
-#     preparar     version check (pyproject.toml = __version__), the final tag vX.Y.Z must not exist,
-#                  the build number (this workflow's run number) and the switches in the summary
-#     pruebas      lint, types and tests
+#     preparar     version check (pyproject.toml = __version__ = the branch's x.y.z), the final tag
+#                  vX.Y.Z must not exist, the build number (this workflow's run number) and the
+#                  switches in the summary
+#     ci           calls ci.yml on this commit (lint, types, tests): the commit is tested once, here,
+#                  and the pull request into main does not test it again. `package: false`: the
+#                  windows job below builds and tests the installer itself
+#     e2e          the agent of this commit, headless on Linux, plays a URFD fall clip against the API
+#                  image that runs in production (te-tengo-general-api's scripts/e2e.sh)
 #     windows      PyInstaller build → smoke test → optional signing → Inno Setup installer → silent
 #                  install/uninstall test → run artifact `windows`
 #     macos        PyInstaller .app → ad-hoc signature, or Developer ID + notarization → smoke test →
 #                  .dmg → run artifact `macos` (only with ENABLE_MAC_DMG)
-#     candidata    the pre-release vX.Y.Z-rc.N on this commit with the installer, the disk image and
-#                  SHA256SUMS.txt; its notes record the build number, the commit, the git tree hash and
-#                  the SHA-256 of every asset (run artifacts expire, the pre-release does not)
+#     candidata    the pre-release vX.Y.Z-rc.N on this commit with the installer, the disk image, the
+#                  SBOM and SHA256SUMS.txt, plus build provenance and SBOM attestations; its notes
+#                  record the build number, the commit, the git tree hash and the SHA-256 of every
+#                  asset (run artifacts expire, the pre-release does not)
 #     staging      environment `staging` (approval): downloads the candidate, verifies its SHA-256 and
 #                  uploads it to R2 under staging/, then a download check of each public URL; marks
 #                  the candidate "Staging: passed"
-#     pull-request opens (or updates) `release: x.y.z` from the release branch to main with the
-#                  candidate, the staging URLs and the hashes. A new push builds rc.N+1 and updates it
-#   pull request touching the packaging: windows and macos only (nothing is stored or published)
+#     pull-request opens (or updates) `release: x.y.z` from the release branch to main as the GitHub
+#                  App te-tengo-release-bot, so its checks run (ci-ok, release-gate, pr-title). A new
+#                  push builds rc.N+1 and updates it
+#   pull request touching the packaging: windows and macos only (nothing is stored or published, and
+#   no signing secret is read)
 #
 # The candidate carries the final version inside (x.y.z, never "rc"); the rc number only names the
 # pre-release. Rebuilding the same version is fine until vX.Y.Z exists (produccion.yml creates it).
@@ -35,13 +43,16 @@ name: Release
 #   ENABLE_MAC_DMG                  the macOS build and te-tengo-captura.dmg to R2
 #   ENABLE_MAC_NOTARIZE             Developer ID signing + notarization of the .app and the .dmg
 #
-# Secrets (Settings → Secrets and variables → Actions):
-#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID   R2 uploads (token: Workers R2 Storage: Edit)
-#   MAC_DEVELOPER_ID_P12_BASE64, MAC_DEVELOPER_ID_P12_PASSWORD, APPLE_ID, APPLE_TEAM_ID,
-#   APPLE_APP_SPECIFIC_PASSWORD                   only with ENABLE_MAC_NOTARIZE
-#   Windows signing (optional, inert until set): AZURE_TENANT_ID, AZURE_CLIENT_ID,
-#   AZURE_CLIENT_SECRET + variables AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT,
-#   AZURE_CERTIFICATE_PROFILE; or WINDOWS_PFX_BASE64 and WINDOWS_PFX_PASSWORD
+# Secrets (only on push; pull request runs never read them):
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID   R2 uploads (token: Workers R2 Storage: Edit), read
+#                                                 only by the staging job (environment `staging`)
+#   RELEASE_APP_PRIVATE_KEY + variable RELEASE_APP_ID   the pull request to main (te-tengo-release-bot)
+#   Signing, read only by the windows and macos jobs, which run in environment `firma` on push:
+#     MAC_DEVELOPER_ID_P12_BASE64, MAC_DEVELOPER_ID_P12_PASSWORD, APPLE_ID, APPLE_TEAM_ID,
+#     APPLE_APP_SPECIFIC_PASSWORD                 only with ENABLE_MAC_NOTARIZE
+#     Windows signing (optional, inert until set): AZURE_TENANT_ID, AZURE_CLIENT_ID,
+#     AZURE_CLIENT_SECRET + variables AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT,
+#     AZURE_CERTIFICATE_PROFILE; or WINDOWS_PFX_BASE64 and WINDOWS_PFX_PASSWORD
 # Variables: DESCARGAS_BASE_URL (public URL of the bucket, for the download check) and optionally
 # DESCARGAS_R2_BUCKET (default te-tengo-descargas).
 on:
@@ -53,8 +64,7 @@ on:
       - .github/workflows/release.yml
       - .github/scripts/**
 
-permissions:
-  contents: read
+permissions: {}
 
 # One pipeline per branch. A new push queues behind a run that is building or deploying (never
 # cancelled); a run still waiting for an approval may be superseded by the newer one.
@@ -66,18 +76,21 @@ env:
   WRANGLER_VERSION: 4.149.0
   R2_BUCKET: ${{ vars.DESCARGAS_R2_BUCKET || 'te-tengo-descargas' }}
   DESCARGAS_BASE_URL: ${{ vars.DESCARGAS_BASE_URL }}
+  API_IMAGE: ghcr.io/te-tengo-tech/te-tengo-general-api
 
 jobs:
   preparar:
     name: Version and switches
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
       build: ${{ steps.version.outputs.build }}
       staging: ${{ steps.switches.outputs.staging }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Version
@@ -87,12 +100,17 @@ jobs:
           version=$(.github/scripts/version.sh)
           rama=${GITHUB_REF_NAME#*/}
           if [ "$GITHUB_EVENT_NAME" = push ]; then
+            # The branch names the version and the code carries it; release-gate.yml checks the same.
             if [ "$rama" != "$version" ]; then
-              echo "::warning title=Branch and version differ::Branch $GITHUB_REF_NAME, but pyproject.toml says $version. The candidate is built as $version."
+              echo "::error title=Branch and version differ::Branch $GITHUB_REF_NAME, but pyproject.toml and __version__ say $version. Set version = \"$rama\" in pyproject.toml and __version__ = \"$rama\" (and its CHANGELOG section) on this branch, or rename the branch."
+              exit 1
             fi
             if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
               echo "::error title=Version $version already released::The tag v$version exists. Bump version in pyproject.toml and __version__ (a hotfix is the next patch version)."
               exit 1
+            fi
+            if ! grep -qF "## [$version]" CHANGELOG.md; then
+              echo "::warning title=No CHANGELOG section::CHANGELOG.md has no '## [$version]' section; the final release notes will only link to the file. Add it on this branch."
             fi
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -117,7 +135,7 @@ jobs:
           {
             echo "## Te Tengo Captura $VERSION (build $GITHUB_RUN_NUMBER)"
             if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-              echo "Pull request: the installer and the disk image are built and tested; nothing is stored or published."
+              echo "Pull request: the installer and the disk image are built and tested, unsigned; nothing is stored or published."
             else
               echo "| Channel | Switch |"
               echo "|---|---|"
@@ -131,68 +149,158 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-  pruebas:
-    name: Lint, types and tests
+  # The candidate's commit is tested once, here (lint, types, tests); the pull request into main is not
+  # tested again (release-gate.yml proves it carries this commit's tree).
+  ci:
+    name: CI
+    needs: preparar
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/ci.yml
+    with:
+      package: false
+    permissions:
+      contents: read
+
+  # Hosted runners cannot run the Windows installer or the .app against a Docker stack, so this runs the
+  # agent of THIS commit from source, headless on Linux (`--sin-interfaz`), against the API image that is
+  # in production (`latest` moves only after the API's production deployment), with the API's own
+  # end-to-end script: agent → API → CAIDA alert, push, confirmation and clip. It tests the candidate's
+  # source, not its binaries; the windows and macos jobs smoke-test those.
+  e2e:
+    name: "End-to-end: candidate agent → production API image"
+    needs: preparar
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      image: ${{ steps.image.outputs.image }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          path: te-tengo-desktop-pywebview
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.2.0
+      # The API repository is public: the workflow token reads it. main is the code in production.
+      - name: Check out te-tengo-general-api (main)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Te-Tengo-Tech/te-tengo-general-api
+          ref: main
+          path: te-tengo-general-api
+          persist-credentials: false
+      - name: Production API image (by digest)
+        id: image
+        run: |
+          set -euo pipefail
+          # Anonymous: the package is public, and no credential of this repository is sent to GHCR.
+          if ! digest=$(docker buildx imagetools inspect "$API_IMAGE:latest" --format '{{json .Manifest}}' | jq -re .digest); then
+            echo "::error title=API image not readable::Could not resolve $API_IMAGE:latest anonymously. The GHCR package te-tengo-general-api must be public (Package settings → Change visibility) and have the tag latest (set by the API's produccion.yml after a production deployment)."
+            exit 1
+          fi
+          image="$API_IMAGE@$digest"
+          docker pull --quiet "$image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "API image in production: \`$image\` (\`latest\`)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
+          cache-dependency-glob: te-tengo-desktop-pywebview/uv.lock
       - name: System libraries for MediaPipe on Linux (OpenGL ES and EGL, even on CPU)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgles2 libegl1
-      - name: Install dependencies
-        run: uv sync --locked
       - name: Download the MediaPipe model
+        working-directory: te-tengo-desktop-pywebview
         run: ./scripts/descargar_modelo.sh
-      - name: Lint, format and types
-        run: make revisar
-      - name: Tests
-        run: make probar
+      - name: Cache the URFD fall clip
+        id: clip
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/urfd
+          key: urfd-fall-03-cam0
+      - name: Download the URFD fall clip
+        if: steps.clip.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/urfd"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/urfd/fall-03-cam0.mp4" \
+            https://fenix.ur.edu.pl/~mkepski/ds/data/fall-03-cam0.mp4
+      - name: Run the end-to-end test
+        working-directory: te-tengo-general-api
+        env:
+          TT_E2E_ESCRITORIO: ../te-tengo-desktop-pywebview
+          TT_E2E_VIDEO: ${{ runner.temp }}/urfd/fall-03-cam0.mp4
+          TT_E2E_DIR: ${{ runner.temp }}/e2e
+          TT_E2E_ESPERA: "180"
+          TT_E2E_IMAGEN: ${{ steps.image.outputs.image }}
+        run: ./scripts/e2e.sh
+      - name: Summary
+        if: always()
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          {
+            echo "## End-to-end: agent of \`${GITHUB_SHA:0:12}\` → production API image"
+            echo "API image: \`${IMAGE:-not resolved}\`; scripts/e2e.sh of te-tengo-general-api main."
+            echo "The agent runs from this commit's source (headless, Linux), not from the installer or the .app."
+            echo '```'
+            cat "$RUNNER_TEMP/e2e/resumen.txt" 2> /dev/null || echo "No summary: the test did not start."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-logs
+          # Logs only: the work directory also holds the throwaway JWT keys and agent credential.
+          path: |
+            ${{ runner.temp }}/e2e/*.log
+            ${{ runner.temp }}/e2e/resumen.txt
+            ${{ runner.temp }}/e2e/agente-logs/
+          if-no-files-found: warn
+          retention-days: 14
 
   windows:
     name: Windows installer
     needs: preparar
     runs-on: windows-latest
     timeout-minutes: 60
+    # The signing secrets live in environment `firma` (deployment branches release/*, hotfix/*): pull
+    # request runs have no environment, so they cannot read them, and every step below reads a secret
+    # only on push.
+    environment: ${{ github.event_name == 'push' && 'firma' || '' }}
+    permissions:
+      contents: read
     outputs:
       firma: ${{ steps.signing.outputs.mode }}
     env:
       VERSION: ${{ needs.preparar.outputs.version }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-      AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
-      AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
-      AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
-      WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
-      WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Code signing configuration
         id: signing
         shell: bash
+        env:
+          AZURE_LISTO: >-
+            ${{ github.event_name == 'push' && secrets.AZURE_TENANT_ID != '' && secrets.AZURE_CLIENT_ID != ''
+            && secrets.AZURE_CLIENT_SECRET != '' && vars.AZURE_SIGNING_ENDPOINT != ''
+            && vars.AZURE_SIGNING_ACCOUNT != '' && vars.AZURE_CERTIFICATE_PROFILE != '' }}
+          PFX_LISTO: >-
+            ${{ github.event_name == 'push' && secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
         run: |
-          if [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_CLIENT_SECRET" ] \
-            && [ -n "$AZURE_SIGNING_ENDPOINT" ] && [ -n "$AZURE_SIGNING_ACCOUNT" ] && [ -n "$AZURE_CERTIFICATE_PROFILE" ]; then
+          if [ "$AZURE_LISTO" = true ]; then
             echo "mode=azure" >> "$GITHUB_OUTPUT"
-          elif [ -n "$WINDOWS_PFX_BASE64" ] && [ -n "$WINDOWS_PFX_PASSWORD" ]; then
+          elif [ "$PFX_LISTO" = true ]; then
             echo "mode=pfx" >> "$GITHUB_OUTPUT"
           else
             echo "mode=none" >> "$GITHUB_OUTPUT"
             if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
-              echo "::notice title=Installer not signed::Windows SmartScreen will warn on first run. To sign, set the Azure Artifact Signing secrets and variables or WINDOWS_PFX_BASE64 and WINDOWS_PFX_PASSWORD (docs/RELEASES.md)."
+              echo "::notice title=Installer not signed::Windows SmartScreen will warn on first run. To sign, set the Azure Artifact Signing secrets and variables or WINDOWS_PFX_BASE64 and WINDOWS_PFX_PASSWORD in environment firma (docs/RELEASES.md)."
             fi
           fi
 
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Install dependencies
@@ -216,11 +324,11 @@ jobs:
       # 1) Sign the agent executable (before it goes into the installer).
       - name: Sign the executable (Azure Artifact Signing)
         if: steps.signing.outputs.mode == 'azure'
-        uses: Azure/artifact-signing-action@v2
+        uses: Azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          azure-tenant-id: ${{ github.event_name == 'push' && secrets.AZURE_TENANT_ID || '' }}
+          azure-client-id: ${{ github.event_name == 'push' && secrets.AZURE_CLIENT_ID || '' }}
+          azure-client-secret: ${{ github.event_name == 'push' && secrets.AZURE_CLIENT_SECRET || '' }}
           endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
@@ -230,6 +338,9 @@ jobs:
       - name: Sign the executable (PFX certificate)
         if: steps.signing.outputs.mode == 'pfx'
         shell: pwsh
+        env:
+          WINDOWS_PFX_BASE64: ${{ github.event_name == 'push' && secrets.WINDOWS_PFX_BASE64 || '' }}
+          WINDOWS_PFX_PASSWORD: ${{ github.event_name == 'push' && secrets.WINDOWS_PFX_PASSWORD || '' }}
         run: |
           $pfx = Join-Path $env:RUNNER_TEMP "firma.pfx"
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
@@ -253,11 +364,11 @@ jobs:
       # 3) Sign the installer.
       - name: Sign the installer (Azure Artifact Signing)
         if: steps.signing.outputs.mode == 'azure'
-        uses: Azure/artifact-signing-action@v2
+        uses: Azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          azure-tenant-id: ${{ github.event_name == 'push' && secrets.AZURE_TENANT_ID || '' }}
+          azure-client-id: ${{ github.event_name == 'push' && secrets.AZURE_CLIENT_ID || '' }}
+          azure-client-secret: ${{ github.event_name == 'push' && secrets.AZURE_CLIENT_SECRET || '' }}
           endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
@@ -268,6 +379,8 @@ jobs:
       - name: Sign the installer (PFX certificate)
         if: steps.signing.outputs.mode == 'pfx'
         shell: pwsh
+        env:
+          WINDOWS_PFX_PASSWORD: ${{ github.event_name == 'push' && secrets.WINDOWS_PFX_PASSWORD || '' }}
         run: |
           $pfx = Join-Path $env:RUNNER_TEMP "firma.pfx"
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
@@ -318,7 +431,7 @@ jobs:
           cd salida
           sha256sum te-tengo-captura-setup.exe | tee te-tengo-captura-setup.exe.sha256
       # A run artifact only carries the files to the candidata job; the durable copy is the pre-release.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows
           path: salida/
@@ -344,6 +457,11 @@ jobs:
     # Apple Silicon (arm64) runner, pinned so a new macos-latest does not change the build silently.
     runs-on: macos-15
     timeout-minutes: 90
+    # The Apple secrets live in environment `firma` (deployment branches release/*, hotfix/*); pull
+    # request runs have no environment and never notarize.
+    environment: ${{ github.event_name == 'push' && 'firma' || '' }}
+    permissions:
+      contents: read
     outputs:
       firma: ${{ env.NOTARIZAR == 'true' && 'notarized' || 'ad-hoc' }}
     env:
@@ -353,26 +471,29 @@ jobs:
       # Notarization only on releases (never on pull requests), with its switch on.
       NOTARIZAR: ${{ github.event_name == 'push' && vars.ENABLE_MAC_NOTARIZE == 'true' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Import the Developer ID certificate
         if: env.NOTARIZAR == 'true'
         env:
-          MAC_DEVELOPER_ID_P12_BASE64: ${{ secrets.MAC_DEVELOPER_ID_P12_BASE64 }}
-          MAC_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MAC_DEVELOPER_ID_P12_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          MAC_DEVELOPER_ID_P12_BASE64: ${{ github.event_name == 'push' && secrets.MAC_DEVELOPER_ID_P12_BASE64 || '' }}
+          MAC_DEVELOPER_ID_P12_PASSWORD: ${{ github.event_name == 'push' && secrets.MAC_DEVELOPER_ID_P12_PASSWORD || '' }}
+          # Only checked for presence here; the notarization step reads them.
+          HAS_APPLE_ID: ${{ github.event_name == 'push' && secrets.APPLE_ID != '' }}
+          HAS_APPLE_TEAM_ID: ${{ github.event_name == 'push' && secrets.APPLE_TEAM_ID != '' }}
+          HAS_APPLE_APP_SPECIFIC_PASSWORD: ${{ github.event_name == 'push' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}
         run: |
           set -euo pipefail
           faltan=()
-          for nombre in MAC_DEVELOPER_ID_P12_BASE64 MAC_DEVELOPER_ID_P12_PASSWORD APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
-            if [ -z "${!nombre}" ]; then faltan+=("$nombre"); fi
-          done
+          [ -n "$MAC_DEVELOPER_ID_P12_BASE64" ] || faltan+=(MAC_DEVELOPER_ID_P12_BASE64)
+          [ -n "$MAC_DEVELOPER_ID_P12_PASSWORD" ] || faltan+=(MAC_DEVELOPER_ID_P12_PASSWORD)
+          [ "$HAS_APPLE_ID" = true ] || faltan+=(APPLE_ID)
+          [ "$HAS_APPLE_TEAM_ID" = true ] || faltan+=(APPLE_TEAM_ID)
+          [ "$HAS_APPLE_APP_SPECIFIC_PASSWORD" = true ] || faltan+=(APPLE_APP_SPECIFIC_PASSWORD)
           if [ "${#faltan[@]}" -gt 0 ]; then
-            echo "::error title=Notarization secrets missing::ENABLE_MAC_NOTARIZE is 'true' but these secrets are not set: ${faltan[*]}. Add them (docs/RELEASES.md, macOS signing and notarization) or set ENABLE_MAC_NOTARIZE to anything else to ship an ad-hoc signed .dmg."
+            echo "::error title=Notarization secrets missing::ENABLE_MAC_NOTARIZE is 'true' but these secrets are not set: ${faltan[*]}. Add them to environment firma (docs/RELEASES.md, macOS signing and notarization) or set ENABLE_MAC_NOTARIZE to anything else to ship an ad-hoc signed .dmg."
             exit 1
           fi
           llavero="$RUNNER_TEMP/firma.keychain-db"
@@ -396,7 +517,7 @@ jobs:
           # Read by the PyInstaller spec and packaging/macos/crear-dmg.sh.
           echo "TT_MACOS_IDENTIDAD_FIRMA=$identidad" >> "$GITHUB_ENV"
 
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Install dependencies
@@ -444,9 +565,9 @@ jobs:
       - name: Notarize and staple
         if: env.NOTARIZAR == 'true'
         env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_ID: ${{ github.event_name == 'push' && secrets.APPLE_ID || '' }}
+          APPLE_TEAM_ID: ${{ github.event_name == 'push' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ github.event_name == 'push' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
         run: |
           set -euo pipefail
           # notarytool with an Apple ID and an app-specific password (Apple: "Customizing the
@@ -477,7 +598,7 @@ jobs:
       - name: Checksum
         working-directory: salida
         run: shasum -a 256 te-tengo-captura.dmg | tee te-tengo-captura.dmg.sha256
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos
           path: salida/
@@ -501,43 +622,90 @@ jobs:
 
   candidata:
     name: Release candidate (GitHub pre-release)
-    needs: [preparar, pruebas, windows, macos]
+    needs: [preparar, ci, e2e, windows, macos]
     if: >-
       !cancelled() && github.event_name == 'push'
-      && needs.preparar.result == 'success' && needs.pruebas.result == 'success'
-      && needs.windows.result == 'success'
+      && needs.preparar.result == 'success' && needs.ci.result == 'success'
+      && needs.e2e.result == 'success' && needs.windows.result == 'success'
       && (needs.macos.result == 'success' || needs.macos.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write # the pre-release and its rc tag
+      id-token: write # signs the attestations (Sigstore)
+      attestations: write # stores them
     outputs:
-      tag: ${{ steps.candidata.outputs.tag }}
-      arbol: ${{ steps.candidata.outputs.arbol }}
+      tag: ${{ steps.publicar.outputs.tag }}
+      arbol: ${{ steps.archivos.outputs.arbol }}
     env:
-      GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.preparar.outputs.version }}
       BUILD: ${{ needs.preparar.outputs.build }}
       STAGING: ${{ needs.preparar.outputs.staging }}
       FIRMA_WINDOWS: ${{ needs.windows.outputs.firma }}
       FIRMA_MACOS: ${{ needs.macos.outputs.firma }}
+      E2E_IMAGE: ${{ needs.e2e.outputs.image }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: windows
-          path: salida/windows
-      - uses: actions/download-artifact@v8
+          path: ${{ runner.temp }}/salida/windows
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: needs.macos.result == 'success'
         with:
           name: macos
-          path: salida/macos
-      - name: Create the pre-release
-        id: candidata
+          path: ${{ runner.temp }}/salida/macos
+      # The asset names carry the final version, never "rc": the final release attaches these same files.
+      # $RUNNER_TEMP/candidata is outside the checkout, so the SBOM scan of the repository does not see
+      # the binaries.
+      - name: Candidate files
+        id: archivos
         run: |
           set -euo pipefail
+          CANDIDATA="$RUNNER_TEMP/candidata"
+          mkdir -p "$CANDIDATA"
+          cp "$RUNNER_TEMP/salida/windows/te-tengo-captura-setup.exe" "$CANDIDATA/te-tengo-captura-$VERSION-windows-setup.exe"
+          if [ -f "$RUNNER_TEMP/salida/macos/te-tengo-captura.dmg" ]; then
+            cp "$RUNNER_TEMP/salida/macos/te-tengo-captura.dmg" "$CANDIDATA/te-tengo-captura-$VERSION-macos.dmg"
+          fi
+          echo "arbol=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      # The Python dependencies bundled into the binaries, from uv.lock.
+      - name: SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: ${{ runner.temp }}/candidata/te-tengo-captura-${{ needs.preparar.outputs.version }}-sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/candidata"
+          sha256sum -- te-tengo-captura-* > "$RUNNER_TEMP/SHA256SUMS.txt"
+          mv "$RUNNER_TEMP/SHA256SUMS.txt" SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/candidata/te-tengo-captura-*
+      - name: SBOM attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/candidata/te-tengo-captura-*-windows-setup.exe
+            ${{ runner.temp }}/candidata/te-tengo-captura-*-macos.dmg
+          sbom-path: ${{ runner.temp }}/candidata/te-tengo-captura-${{ needs.preparar.outputs.version }}-sbom.spdx.json
+      - name: Create the pre-release
+        id: publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARBOL: ${{ steps.archivos.outputs.arbol }}
+        run: |
+          set -euo pipefail
+          CANDIDATA="$RUNNER_TEMP/candidata"
           # rc number: one more than the highest candidate of this version, counting the rc tags and
           # the releases (a draft has no tag yet). Earlier candidates are never changed or deleted.
           ultimo=$(
@@ -549,18 +717,9 @@ jobs:
           )
           n=$(( ${ultimo:-0} + 1 ))
           tag="v$VERSION-rc.$n"
-          arbol=$(git rev-parse 'HEAD^{tree}')
 
-          # The asset names carry the final version, never "rc": the final release attaches these
-          # same files.
-          mkdir candidata
-          cp salida/windows/te-tengo-captura-setup.exe "candidata/te-tengo-captura-$VERSION-windows-setup.exe"
-          if [ -f salida/macos/te-tengo-captura.dmg ]; then
-            cp salida/macos/te-tengo-captura.dmg "candidata/te-tengo-captura-$VERSION-macos.dmg"
-          fi
-          (cd candidata && sha256sum -- * > SHA256SUMS.txt)
-
-          # produccion.yml reads "Tree:" and "Staging:" and the SHA-256 block; keep their format.
+          # buscar_candidata.sh (produccion.yml, release-gate.yml) reads "- Tree:" and "- Staging:",
+          # descargar_candidata.sh the SHA-256 block; keep their format.
           if [ "$STAGING" = true ]; then staging=pending; else staging="off (ENABLE_STAGING off or no binary goes to R2)"; fi
           {
             echo "Release candidate $n of Te Tengo Captura $VERSION, built once by the Release workflow. The binaries carry version $VERSION; when \`$GITHUB_REF_NAME\` is merged into main, produccion.yml promotes these same files without rebuilding them (docs/RELEASES.md)."
@@ -569,25 +728,27 @@ jobs:
             echo "- Build: $VERSION+$BUILD"
             echo "- Branch: $GITHUB_REF_NAME"
             echo "- Commit: $GITHUB_SHA"
-            echo "- Tree: $arbol"
+            echo "- Tree: $ARBOL"
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Tests: CI (lint, types, tests) on this commit; end-to-end against $E2E_IMAGE"
             echo "- Windows installer signing: $FIRMA_WINDOWS"
             echo "- macOS disk image: ${FIRMA_MACOS:-not built (ENABLE_MAC_DMG off)}"
             echo "- Staging: $staging"
             echo
+            echo "Provenance and SBOM attestations: \`gh attestation verify te-tengo-captura-$VERSION-windows-setup.exe --repo $GITHUB_REPOSITORY\`."
+            echo
             echo "SHA-256:"
             echo
             echo '```'
-            cat candidata/SHA256SUMS.txt
+            cat "$CANDIDATA/SHA256SUMS.txt"
             echo '```'
-          } > notas.md
-          gh release create "$tag" candidata/* --repo "$GITHUB_REPOSITORY" --prerelease --latest=false \
-            --target "$GITHUB_SHA" --title "Te Tengo Captura $VERSION-rc.$n" --notes-file notas.md
+          } > "$RUNNER_TEMP/notas.md"
+          gh release create "$tag" "$CANDIDATA"/* --repo "$GITHUB_REPOSITORY" --prerelease --latest=false \
+            --target "$GITHUB_SHA" --title "Te Tengo Captura $VERSION-rc.$n" --notes-file "$RUNNER_TEMP/notas.md"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "arbol=$arbol" >> "$GITHUB_OUTPUT"
           {
             echo "## Candidate \`$tag\`"
-            cat notas.md
+            cat "$RUNNER_TEMP/notas.md"
           } >> "$GITHUB_STEP_SUMMARY"
 
   staging:
@@ -604,15 +765,19 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ needs.candidata.outputs.tag }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       ENABLE_WINDOWS_INSTALLER: ${{ vars.ENABLE_WINDOWS_INSTALLER }}
       ENABLE_MAC_DMG: ${{ vars.ENABLE_MAC_DMG }}
     steps:
       - name: Check the configuration
+        env:
+          HAS_CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+          HAS_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
         run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::error title=Cloudflare secrets missing::Create a Cloudflare API token with Workers R2 Storage: Edit and save it as the CLOUDFLARE_API_TOKEN secret of this repository, with the account ID as CLOUDFLARE_ACCOUNT_ID (docs/RELEASES.md)."
+          faltan=()
+          [ "$HAS_CLOUDFLARE_API_TOKEN" = true ] || faltan+=(CLOUDFLARE_API_TOKEN)
+          [ "$HAS_CLOUDFLARE_ACCOUNT_ID" = true ] || faltan+=(CLOUDFLARE_ACCOUNT_ID)
+          if [ "${#faltan[@]}" -gt 0 ]; then
+            echo "::error title=Cloudflare secrets missing::Not set: ${faltan[*]}. Save a Cloudflare API token with Workers R2 Storage: Edit as CLOUDFLARE_API_TOKEN and the account ID as CLOUDFLARE_ACCOUNT_ID, as secrets of the environment staging (docs/RELEASES.md)."
             exit 1
           fi
           if [ -z "$DESCARGAS_BASE_URL" ]; then
@@ -620,7 +785,7 @@ jobs:
             exit 1
           fi
           echo "## Staging: candidate \`$TAG\` to R2 \`$R2_BUCKET/staging/\`" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: .github/scripts
@@ -628,20 +793,29 @@ jobs:
         run: .github/scripts/descargar_candidata.sh "$TAG" candidata
       - name: Windows installer to staging/
         if: vars.ENABLE_WINDOWS_INSTALLER == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: >-
           .github/scripts/publicar_r2.sh candidata/r2/te-tengo-captura-setup.exe
           staging/te-tengo-captura-setup.exe application/vnd.microsoft.portable-executable
       - name: macOS disk image to staging/
         if: vars.ENABLE_MAC_DMG == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: >-
           .github/scripts/publicar_r2.sh candidata/r2/te-tengo-captura.dmg
           staging/te-tengo-captura.dmg application/x-apple-diskimage
+      # produccion.yml and release-gate.yml accept only a candidate whose staging passed.
       - name: Mark the candidate
         run: |
           set -euo pipefail
           ejecucion="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body \
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body | tr -d '\r' \
             | sed "s|^- Staging: pending\$|- Staging: passed ($ejecucion)|" > notas.md
+          grep -q '^- Staging: passed' notas.md \
+            || { echo "::error title=No staging line::The notes of $TAG have no '- Staging: pending' line."; exit 1; }
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notas.md
       - name: Switched-off channels
         run: |
@@ -650,10 +824,12 @@ jobs:
             if [ "$ENABLE_MAC_DMG" != true ]; then echo "- macOS disk image: skipped (\`ENABLE_MAC_DMG\` is not \`true\`)"; fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # After staging passed (or with staging switched off): open the pull request <release branch> → main,
+  # or update it with the new candidate, as the GitHub App, so its checks run. Editing the description
+  # fires `edited`, which runs release-gate again. Merging it is a human action.
   pull-request:
-    name: Open the pull request to main
+    name: Pull request to main
     needs: [preparar, candidata, staging]
-    # After staging, or right after the candidate when the staging stage is off.
     if: >-
       !cancelled() && needs.candidata.result == 'success'
       && (needs.staging.result == 'success'
@@ -662,24 +838,39 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: write
     env:
-      GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.preparar.outputs.version }}
       BUILD: ${{ needs.preparar.outputs.build }}
       TAG: ${{ needs.candidata.outputs.tag }}
       ARBOL: ${{ needs.candidata.outputs.arbol }}
       STAGING: ${{ needs.staging.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
       ENABLE_WINDOWS_INSTALLER: ${{ vars.ENABLE_WINDOWS_INSTALLER }}
       ENABLE_MAC_DMG: ${{ vars.ENABLE_MAC_DMG }}
       ENABLE_MAC_NOTARIZE: ${{ vars.ENABLE_MAC_NOTARIZE }}
       ENABLE_DESKTOP_GITHUB_RELEASE: ${{ vars.ENABLE_DESKTOP_GITHUB_RELEASE }}
     steps:
-      - name: Open or update the pull request
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Check the release bot configuration
+        env:
+          APP_ID: ${{ vars.RELEASE_APP_ID }}
+          HAS_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+        run: |
+          if [ -z "$APP_ID" ] || [ "$HAS_KEY" != true ]; then
+            echo "::error title=Release bot not configured::The organization variable RELEASE_APP_ID and the organization secret RELEASE_APP_PRIVATE_KEY (GitHub App te-tengo-release-bot) are required to open the pull request. Nothing falls back to GITHUB_TOKEN: its pull requests start no workflows."
+            exit 1
+          fi
+      - name: Describe the candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           base=${DESCARGAS_BASE_URL%/}
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS.txt --dir candidata
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS.txt --dir "$RUNNER_TEMP/candidata"
+          if [ "$ENABLE_DESKTOP_GITHUB_RELEASE" = true ]; then adjuntos=" with these binaries"; else adjuntos=" (binaries not attached: \`ENABLE_DESKTOP_GITHUB_RELEASE\` off)"; fi
           {
             echo "Release $VERSION of Te Tengo Captura from \`$GITHUB_REF_NAME\`."
             echo
@@ -689,7 +880,8 @@ jobs:
             echo "| Build | \`$VERSION+$BUILD\` |"
             echo "| Commit | \`$GITHUB_SHA\` |"
             echo "| Tree | \`$ARBOL\` |"
-            echo "| Pipeline run | $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID |"
+            echo "| Tests | CI on this commit (lint, types, tests) and the end-to-end test against the production API image, in the pipeline run below |"
+            echo "| Pipeline run | $RUN_URL |"
             echo
             echo "| Binary | Staging | Production key (after the merge) |"
             echo "|---|---|---|"
@@ -711,20 +903,25 @@ jobs:
             echo "SHA-256 of the candidate:"
             echo
             echo '```'
-            cat candidata/SHA256SUMS.txt
+            cat "$RUNNER_TEMP/candidata/SHA256SUMS.txt"
             echo '```'
             echo
-            echo "Merging runs \`produccion.yml\` on main: it takes the candidate whose tree equals main's (this one, unless main changed meanwhile), waits for an approval on \`produccion\`, verifies the SHA-256 and uploads the same files to the production keys without rebuilding. Only if that succeeds does it tag \`v$VERSION\` and create the GitHub Release$( [ "$ENABLE_DESKTOP_GITHUB_RELEASE" = true ] && echo " with these binaries" || echo " (binaries not attached: \`ENABLE_DESKTOP_GITHUB_RELEASE\` off)"), then open the back-merge pull request to develop."
+            echo "\`release-gate\` checks that merging puts exactly this tree into \`main\` and that the candidate passed staging (or staging is off). Merge with a merge commit. Merging runs \`produccion.yml\` on main: it finds this candidate by the tree of main, waits for an approval on \`produccion\`, verifies the SHA-256 and uploads the same files to the production keys without rebuilding. Only if something went to production does it tag \`v$VERSION\` and create the GitHub Release$adjuntos, then open the back-merge pull request to develop."
             echo
             echo "A new push to \`$GITHUB_REF_NAME\` builds the next candidate and updates this description. After the release, set \`TT_AGENTE_VERSION_PUBLICADA=$VERSION\` in the API (docs/RELEASES.md)."
-          } > cuerpo.md
-          cat cuerpo.md >> "$GITHUB_STEP_SUMMARY"
-          existente=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --base main --state open --json url --jq '.[0].url // empty')
-          if [ -n "$existente" ]; then
-            gh pr edit "$existente" --repo "$GITHUB_REPOSITORY" --body-file cuerpo.md
-            echo "Updated $existente"
-          elif ! gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$GITHUB_REF_NAME" \
-            --title "release: $VERSION" --body-file cuerpo.md; then
-            echo "::error title=Pull request not opened::Open $GITHUB_REF_NAME → main by hand. If the error says GitHub Actions cannot create pull requests, enable 'Allow GitHub Actions to create and approve pull requests' (organization or repository Settings → Actions → General)."
-            exit 1
-          fi
+          } > "$RUNNER_TEMP/cuerpo.md"
+          cat "$RUNNER_TEMP/cuerpo.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Mint the release bot token
+        id: bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          # The App ID; GitHub accepts it as the JWT issuer like the client ID.
+          client-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+      - name: Open or update the pull request to main
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+        run: |
+          .github/scripts/open-release-pr.sh "release: $VERSION" "$RUNNER_TEMP/cuerpo.md" \
+            "New candidate [\`$TAG\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG) (commit \`${GITHUB_SHA:0:12}\`), staging $([ "$STAGING" = success ] && echo passed || echo off). The description now describes it."

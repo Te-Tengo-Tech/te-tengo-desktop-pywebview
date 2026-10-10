@@ -35,7 +35,8 @@ We acknowledge reports within **72 hours** and aim to fix confirmed issues withi
 | Dependabot version updates (uv, GitHub Actions; `mediapipe` stays pinned per ADR 0003) | [`dependabot.yml`](dependabot.yml) | Weekly, PRs to `develop` |
 | pip-audit on every locked dependency (fails on any known vulnerability) | [`workflows/audit.yml`](workflows/audit.yml) | Weekly, on demand, and report-only on PRs that change dependencies |
 | OSV-Scanner on `uv.lock` (fails on high or critical) | [`workflows/osv-scanner.yml`](workflows/osv-scanner.yml) | Weekly, on demand, and report-only on PRs that change dependencies |
-| Lint, strict types, tests with coverage and the Windows package smoke test | [`workflows/ci.yml`](workflows/ci.yml) | Every push to `main`/`develop` and every PR |
+| Lint, strict types, tests with coverage and the Windows package smoke test | [`workflows/ci.yml`](workflows/ci.yml) | Every PR, every push to `develop`, and every release candidate (called by `release.yml`) |
+| SBOM, build provenance and SBOM attestations of every release candidate | [`workflows/release.yml`](workflows/release.yml) | Every push to `release/*` and `hotfix/*` |
 
 Reports are uploaded as workflow artifacts and summarised on the run page.
 

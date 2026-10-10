@@ -4,6 +4,30 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+### Added
+- `ci-ok`, the last job of `CI`: it always runs and passes only when every CI job passed (a skipped or cancelled job is not green; the Windows package may be skipped only when `release.yml` calls CI with `package: false`). On pull requests into `main` it only checks that the head is `release/x.y.z` or `hotfix/x.y.z`. It is meant to be the single required check of `develop` and `main`.
+- `release-gate.yml` (check `release-gate`, pull requests into `main`): merging must put into `main` exactly the tree of an approved release candidate of the head's version, which is the candidate `produccion.yml` promotes. The new `.github/scripts/buscar_candidata.sh` is the one candidate search of both (extracted from `produccion.yml`); `release-gate.sh`, `open-release-pr.sh` and `back-merge.sh` are the same in every Te Tengo repository.
+- `pr-title.yml` (check `pr-title`): the pull request title must be a Conventional Commit.
+- Release end-to-end test: the `e2e` job of `release.yml` runs the agent of the release commit, headless on Linux, against the API image in production (`ghcr.io/te-tengo-tech/te-tengo-general-api:latest`, resolved anonymously to its digest) with `scripts/e2e.sh` of `te-tengo-general-api` `main` and the URFD fall clip; the candidate is built only when it passes. It tests the candidate's source, not its packaged binaries.
+- Release candidates carry an SBOM (`te-tengo-captura-X.Y.Z-sbom.spdx.json`, SPDX from `uv.lock`, listed in `SHA256SUMS.txt` and attached to the final release with the binaries), a build provenance attestation of the installer, the disk image and the SBOM, and an SBOM attestation of the binaries (`gh attestation verify`).
+- `produccion.yml` can be run by hand on `main` (*Run workflow*), to promote a candidate after its switches were off.
+- `docs/RELEASES.md`: workflows table, jobs per event, tested once, release gate, end-to-end test, tag at the end, the release bot, environment `firma` and a rollback rehearsal procedure with a log table.
+
+### Changed
+- Tested once: `CI` runs on pull requests, on push to `develop` and when `release.yml` calls it (`workflow_call`) on the candidate's commit; it no longer runs on pushes to `main`, `release/**` or `hotfix/**`, and on pull requests into `main` its jobs are skipped. The candidate is created only after that CI, the end-to-end test and the builds passed.
+- A release branch whose name differs from the version in `pyproject.toml` and `__version__` now fails `preparar` (it was a warning); `preparar` also warns when `CHANGELOG.md` has no section for the version.
+- Tag at the end, strictly: the tag `vX.Y.Z` and its GitHub Release are created only after the `produccion` job succeeded. With every production channel off nothing is tagged, released or back-merged (the run summary says so); before, the tag and an empty release were created anyway. The job is now named *Tag vX.Y.Z and GitHub Release*.
+- The pull request to `main` and the back-merge pull request are opened as the GitHub App te-tengo-release-bot (organization variable `RELEASE_APP_ID`, secret `RELEASE_APP_PRIVATE_KEY`) instead of `GITHUB_TOKEN`, so their checks run; the release pull request's description names the run and its attempt, so each new candidate fires `edited` and re-runs the release gate. The back-merge (`back-merge.sh`) turns on auto-merge with a merge commit when the repository allows it, and after a hotfix also opens `main` → newer open `release/*` branches.
+- Every action is pinned by full commit SHA; every workflow starts with no permissions or `contents: read` and each job declares its own; every checkout uses `persist-credentials: false`.
+
+### Removed
+- The `pruebas` job of `release.yml` (it duplicated CI); `release.yml` calls `ci.yml` instead.
+- CI runs on pushes to `main`, `release/**` and `hotfix/**`.
+
+### Security
+- Signing secrets never reach pull request runs: the Windows (Azure Artifact Signing, PFX) and Apple secrets moved from job-level `env` to the steps that use them, are read only on push, and the `windows` and `macos` jobs run in environment `firma` on push only, so the secrets can be restricted to `release/*` and `hotfix/*` there.
+- Cloudflare secrets are read only by the upload steps of the `staging`, `produccion` and `rollback` jobs; their checks name the missing secret without reading its value.
+
 ### Pending
 - Validate the unstable movement rule with our own recordings.
 - Frame quality control, motion detection and backpressure.
