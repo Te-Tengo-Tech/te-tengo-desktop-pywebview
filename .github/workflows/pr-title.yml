@@ -28,5 +28,7 @@ jobs:
             echo "Conventional title: $TITLE"
             exit 0
           fi
-          echo "::error title=Not a Conventional Commits title::'$TITLE' must look like 'type(scope): summary' (scope optional, '!' for a breaking change), with type one of ${types//|/, }. Example: 'fix(ci): keep signing keys out of pull request builds'."
+          echo "::error title=Not a Conventional Commits title::'$TITLE' must look like 'type(scope): summary'" \
+            "(scope optional, '!' for a breaking change), with type one of ${types//|/, }." \
+            "Example: 'fix(ci): keep signing keys out of pull request builds'."
           exit 1
