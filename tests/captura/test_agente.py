@@ -1,5 +1,6 @@
 import threading
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from te_tengo_captura.backend.transmision import url_websocket
 from te_tengo_captura.captura.fuentes import FuenteFalsa, Imagen
 from te_tengo_captura.config import Configuracion
 from te_tengo_captura.estado import EstadoAgente, Situacion
+from te_tengo_deteccion.clips.codificar import codificar_mp4
 from te_tengo_deteccion.pose.schemas import Pose
 
 AHORA = datetime(2026, 10, 7, 14, 0, tzinfo=UTC)
@@ -168,3 +170,15 @@ def test_el_canal_de_vista_en_vivo_solo_con_el_backend_real(
     )
     assert con_canal._canal is not None
     assert con_canal._canal._url == url_websocket(configuracion.api_url)
+
+
+def test_el_clip_se_codifica_en_el_directorio_de_la_bandeja(
+    tmp_path: Path, configuracion: Configuracion
+) -> None:
+    backend = BackendFalso(credencial="c")
+    cliente = ClienteBackend(URL_API, "c", "Sala", "1.0.0", backend.transporte())
+    agente = Agente(configuracion, cliente, FuenteFalsa(), SinPersonas(), tmp_path, "1.0.0")
+    codificar = agente.bucle._codificar
+    assert isinstance(codificar, partial)
+    assert codificar.func is codificar_mp4
+    assert codificar.keywords == {"directorio": tmp_path / "clips"}

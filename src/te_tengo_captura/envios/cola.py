@@ -2,14 +2,22 @@
 
 Events are written here first and sent afterwards, so none is lost (AGENTS.md). Delivery rules:
 
-* **Order:** events go out in the order they were detected; a clip goes out only once its event
-  was accepted, because the backend needs the event to issue the upload URL.
+* **Lanes:** urgent events (``URGENTES``: the fall, its confirmation, the unstable movement and
+  the recovery), the other events and the clips are sent in three lanes, in that order, each with
+  its own backoff, so a failure in one never delays another: a failing clip upload never holds
+  back an event, and a new fall goes out at once even while the other lanes wait.
+* **Order:** within a lane, events go out in the order they were detected; a clip goes out only
+  once its event was accepted, because the backend needs the event to issue the upload URL.
 * **Idempotency:** the backend answers ``200`` to a repeated ``eventoId``; that counts as
   delivered, so resending after a lost response is safe.
 * **Backoff** (implementation choice): after a failure that may succeed later (no connection,
-  ``429``, ``5xx``) the whole outbox waits ``min(300 s, 2 s × 2^(n-1))`` after the n-th failure in
-  a row, with *equal jitter* (half fixed, half random) so many households do not retry in
-  lockstep after an outage. Any success resets the wait; «Reintentar ahora» skips it.
+  ``429``, ``5xx``) a lane waits ``min(tope, 2 s × 2^(n-1))`` after its n-th failure in a row,
+  with *equal jitter* (half fixed, half random) so many households do not retry in lockstep after
+  an outage. ``tope`` is 300 s for the other events and the clips, and ``ESPERA_MAXIMA_URGENTE_S``
+  (5 s) for urgent events, so a pending fall goes out within seconds of the connection coming
+  back; a newly queued urgent event is tried at once. A clip upload that fails for any reason
+  backs off the clip lane only. A success resets its lane's wait; «Reintentar ahora» skips every
+  wait.
 * **Rejections:** an event the backend refuses for good (``409 CAPTURA_NO_PERMITIDA``, ``400``)
   is kept as ``rechazado`` for diagnosis and not retried. A clip is discarded after
   ``MAX_INTENTOS_CLIP`` failed uploads or when its event was rejected (CA-18.2: the event is
@@ -31,12 +39,30 @@ from typing import Protocol
 
 from te_tengo_captura.backend.errores import ErrorBackendError, EventoNoEncontradoError
 from te_tengo_captura.backend.modelos import EventoAgente, EventoRecibido, SubidaClip
+from te_tengo_deteccion.clasificacion.estados import TipoEvento
 
 logger = logging.getLogger(__name__)
 
 ESPERA_BASE_S = 2.0
 ESPERA_MAXIMA_S = 300.0
+ESPERA_MAXIMA_URGENTE_S = 5.0
 MAX_INTENTOS_CLIP = 10
+
+# Events a family member must hear about now: never behind another lane's backoff.
+URGENTES = frozenset(
+    {
+        TipoEvento.CAIDA,
+        TipoEvento.CAIDA_CONFIRMADA,
+        TipoEvento.MOVIMIENTO_INESTABLE,
+        TipoEvento.RECUPERACION,
+    }
+)
+
+_CLIPS_LISTOS = (
+    "SELECT c.evento_id, c.archivo, c.intentos FROM clips c "
+    "LEFT JOIN eventos e ON e.evento_id = c.evento_id "
+    "WHERE e.estado IS NULL OR e.estado = 'rechazado' ORDER BY c.creado_en"
+)
 
 _ESQUEMA = """
 CREATE TABLE IF NOT EXISTS eventos (
@@ -73,7 +99,36 @@ class Resumen:
     eventos_enviados: int
     clips_subidos: int
     pendientes: int
-    error: ErrorBackendError | None  # the failure that stopped the pass, if any
+    error: ErrorBackendError | None  # the first failure that stopped a lane, if any
+
+
+class _Espera:
+    """Backoff of one lane: exponential, capped at ``tope``, with equal jitter."""
+
+    def __init__(
+        self, tope: float, reloj: Callable[[], float], aleatorio: Callable[[], float]
+    ) -> None:
+        self._tope = tope
+        self._reloj = reloj
+        self._aleatorio = aleatorio
+        self._fallos_seguidos = 0
+        self._proximo_intento = 0.0
+
+    def restante(self) -> float:
+        return max(0.0, self._proximo_intento - self._reloj())
+
+    def fallo(self) -> None:
+        self._fallos_seguidos += 1
+        tope = min(self._tope, ESPERA_BASE_S * 2 ** (self._fallos_seguidos - 1))
+        self._proximo_intento = self._reloj() + tope / 2 + self._aleatorio() * tope / 2
+
+    def exito(self) -> None:
+        self._fallos_seguidos = 0
+        self._proximo_intento = 0.0
+
+    def ya(self) -> None:
+        """The next attempt is due now; the count of failures stays."""
+        self._proximo_intento = 0.0
 
 
 class ColaEnvios:
@@ -92,10 +147,16 @@ class ColaEnvios:
             directorio / "envios.sqlite3", check_same_thread=False, isolation_level=None
         )
         self._db.executescript(_ESQUEMA)
-        self._fallos_seguidos = 0
-        self._proximo_intento = 0.0
+        self._urgentes = _Espera(ESPERA_MAXIMA_URGENTE_S, reloj, aleatorio)
+        self._otros = _Espera(ESPERA_MAXIMA_S, reloj, aleatorio)
+        self._clips = _Espera(ESPERA_MAXIMA_S, reloj, aleatorio)
         self.ultimo_envio: float | None = None
         self._limpiar_huerfanos()
+
+    @property
+    def directorio_clips(self) -> Path:
+        """Where clips wait for their upload (and are encoded, ``codificar_mp4``)."""
+        return self._directorio_clips
 
     # ------------------------------------------------------------------ writing
 
@@ -105,6 +166,8 @@ class ColaEnvios:
                 "INSERT OR IGNORE INTO eventos (evento_id, cuerpo) VALUES (?, ?)",
                 (evento.evento_id, json.dumps(evento.json_api())),
             )
+            if evento.tipo in URGENTES:
+                self._urgentes.ya()
 
     def agregar_clip(self, evento_id: str, mp4: bytes) -> None:
         """Stores the clip file until it is uploaded (the only frames ever kept on disk)."""
@@ -144,47 +207,75 @@ class ColaEnvios:
         return len(self.eventos_pendientes()) + len(self.clips_pendientes())
 
     def espera(self) -> float:
-        """Seconds until the next attempt is due (0 if it is due now)."""
-        return max(0.0, self._proximo_intento - self._reloj())
+        """Seconds until the next attempt of a lane with work is due (0 if one is due now)."""
+        with self._candado:
+            urgentes, otros = self._eventos_por_carril()
+            esperas = [
+                espera.restante()
+                for espera, trabajo in (
+                    (self._urgentes, urgentes),
+                    (self._otros, otros),
+                    (self._clips, self._db.execute(_CLIPS_LISTOS).fetchone()),
+                )
+                if trabajo
+            ]
+        return min(esperas, default=0.0)
 
     # ------------------------------------------------------------------ sending
 
     def reintentar_ahora(self) -> None:
-        self._proximo_intento = 0.0
+        for espera in (self._urgentes, self._otros, self._clips):
+            espera.ya()
 
     def enviar(self, remitente: Remitente) -> Resumen:
-        """Sends what is due, in order, and stops at the first failure that may be temporary."""
+        """Sends what is due in each lane, in order; a lane stops at its first temporary failure."""
         with self._candado:
-            if self.espera() > 0:
-                return Resumen(0, 0, self.pendientes, None)
             enviados = subidos = 0
-            try:
-                for evento_id, cuerpo in self._db.execute(
-                    "SELECT evento_id, cuerpo FROM eventos "
-                    "WHERE estado = 'pendiente' ORDER BY orden"
-                ).fetchall():
-                    if self._enviar_evento(remitente, evento_id, cuerpo):
-                        enviados += 1
-                for evento_id, archivo, intentos in self._db.execute(
-                    "SELECT c.evento_id, c.archivo, c.intentos FROM clips c "
-                    "LEFT JOIN eventos e ON e.evento_id = c.evento_id "
-                    "WHERE e.estado IS NULL OR e.estado = 'rechazado' ORDER BY c.creado_en"
-                ).fetchall():
-                    if self._subir_clip(remitente, evento_id, archivo, intentos):
-                        subidos += 1
-            except ErrorBackendError as error:
-                self.aplazar()
-                logger.warning("Envío pendiente (%d en cola): %s", self.pendientes, error)
-                return Resumen(enviados, subidos, self.pendientes, error)
-            self._fallos_seguidos = 0
-            self._proximo_intento = 0.0
-            return Resumen(enviados, subidos, self.pendientes, None)
+            errores: list[ErrorBackendError] = []
+            urgentes, otros = self._eventos_por_carril()
+            for espera, filas in ((self._urgentes, urgentes), (self._otros, otros)):
+                if not filas or espera.restante() > 0:
+                    continue
+                try:
+                    for evento_id, cuerpo in filas:
+                        if self._enviar_evento(remitente, evento_id, cuerpo):
+                            enviados += 1
+                except ErrorBackendError as error:
+                    espera.fallo()
+                    errores.append(error)
+                else:
+                    espera.exito()
+            if self._clips.restante() == 0:
+                try:
+                    for evento_id, archivo, intentos in self._db.execute(_CLIPS_LISTOS).fetchall():
+                        if self._subir_clip(remitente, evento_id, archivo, intentos):
+                            subidos += 1
+                except ErrorBackendError as error:
+                    self._clips.fallo()
+                    errores.append(error)
+                else:
+                    self._clips.exito()
+            pendientes = self.pendientes
+            if errores:
+                logger.warning("Envío pendiente (%d en cola): %s", pendientes, errores[0])
+            return Resumen(enviados, subidos, pendientes, errores[0] if errores else None)
 
     def cerrar(self) -> None:
         with self._candado:
             self._db.close()
 
     # ------------------------------------------------------------------ internals
+
+    def _eventos_por_carril(self) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+        """Pending events in detection order, split into urgent ones and the others."""
+        urgentes: list[tuple[str, str]] = []
+        otros: list[tuple[str, str]] = []
+        for evento_id, cuerpo in self._db.execute(
+            "SELECT evento_id, cuerpo FROM eventos WHERE estado = 'pendiente' ORDER BY orden"
+        ).fetchall():
+            urgente = json.loads(cuerpo).get("tipo") in URGENTES
+            (urgentes if urgente else otros).append((evento_id, cuerpo))
+        return urgentes, otros
 
     def _enviar_evento(self, remitente: Remitente, evento_id: str, cuerpo: str) -> bool:
         evento = EventoAgente.model_validate(json.loads(cuerpo))
@@ -250,10 +341,9 @@ class ColaEnvios:
         self.ultimo_envio = self._reloj()
 
     def aplazar(self) -> None:
-        """Schedules the next attempt after one more failure in a row."""
-        self._fallos_seguidos += 1
-        tope = min(ESPERA_MAXIMA_S, ESPERA_BASE_S * 2 ** (self._fallos_seguidos - 1))
-        self._proximo_intento = self._reloj() + tope / 2 + self._aleatorio() * tope / 2
+        """One more failure in a row in every lane (an unexpected error of a whole pass)."""
+        for espera in (self._urgentes, self._otros, self._clips):
+            espera.fallo()
 
     def _limpiar_huerfanos(self) -> None:
         conocidos = set(self._db.execute("SELECT archivo FROM clips").fetchall())

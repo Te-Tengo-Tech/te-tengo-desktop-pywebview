@@ -11,6 +11,7 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, tzinfo
+from functools import partial
 from pathlib import Path
 
 from te_tengo_captura.backend.cliente import ClienteBackend
@@ -42,11 +43,12 @@ class Agente:
         version: str,
         reloj_utc: Callable[[], datetime] = lambda: datetime.now(UTC),
         zona: tzinfo | None = None,
-        codificar: Callable[[list[tuple[float, bytes]]], bytes] = codificar_mp4,
+        codificar: Callable[[list[tuple[float, bytes]]], bytes] | None = None,
         vista_en_vivo: bool = False,
     ) -> None:
         """``vista_en_vivo`` opens the live view's control channel to ``config.api_url``; it is
-        off for ``--backend-falso`` and the tests, which have no WebSocket server."""
+        off for ``--backend-falso`` and the tests, which have no WebSocket server. ``codificar``
+        defaults to ``codificar_mp4`` with its temporary file in the outbox's clip directory."""
         self.config = config
         self.version = version
         self._cliente = cliente
@@ -74,7 +76,7 @@ class Agente:
             self.cola,
             permitida=self.latido.captura_permitida,
             al_encolar=self._al_encolar,
-            codificar=codificar,
+            codificar=codificar or partial(codificar_mp4, directorio=self.cola.directorio_clips),
             reloj_utc=reloj_utc,
             en_vivo=self.en_vivo,
         )

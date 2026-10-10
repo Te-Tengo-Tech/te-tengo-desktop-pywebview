@@ -50,6 +50,7 @@ class BackendFalso:
     # Failure injection.
     sin_conexion: bool = False
     fallos: list[int] = field(default_factory=list)  # statuses to answer, in order
+    almacen_falla: int | None = None  # status the clip storage answers while set
 
     # What the agent sent.
     registros: int = 0
@@ -96,6 +97,8 @@ class BackendFalso:
             if self.fallos:
                 return _problema(self.fallos.pop(0), "FALLO_SIMULADO", "Fallo simulado")
             if solicitud.url.host == HOST_ALMACEN:
+                if self.almacen_falla is not None:
+                    return httpx.Response(self.almacen_falla)
                 return self._subir(solicitud)
             if solicitud.headers.get("Api-Version") != rutas.API_VERSION:
                 return _problema(400, "VERSION_NO_SOPORTADA", "Falta Api-Version: 1")

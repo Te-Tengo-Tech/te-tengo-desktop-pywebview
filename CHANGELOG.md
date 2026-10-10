@@ -8,6 +8,12 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 - Validate the unstable movement rule with our own recordings.
 - Frame quality control, motion detection and backpressure.
 
+## [0.4.1] - 2026-10-09
+
+### Fixed
+- Event clips could not be scrubbed or rewound in the app (seeking snapped back to the start) and sometimes did not play on Safari/AVPlayer and ExoPlayer: they were a fragmented MP4 with a single keyframe. `codificar_mp4` now writes a regular MP4 with the index (`moov`) before the media data (`+faststart`), H.264 Constrained Baseline (no B-frames) in `yuv420p`, a constant frame rate (the clip's average, as before) and one keyframe every 0.5 s at fixed positions (no scene-cut keyframes). FFmpeg's faststart needs a file, so the clip is encoded into a temporary file in the outbox's clip directory and deleted right after it is read back (a leftover from a crash is removed by the outbox's orphan cleanup at startup). Clips are larger: about 1.6× to 2.8× (a 12 s clip at 480p: from about 0.6 MB to about 1.8 MB). The classifier is unchanged.
+- A new fall could wait up to 5 minutes in the outbox: one backoff (up to 300 s) held back everything, and a failing clip upload fed it. Urgent events (`caida`, `caida_confirmada`, `movimiento_inestable`, `recuperacion`), the other events and the clips now have their own backoff each and are sent in that order. A newly queued urgent event is tried at once and a pending one at least every 5 s, so it goes out within seconds of the connection coming back; a failing clip upload only delays other clips. Idempotency by `eventoId` and the outbox's SQLite schema are unchanged.
+
 ## [0.4.0] - 2026-10-09
 
 ### Added
