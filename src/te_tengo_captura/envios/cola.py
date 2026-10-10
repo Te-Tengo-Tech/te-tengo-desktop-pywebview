@@ -97,6 +97,11 @@ class ColaEnvios:
         self.ultimo_envio: float | None = None
         self._limpiar_huerfanos()
 
+    @property
+    def directorio_clips(self) -> Path:
+        """Where clips wait for their upload (and are encoded, ``codificar_mp4``)."""
+        return self._directorio_clips
+
     # ------------------------------------------------------------------ writing
 
     def agregar_evento(self, evento: EventoAgente) -> None:
