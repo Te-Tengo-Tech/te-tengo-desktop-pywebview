@@ -13,8 +13,7 @@ on:
       - .github/workflows/osv-scanner.yml
       - .github/scripts/osv_summary.py
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: osv-${{ github.ref }}
@@ -24,10 +23,15 @@ jobs:
   scan:
     name: OSV-Scanner
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Run OSV-Scanner
-        uses: google/osv-scanner-action/osv-scanner-action@v2.6.0
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         continue-on-error: true # exits non-zero when it finds vulnerabilities; the next step decides
         with:
           scan-args: |-
@@ -36,12 +40,12 @@ jobs:
             --output-file=osv-results.json
       - name: Summary and gate
         run: |
-          gate=""
-          if [ "${{ github.event_name }}" != "pull_request" ]; then gate="--fail-on-high"; fi
-          python3 .github/scripts/osv_summary.py osv-results.json $gate >> "$GITHUB_STEP_SUMMARY"
+          gate=()
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then gate=(--fail-on-high); fi
+          python3 .github/scripts/osv_summary.py osv-results.json "${gate[@]}" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: osv-scanner-report
           path: osv-results.json

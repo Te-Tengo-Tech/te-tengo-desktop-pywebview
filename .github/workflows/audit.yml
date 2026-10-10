@@ -13,8 +13,7 @@ on:
       - uv.lock
       - .github/workflows/audit.yml
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: audit-${{ github.ref }}
@@ -24,9 +23,14 @@ jobs:
   pip-audit:
     name: pip-audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Export the locked dependencies
         run: uv export --frozen --format requirements-txt --all-groups --no-emit-project --quiet -o requirements-audit.txt
       - name: Run pip-audit
