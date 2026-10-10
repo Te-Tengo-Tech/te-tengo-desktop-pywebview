@@ -282,7 +282,7 @@ jobs:
   back-merge:
     name: Back-merge into develop
     needs: [candidata, release]
-    if: needs.release.result == 'success'
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
