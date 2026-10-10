@@ -4,6 +4,12 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+### Pending
+- Validate the unstable movement rule with our own recordings.
+- Frame quality control, motion detection and backpressure.
+
+## [0.4.2] - 2026-10-10
+
 ### Added
 - `ci-ok`, the last job of `CI`: it always runs and passes only when every CI job passed (a skipped or cancelled job is not green; the Windows package may be skipped only when `release.yml` calls CI with `package: false`). On pull requests into `main` it only checks that the head is `release/x.y.z` or `hotfix/x.y.z`. It is meant to be the single required check of `develop` and `main`.
 - `release-gate.yml` (check `release-gate`, pull requests into `main`): merging must put into `main` exactly the tree of an approved release candidate of the head's version, which is the candidate `produccion.yml` promotes. The new `.github/scripts/buscar_candidata.sh` is the one candidate search of both (extracted from `produccion.yml`); `release-gate.sh`, `open-release-pr.sh` and `back-merge.sh` are the same in every Te Tengo repository.
@@ -27,10 +33,6 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 ### Security
 - Signing secrets never reach pull request runs: the Windows (Azure Artifact Signing, PFX) and Apple secrets moved from job-level `env` to the steps that use them, are read only on push, and the `windows` and `macos` jobs run in environment `firma` on push only, so the secrets can be restricted to `release/*` and `hotfix/*` there.
 - Cloudflare secrets are read only by the upload steps of the `staging`, `produccion` and `rollback` jobs; their checks name the missing secret without reading its value.
-
-### Pending
-- Validate the unstable movement rule with our own recordings.
-- Frame quality control, motion detection and backpressure.
 
 ## [0.4.1] - 2026-10-09
 
