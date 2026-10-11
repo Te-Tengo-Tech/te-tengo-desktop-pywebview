@@ -10,8 +10,10 @@ import pytest
 
 from te_tengo_captura.almacen.gestor import AlmacenLocal, GrabadorCamara
 from te_tengo_captura.almacen.indice import TipoArchivo
+from te_tengo_captura.almacen.ligero import leer_ligero, ruta_ligera
 from te_tengo_captura.almacen.puntos import FilaMovimiento, a_ms, leer_parquet
 from te_tengo_captura.backend.cliente import ClienteBackend
+from te_tengo_captura.backend.errores import SinConexionError
 from te_tengo_captura.backend.falso import URL_API, BackendFalso
 from te_tengo_captura.backend.modelos import EventoAgente
 from te_tengo_captura.envios.cola import ColaEnvios
@@ -96,7 +98,14 @@ def test_sube_el_archivo_y_lo_conserva_en_la_pc(
     assert subido["desde"] == AHORA
     _, filas = leer_parquet(contenido)
     assert len(filas) == 40
-    assert len(archivos(almacen)) == 1  # kept for its local period
+    ligero = subido["ligero"]  # the light file, right after (US-39)
+    assert ligero["disponible"]
+    assert ligero["sha256"] == hashlib.sha256(ligero["contenido"]).hexdigest()
+    assert ligero["tamanoBytes"] == len(ligero["contenido"])
+    assert [f.t_ms for f in leer_ligero(ligero["contenido"]).fotogramas] == [f.t_ms for f in filas]
+    [ruta] = archivos(almacen)
+    assert ruta.exists()  # kept for its local period, with its light file
+    assert (ruta.parent / Path(ruta_ligera(ruta.name) or "")).exists()
     assert cola.enviar(cliente).movimientos_subidos == 0  # once
 
 
@@ -112,18 +121,63 @@ def test_un_archivo_solo_para_la_nube_se_borra_al_subirlo(
     assert almacen.escribe_tramos  # still written: the cloud is on
     guardar_movimientos(almacen, AHORA)
     [ruta] = archivos(almacen)
+    ligera = ruta.parent / (ruta_ligera(ruta.name) or "")
+    assert ligera.exists()
     resumen = cola.enviar(cliente)
     assert resumen.movimientos_subidos == 1
     [subido] = backend.movimientos.values()
     assert subido["estado"] == "DISPONIBLE"
     assert len(leer_parquet(subido["contenido"])[1]) == 40
     assert not ruta.exists()
+    assert not ligera.exists()
     assert archivos(almacen) == []
 
     # Without the cloud either, nothing is written at all.
     backend.movimientos_en_la_nube_dias = None
     almacen.revisar_permiso()
     assert not almacen.escribe_tramos
+
+
+def test_una_api_sin_archivos_ligeros_recibe_solo_el_parquet(
+    cola: ColaEnvios, cliente: ClienteBackend, backend: BackendFalso, almacen: AlmacenLocal
+) -> None:
+    backend.sin_ligeros = True  # 404 without codigo
+    guardar_movimientos(almacen, AHORA)
+    resumen = cola.enviar(cliente)
+    assert resumen.error is None
+    [subido] = backend.movimientos.values()
+    assert subido["estado"] == "DISPONIBLE"
+    assert subido["ligero"] is None
+    assert cola.movimientos_pendientes() == 0
+
+
+def test_un_ligero_que_fallo_se_sube_en_la_siguiente_pasada(
+    cola: ColaEnvios,
+    cliente: ClienteBackend,
+    backend: BackendFalso,
+    almacen: AlmacenLocal,
+    reloj: Reloj,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guardar_movimientos(almacen, AHORA)
+    original = cliente.solicitar_subida_ligero
+
+    def sin_red(*_: object) -> None:
+        raise SinConexionError("sin red")
+
+    monkeypatch.setattr(cliente, "solicitar_subida_ligero", sin_red)
+    assert cola.enviar(cliente).error is not None
+    [(archivo_id, subido)] = backend.movimientos.items()
+    assert subido["estado"] == "DISPONIBLE"
+    assert subido["ligero"] is None
+    assert cola.movimientos_pendientes() == 1  # both stay on disk
+
+    monkeypatch.setattr(cliente, "solicitar_subida_ligero", original)
+    reloj.ahora += 10
+    cola.enviar(cliente)  # 409 ARCHIVO_YA_SUBIDO {archivoId} → the light file
+    assert list(backend.movimientos) == [archivo_id]
+    assert backend.movimientos[archivo_id]["ligero"]["disponible"]
+    assert cola.movimientos_pendientes() == 0
 
 
 def test_va_despues_de_los_eventos(
@@ -242,13 +296,43 @@ def test_los_puntos_del_clip_van_despues_del_clip(
     evento_id = "0192f6e4-0000-7000-8000-000000000002"
     cola.agregar_evento(EventoAgente(evento_id=evento_id, tipo=TipoEvento.CAIDA, ocurrido_en=AHORA))
     cola.agregar_clip(evento_id, b"\x00\x00\x00\x18ftypmp42")
-    cola.agregar_puntos_clip(evento_id, b"PAR1 puntos")
+    cola.agregar_puntos_clip(evento_id, b"PAR1 puntos", b"\x1f\x8b ligero")
     assert cola.puntos_pendientes() == [evento_id]
+    assert (tmp_path / "envios" / "clips" / f"{evento_id}.puntos.ttmov").exists()
     cola.enviar(cliente)
     assert evento_id in backend.clips
     assert backend.puntos_clips[evento_id] == b"PAR1 puntos"
+    assert backend.puntos_clips_ligeros[evento_id] == b"\x1f\x8b ligero"
     assert cola.puntos_pendientes() == []
     assert not (tmp_path / "envios" / "clips" / f"{evento_id}.puntos.parquet").exists()
+    assert not (tmp_path / "envios" / "clips" / f"{evento_id}.puntos.ttmov").exists()
+
+
+def test_los_puntos_ligeros_del_clip_con_una_api_anterior(
+    cola: ColaEnvios, cliente: ClienteBackend, backend: BackendFalso, tmp_path: Path
+) -> None:
+    backend.sin_ligeros = True
+    evento_id = "0192f6e4-0000-7000-8000-000000000004"
+    cola.agregar_evento(EventoAgente(evento_id=evento_id, tipo=TipoEvento.CAIDA, ocurrido_en=AHORA))
+    cola.agregar_puntos_clip(evento_id, b"PAR1 puntos", b"\x1f\x8b ligero")
+    resumen = cola.enviar(cliente)
+    assert resumen.error is None
+    assert backend.puntos_clips[evento_id] == b"PAR1 puntos"
+    assert backend.puntos_clips_ligeros == {}
+    assert cola.puntos_pendientes() == []
+    assert list((tmp_path / "envios" / "clips").iterdir()) == []
+
+
+def test_los_puntos_ligeros_sobreviven_al_reinicio(tmp_path: Path) -> None:
+    cola = ColaEnvios(tmp_path / "envios")
+    cola.agregar_puntos_clip("e1", b"PAR1", b"ligero")
+    (tmp_path / "envios" / "clips" / "huerfano.puntos.ttmov").write_bytes(b"x")
+    cola.cerrar()
+    ColaEnvios(tmp_path / "envios").cerrar()  # startup deletes what the database does not know
+    assert sorted(p.name for p in (tmp_path / "envios" / "clips").iterdir()) == [
+        "e1.puntos.parquet",
+        "e1.puntos.ttmov",
+    ]
 
 
 def test_sin_consentimiento_los_puntos_del_clip_se_descartan(
@@ -265,19 +349,25 @@ def test_sin_consentimiento_los_puntos_del_clip_se_descartan(
 
 def test_el_grabador_entrega_los_12_segundos_del_clip(almacen: AlmacenLocal) -> None:
     grabador = GrabadorCamara(almacen, "camara-1")
-    recibidos: list[tuple[str, bytes]] = []
-    grabador.al_puntos_clip = lambda evento, datos: recibidos.append((evento, datos))
+    recibidos: list[tuple[str, bytes, bytes]] = []
+    grabador.al_puntos_clip = lambda evento, datos, ligero: recibidos.append(
+        (evento, datos, ligero)
+    )
     for i in range(20 * 8):
         grabador._poner(("fila", FilaMovimiento(a_ms(AHORA) + i * 125, [PUNTO] * 33)))
     grabador.clip("evento-1", AHORA + timedelta(seconds=10), b"mp4")
     grabador.cerrar()
-    [(evento, datos)] = recibidos
+    [(evento, datos, ligero)] = recibidos
     assert evento == "evento-1"
     metadatos, filas = leer_parquet(datos)
     assert metadatos["camara_id"] == "camara-1"
     assert filas[0].t_ms == a_ms(AHORA) + 4000
     assert filas[-1].t_ms == a_ms(AHORA) + 16000
     assert len(filas) == 12 * 8 + 1
+    archivo = leer_ligero(ligero)  # the same rows for the app (US-36)
+    assert archivo.t0_ms == a_ms(AHORA) + 4000
+    assert archivo.duracion_ms == 12_000
+    assert [f.t_ms for f in archivo.fotogramas] == [f.t_ms for f in filas]
 
 
 def test_confirmacion_sin_archivo_lo_sube_otra_vez(

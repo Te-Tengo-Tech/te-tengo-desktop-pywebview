@@ -14,6 +14,7 @@ from te_tengo_captura.almacen import gestor
 from te_tengo_captura.almacen.cifrado import MAGIA, SERVICIO, USUARIO, descifrar_bytes
 from te_tengo_captura.almacen.gestor import AjustesAlmacen, AlmacenLocal
 from te_tengo_captura.almacen.indice import TipoArchivo
+from te_tengo_captura.almacen.ligero import leer_ligero
 from te_tengo_captura.almacen.puntos import (
     FilaMovimiento,
     TramoCerrado,
@@ -128,6 +129,17 @@ def test_guarda_los_movimientos_cifrados_y_se_pueden_leer(almacen: AlmacenLocal)
     assert avisados
     assert avisados[0][0] == "c1"  # the cloud upload hears of it (US-37)
 
+    ligera = ruta.with_name("154000.ttmov.ttg")  # the light file the app draws (US-39)
+    cifrada = ligera.read_bytes()
+    assert cifrada.startswith(MAGIA)  # encrypted too (CA-38.4)
+    assert b"TTMV" not in cifrada
+    [archivo] = almacen.indice.anteriores_a(TipoArchivo.MOVIMIENTOS, 2**62)  # type: ignore[union-attr]
+    assert archivo.tamano_bytes == len(cifrado) + len(cifrada)  # both count for the limit
+    ligero = almacen.leer_ligero(archivo)
+    assert ligero is not None
+    assert ligero == descifrar_bytes(clave, cifrada)
+    assert [f.t_ms for f in leer_ligero(ligero).fotogramas] == [f.t_ms for f in filas]
+
 
 def test_sin_permiso_no_guarda_movimientos(almacen: AlmacenLocal) -> None:
     almacen.iniciar(Permiso(REVOCADO))
@@ -173,8 +185,11 @@ def test_al_revocar_pregunta_si_borra_lo_guardado(almacen: AlmacenLocal) -> None
     permiso.estado = REVOCADO
     almacen.revisar_permiso()
     [ruta] = archivos(almacen, TipoArchivo.MOVIMIENTOS)
+    ligera = ruta.with_name(ruta.name.replace(".parquet", ".ttmov"))
+    assert ligera.exists()
     assert almacen.borrar_tipo(TipoArchivo.MOVIMIENTOS) > 0  # «Borrar»
     assert not ruta.exists()
+    assert not ligera.exists()  # with its light file
     assert archivos(almacen, TipoArchivo.MOVIMIENTOS) == []
     assert almacen.estado()["revocado"] is False
 
@@ -234,9 +249,15 @@ def test_la_retencion_borra_lo_vencido(almacen: AlmacenLocal) -> None:
     almacen.guardar(
         TipoArchivo.MOVIMIENTOS, "c1", a_ms(T0), a_ms(T0) + 1, "m/hoy", _escribir(10), 10
     )
+    almacen.guardar(
+        TipoArchivo.MOVIMIENTOS, "c1", viejo, viejo + 2, "m/v.parquet.ttg", _escribir(10), 10
+    )
+    (almacen.carpeta / "m/v.ttmov.ttg").write_bytes(b"x")  # its light file
     almacen.cambiar(dias_movimientos=7)  # applies at once
     esperar(lambda: not (almacen.carpeta / "m/viejo").exists())
     assert (almacen.carpeta / "m/hoy").exists()
+    esperar(lambda: not (almacen.carpeta / "m/v.ttmov.ttg").exists())
+    assert not (almacen.carpeta / "m/v.parquet.ttg").exists()
 
 
 def test_cambios_para_la_actividad_y_ajustes_guardados(

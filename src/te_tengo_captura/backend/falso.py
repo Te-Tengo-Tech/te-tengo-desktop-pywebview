@@ -102,6 +102,9 @@ class BackendFalso:
     # Movement files (US-37) and clip landmarks (US-36) the agent uploaded.
     movimientos: dict[str, dict[str, Any]] = field(default_factory=dict)  # archivoId → file
     puntos_clips: dict[str, bytes] = field(default_factory=dict)  # eventoId → Parquet
+    puntos_clips_ligeros: dict[str, bytes] = field(default_factory=dict)  # eventoId → TTMOV
+    # An API from before the light replay files (ADR 0011): their paths answer 404.
+    sin_ligeros: bool = False
     _subidas_movimientos: dict[str, str] = field(default_factory=dict)  # key → archivoId
     _subidas_puntos: dict[str, str] = field(default_factory=dict)  # key → eventoId
     _contador: Iterator[int] = field(default_factory=lambda: count(1))
@@ -371,10 +374,18 @@ class BackendFalso:
                     return self._solicitar_clip(evento_id, _cuerpo(solicitud))
                 if resto == "clip/puntos":
                     return self._solicitar_puntos(evento_id)
+                if resto == "clip/puntos/ligero":
+                    return self._solicitar_puntos(evento_id, ligero=True)
             if (metodo, ruta) == ("POST", rutas.RUTA_MOVIMIENTOS):
                 return self._solicitar_movimientos(solicitud, _cuerpo(solicitud))
             if metodo == "POST" and ruta.startswith(rutas.RUTA_MOVIMIENTOS + "/"):
-                archivo_id = ruta.removeprefix(rutas.RUTA_MOVIMIENTOS + "/").split("/")[0]
+                archivo_id, _, resto = ruta.removeprefix(rutas.RUTA_MOVIMIENTOS + "/").partition(
+                    "/"
+                )
+                if resto == "ligero":
+                    return self._solicitar_ligero(archivo_id, _cuerpo(solicitud))
+                if resto == "ligero/confirmacion":
+                    return self._confirmar_ligero(archivo_id)
                 return self._confirmar_movimientos(archivo_id)
             if (metodo, ruta) == ("GET", rutas.RUTA_CONFIGURACION):
                 return httpx.Response(
@@ -643,6 +654,7 @@ class BackendFalso:
             "fotogramas": filas,
             "estado": "PENDIENTE",
             "contenido": None,
+            "ligero": None,  # {tamanoBytes, sha256, contenido, disponible} once asked for
         }
         clave = f"m{next(self._contador)}"
         self._subidas_movimientos[clave] = archivo_id
@@ -676,36 +688,100 @@ class BackendFalso:
             },
         )
 
-    def _solicitar_puntos(self, evento_id: str) -> httpx.Response:
+    def _solicitar_ligero(self, archivo_id: str, cuerpo: dict[str, Any]) -> httpx.Response:
+        if self.sin_ligeros:
+            return httpx.Response(404, json={"status": 404, "title": "Not Found"})
+        archivo = self.movimientos.get(archivo_id)
+        if archivo is None:
+            return _problema(404, "ARCHIVO_NO_ENCONTRADO", "No existe")
+        if (rechazo := self._sin_nube()) is not None:
+            return rechazo
+        try:
+            tamano, sha = int(cuerpo["tamanoBytes"]), str(cuerpo["sha256"])
+        except (KeyError, TypeError, ValueError):
+            return _problema(400, "VALIDACION", "Cuerpo inválido")
+        if tamano <= 0 or len(sha) != 64:
+            return _problema(400, "VALIDACION", "Tamaño o SHA-256 inválido")
+        ligero = archivo["ligero"]
+        if ligero is not None and ligero["disponible"]:
+            return _problema(409, "ARCHIVO_YA_SUBIDO", "Ya subido", archivoId=archivo_id)
+        archivo["ligero"] = {
+            "tamanoBytes": tamano,
+            "sha256": sha,
+            "contenido": None if ligero is None else ligero["contenido"],
+            "disponible": False,
+        }
+        clave = f"l{next(self._contador)}"
+        self._subidas_movimientos[clave] = archivo_id
+        return httpx.Response(
+            201,
+            json={
+                "urlSubida": f"https://{HOST_ALMACEN}/movimientos/{clave}.ttmov?firma=secreta",
+                "cabeceras": {"Content-Type": "application/gzip"},
+                "expiraEn": iso_utc(self.reloj() + timedelta(minutes=10)),
+            },
+        )
+
+    def _confirmar_ligero(self, archivo_id: str) -> httpx.Response:
+        if self.sin_ligeros:
+            return httpx.Response(404, json={"status": 404, "title": "Not Found"})
+        archivo = self.movimientos.get(archivo_id)
+        if archivo is None or archivo["ligero"] is None:
+            return _problema(404, "ARCHIVO_NO_ENCONTRADO", "No existe")
+        rechazo = self._sin_nube()
+        if rechazo is not None and rechazo.json()["codigo"] == "SIN_CONSENTIMIENTO_DE_MOVIMIENTOS":
+            archivo["ligero"] = None  # revoked meanwhile: the API deletes the object
+            return rechazo
+        if archivo["ligero"]["contenido"] is None:
+            return _problema(409, "ARCHIVO_NO_SUBIDO", "El almacenamiento no lo tiene")
+        archivo["ligero"]["disponible"] = True
+        return httpx.Response(
+            200, json={"archivoId": archivo_id, "tamanoBytes": archivo["ligero"]["tamanoBytes"]}
+        )
+
+    def _solicitar_puntos(self, evento_id: str, ligero: bool = False) -> httpx.Response:
+        if ligero and self.sin_ligeros:
+            return httpx.Response(404, json={"status": 404, "title": "Not Found"})
         if evento_id not in self.eventos:
             return _problema(404, "EVENTO_NO_ENCONTRADO", "Evento no encontrado")
         if not self.consentimiento_vigente or self.motivo == MotivoCaptura.SIN_CONSENTIMIENTO:
             return _problema(409, "SIN_CONSENTIMIENTO_DE_MOVIMIENTOS", "Sin consentimiento")
-        clave = f"p{next(self._contador)}"
+        clave = f"{'q' if ligero else 'p'}{next(self._contador)}"
         self._subidas_puntos[clave] = evento_id
+        extension, tipo = (
+            ("ttmov", "application/gzip")
+            if ligero
+            else ("parquet", "application/vnd.apache.parquet")
+        )
         return httpx.Response(
             201,
             json={
-                "urlSubida": f"https://{HOST_ALMACEN}/puntos/{clave}.parquet?firma=secreta",
-                "cabeceras": {"Content-Type": "application/vnd.apache.parquet"},
+                "urlSubida": f"https://{HOST_ALMACEN}/puntos/{clave}.{extension}?firma=secreta",
+                "cabeceras": {"Content-Type": tipo},
                 "expiraEn": iso_utc(self.reloj() + timedelta(minutes=15)),
             },
         )
 
     def _subir(self, solicitud: httpx.Request) -> httpx.Response:
         if solicitud.url.path.startswith("/movimientos/"):
-            clave = solicitud.url.path.removeprefix("/movimientos/").removesuffix(".parquet")
+            nombre = solicitud.url.path.removeprefix("/movimientos/")
+            clave = nombre.removesuffix(".parquet").removesuffix(".ttmov")
             if solicitud.method != "PUT" or clave not in self._subidas_movimientos:
                 return httpx.Response(403)
             archivo = self.movimientos.get(self._subidas_movimientos.pop(clave))
-            if archivo is not None:
+            if archivo is not None and nombre.endswith(".ttmov"):
+                if archivo["ligero"] is not None:
+                    archivo["ligero"]["contenido"] = solicitud.read()
+            elif archivo is not None:
                 archivo["contenido"] = solicitud.read()
             return httpx.Response(200)
         if solicitud.url.path.startswith("/puntos/"):
-            clave = solicitud.url.path.removeprefix("/puntos/").removesuffix(".parquet")
+            nombre = solicitud.url.path.removeprefix("/puntos/")
+            clave = nombre.removesuffix(".parquet").removesuffix(".ttmov")
             if solicitud.method != "PUT" or clave not in self._subidas_puntos:
                 return httpx.Response(403)
-            self.puntos_clips[self._subidas_puntos.pop(clave)] = solicitud.read()
+            destino = self.puntos_clips_ligeros if nombre.endswith(".ttmov") else self.puntos_clips
+            destino[self._subidas_puntos.pop(clave)] = solicitud.read()
             return httpx.Response(200)
         clave = solicitud.url.path.removeprefix("/clips/").removesuffix(".mp4")
         if solicitud.method != "PUT" or clave not in self._subidas:
