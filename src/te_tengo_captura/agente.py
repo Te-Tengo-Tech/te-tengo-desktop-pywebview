@@ -1,5 +1,9 @@
-"""An installation's agent (one camera configured by the project team): builds the components,
-runs their threads and derives the state.
+"""One camera's agent: builds the components, runs their threads and derives the state.
+
+The same agent runs an installation's camera (configured by the project team in ``config.toml``)
+and each camera in use of a linked PC (``camaras.SupervisorCamaras``, US-29): its own heartbeat,
+outbox, capture loop with its own MediaPipe landmarker (monotonic timestamps per stream), clips,
+live view and control channel, with the camera's own token.
 
 Threads (AGENTS.md): pywebview owns the main thread; the capture loop (with MediaPipe), the
 heartbeat, the outbox sender, the live view publisher and its control channel each run in a
@@ -11,6 +15,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
 from functools import partial
 from pathlib import Path
@@ -22,7 +27,7 @@ from te_tengo_captura.captura.en_vivo import TransmisionEnVivo
 from te_tengo_captura.captura.fuentes import Captador, FuenteVideo, Imagen
 from te_tengo_captura.captura.pose import Estimador
 from te_tengo_captura.captura.vista_previa import VistaPreviaLocal
-from te_tengo_captura.config import Configuracion
+from te_tengo_captura.config import Configuracion, VistaEnVivo
 from te_tengo_captura.envios.cola import ColaEnvios, EnviadorPendientes
 from te_tengo_captura.estado import (
     CamaraEntradas,
@@ -36,15 +41,39 @@ from te_tengo_captura.estado import (
 from te_tengo_captura.latido import HiloLatido, Latido, Salud
 from te_tengo_captura.sistema import nombre_pc, sistema_operativo
 from te_tengo_captura.umbrales_remotos import ActualizadorUmbrales
+from te_tengo_deteccion.clasificacion.umbrales import Umbrales
 from te_tengo_deteccion.clips.codificar import codificar_mp4
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True)
+class AjustesCamara:
+    """What one camera's agent needs to know about itself."""
+
+    api_url: str
+    nombre_habitacion: str  # until the backend says otherwise (the app renames it)
+    nombre_webcam: str
+    clasificacion: Umbrales
+    vista_en_vivo: VistaEnVivo
+    dispositivo_id: str | None = None  # a linked PC's webcam (OS unique id)
+    elegida_desde: str | None = None  # "app" or "pc" (CA-29.10)
+
+
+def ajustes_de_instalacion(config: Configuracion) -> AjustesCamara:
+    return AjustesCamara(
+        api_url=config.api_url,
+        nombre_habitacion=config.camara.nombre_habitacion,
+        nombre_webcam=config.webcam.nombre,
+        clasificacion=config.clasificacion,
+        vista_en_vivo=config.vista_en_vivo,
+    )
+
+
 class Agente:
     def __init__(
         self,
-        config: Configuracion,
+        config: Configuracion | AjustesCamara,
         cliente: ClienteBackend,
         fuente: FuenteVideo,
         estimador: Estimador,
@@ -61,7 +90,8 @@ class Agente:
         defaults to ``codificar_mp4`` with its temporary file in the outbox's clip directory.
         ``al_desvincular`` hears that the installation's PC was removed from the household in the
         app (``401 PC_DESVINCULADA`` or ``{"desvincular":true}``, US-31); capture stops at once."""
-        self.config = config
+        ajustes = ajustes_de_instalacion(config) if isinstance(config, Configuracion) else config
+        self.ajustes = ajustes
         self.version = version
         self._cliente = cliente
         self._reloj_utc = reloj_utc
@@ -80,15 +110,15 @@ class Agente:
         )
         self.en_vivo = TransmisionEnVivo(
             permitida=self._permitida,
-            fps=config.vista_en_vivo.fps,
-            marca_tiempo=config.vista_en_vivo.marca_tiempo,
+            fps=ajustes.vista_en_vivo.fps,
+            marca_tiempo=ajustes.vista_en_vivo.marca_tiempo,
         )
         self.vista_previa = VistaPreviaLocal()
         self.captador = Captador(fuente, al_leer=self._al_leer)
         self.bucle = BucleCaptura(
             self.captador,
             estimador,
-            config.clasificacion,
+            ajustes.clasificacion,
             self.cola,
             permitida=self._permitida,
             al_encolar=self._al_encolar,
@@ -98,23 +128,27 @@ class Agente:
         )
         self._canal = (
             CanalTransmision(
-                cliente, config.api_url, self.en_vivo, al_desvincular=self._desvinculada
+                cliente, ajustes.api_url, self.en_vivo, al_desvincular=self._desvinculada
             )
             if vista_en_vivo
             else None
         )
         self._enviador = EnviadorPendientes(self.cola, cliente)
         self.umbrales = ActualizadorUmbrales(
-            cliente, config.clasificacion, self.bucle.actualizar_umbrales, version
+            cliente, ajustes.clasificacion, self.bucle.actualizar_umbrales, version
         )
         self._hilo_captura = HiloCaptura(self.bucle)
         self._hilo_latido = HiloLatido(self.latido)
-        self._hogar = Hogar(config.vivienda.nombre_adulto_mayor, config.vivienda.direccion)
+        instalacion = config if isinstance(config, Configuracion) else None
+        self._hogar = Hogar(
+            instalacion.vivienda.nombre_adulto_mayor if instalacion else "",
+            instalacion.vivienda.direccion if instalacion else "",
+        )
         self._pc = DatosPc(
             nombre=nombre_pc(),
             sistema=sistema_operativo(),
             programa=f"Te Tengo Captura {version}",
-            instalada_el=config.instalada_el.strftime("%d/%m/%Y"),
+            instalada_el=instalacion.instalada_el.strftime("%d/%m/%Y") if instalacion else None,
         )
         self._detenido = threading.Event()
 
@@ -148,28 +182,35 @@ class Agente:
 
     # ------------------------------------------------------------------ state
 
-    def estado(self) -> EstadoAgente:
+    def camara(self) -> CamaraEntradas:
+        """This camera as the window's state sees it (one row of «Estado»)."""
         latido = self.latido
-        nombre = (
-            latido.estado.nombre_habitacion
-            if latido.estado is not None and latido.estado.nombre_habitacion
-            else self.config.camara.nombre_habitacion
-        )
-        clave = self.clave_camara
-        camara = CamaraEntradas(
-            clave=clave,
-            nombre_habitacion=nombre,
-            dispositivo=self.config.webcam.nombre,
+        return CamaraEntradas(
+            clave=self.clave_camara,
+            nombre_habitacion=self.nombre_habitacion,
+            dispositivo=self.ajustes.nombre_webcam,
             webcam_conectada=self.bucle.webcam_conectada,
             pausada_hasta=latido.pausada_hasta(),
             en_vivo_desde=self.en_vivo.solicitada_desde,
+            elegida_desde=self.ajustes.elegida_desde,
         )
+
+    @property
+    def nombre_habitacion(self) -> str:
+        estado = self.latido.estado
+        if estado is not None and estado.nombre_habitacion:
+            return estado.nombre_habitacion
+        return self.ajustes.nombre_habitacion
+
+    def estado(self) -> EstadoAgente:
+        latido = self.latido
+        camara = self.camara()
         webcam = Webcam(
-            clave=clave,
-            nombre=self.config.webcam.nombre,
-            dispositivo_id=None,
-            nombre_habitacion=nombre,
-            conectada=self.bucle.webcam_conectada,
+            clave=camara.clave,
+            nombre=self.ajustes.nombre_webcam,
+            dispositivo_id=self.ajustes.dispositivo_id,
+            nombre_habitacion=camara.nombre_habitacion,
+            conectada=camara.webcam_conectada,
         )
         entradas = Entradas(
             camaras=(camara,),
@@ -183,8 +224,7 @@ class Agente:
     @property
     def clave_camara(self) -> str:
         """The camera's id once registered (``instalacion`` before): the window's key for it."""
-        registro = self._cliente.registro
-        return registro.camara_id if registro is not None else "instalacion"
+        return self._cliente.camara_id or "instalacion"
 
     # ------------------------------------------------------------------ bridge actions
 
@@ -211,6 +251,16 @@ class Agente:
 
     # ------------------------------------------------------------------ internals
 
+    def bloquear(self) -> None:
+        """Never capture again (the camera left its room or the PC left the household)."""
+        self._bloqueada = True
+        self._hilo_captura.despertar()
+
+    def renombrar(self, nombre_habitacion: str) -> None:
+        """The owner renamed the room or moved the camera (the heartbeat confirms it)."""
+        if nombre_habitacion != self.ajustes.nombre_habitacion:
+            self.ajustes = replace(self.ajustes, nombre_habitacion=nombre_habitacion)
+
     def _permitida(self) -> bool:
         return not self._bloqueada and self.latido.captura_permitida()
 
@@ -220,7 +270,7 @@ class Agente:
             return
         self._bloqueada = True
         self._hilo_captura.despertar()
-        logger.warning("La instalación se quitó de la vivienda (%s): se detiene la captura", motivo)
+        logger.warning("Esta cámara se quitó (%s): se detiene la captura", motivo)
         if self._al_desvincular is not None:
             self._al_desvincular(motivo)
 

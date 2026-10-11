@@ -5,6 +5,9 @@
   camera in use (CA-30.2).
 * ``DELETE /api/agente/pc``: «Desvincular esta PC» (CA-31.3), with ``datosLocalesBorrados`` when
   the person also deleted the data saved on the PC (CA-31.6).
+* The PC's webcams (US-29): ``PUT …/camaras/inventario`` (the whole list it detects),
+  ``GET …/camaras`` (after reconnecting), ``POST …/camaras/tokens`` (new per-camera tokens),
+  ``GET /api/agente/ambientes`` and, for «Elegir aquí» (CA-29.8), ``PUT``/``DELETE …/camaras``.
 
 A ``401 SESION_EXPIRADA`` renews the session once and retries; a ``401 PC_DESVINCULADA`` tells
 the session the PC left the household. Tokens are never logged.
@@ -22,16 +25,29 @@ from te_tengo_captura.backend.cliente import (
     leer_modelo,
 )
 from te_tengo_captura.backend.errores import (
+    ErrorBackendError,
     NoAutorizadoError,
     PcDesvinculadaError,
     SinConexionError,
 )
-from te_tengo_captura.backend.modelos import PcDelAgente, SenalPc
+from te_tengo_captura.backend.modelos import (
+    Ambiente,
+    AsignacionCamara,
+    CamaraDeLaPc,
+    Inventario,
+    PcDelAgente,
+    SenalPc,
+    WebcamInventario,
+)
 
 logger = logging.getLogger(__name__)
 
 RUTA_PC = "/api/agente/pc"
 RUTA_SENAL_PC = "/api/agente/pc/senal"
+RUTA_INVENTARIO = "/api/agente/pc/camaras/inventario"
+RUTA_CAMARAS = "/api/agente/pc/camaras"
+RUTA_TOKENS = "/api/agente/pc/camaras/tokens"
+RUTA_AMBIENTES = "/api/agente/ambientes"
 
 
 class Sesion(Protocol):
@@ -65,6 +81,31 @@ class ClientePc:
     def desvincular(self, datos_locales_borrados: bool) -> None:
         parametros = {"datosLocalesBorrados": "true"} if datos_locales_borrados else None
         self.autenticado("DELETE", RUTA_PC, params=parametros)
+
+    def inventario(self, webcams: list[WebcamInventario]) -> list[CamaraDeLaPc]:
+        cuerpo = Inventario(webcams=webcams).json_api()
+        return _camaras(self.autenticado("PUT", RUTA_INVENTARIO, json=cuerpo))
+
+    def camaras(self) -> list[CamaraDeLaPc]:
+        return _camaras(self.autenticado("GET", RUTA_CAMARAS))
+
+    def tokens_de_camaras(self) -> list[CamaraDeLaPc]:
+        return _camaras(self.autenticado("POST", RUTA_TOKENS))
+
+    def ambientes(self) -> list[Ambiente]:
+        respuesta = self.autenticado("GET", RUTA_AMBIENTES)
+        try:
+            return [Ambiente.model_validate(a) for a in respuesta.json()]
+        except (ValueError, TypeError) as error:
+            raise ErrorBackendError(f"Respuesta inesperada de los ambientes: {error}") from None
+
+    def asignar(self, asignacion: AsignacionCamara) -> CamaraDeLaPc:
+        """«Usar esta cámara» from the PC (an upsert by ``dispositivoId``)."""
+        respuesta = self.autenticado("PUT", RUTA_CAMARAS, json=asignacion.json_api())
+        return leer_modelo(CamaraDeLaPc, respuesta)
+
+    def dejar_de_usar(self, camara_id: str) -> None:
+        self.autenticado("DELETE", f"{RUTA_CAMARAS}/{camara_id}")
 
     def cerrar(self) -> None:
         self._http.close()
@@ -108,3 +149,10 @@ class ClientePc:
                 self._sesion.desvincular("PC_DESVINCULADA")
             raise fallo
         return respuesta
+
+
+def _camaras(respuesta: httpx.Response) -> list[CamaraDeLaPc]:
+    try:
+        return [CamaraDeLaPc.model_validate(c) for c in respuesta.json()]
+    except (ValueError, TypeError) as error:
+        raise ErrorBackendError(f"Respuesta inesperada de las cámaras: {error}") from None

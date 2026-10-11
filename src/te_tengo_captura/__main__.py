@@ -8,8 +8,10 @@ from pathlib import Path
 
 from te_tengo_captura import __version__, autoinicio, config, registro, rutas, sin_interfaz
 from te_tengo_captura.agente import Agente
+from te_tengo_captura.agente_pc import FabricaCamaras
 from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.falso import URL_API, BackendFalso
+from te_tengo_captura.captura.dispositivos import FuenteWebcamPorId
 from te_tengo_captura.captura.fuentes import FuenteArchivo, FuenteVideo, FuenteWebcam
 from te_tengo_captura.captura.pose import EstimadorMediaPipe, ruta_modelo_predeterminada
 from te_tengo_captura.coordinador import Coordinador
@@ -135,6 +137,26 @@ def construir(
         api_url = instalacion.api_url
     else:
         api_url = args.api_url or configuracion.api_url
+
+    def crear_estimador() -> EstimadorMediaPipe:
+        # One landmarker per camera: VIDEO mode keeps per-stream tracking state (ADR 0006).
+        return EstimadorMediaPipe(modelo)
+
+    ajustes = configuracion if isinstance(configuracion, config.AjustesPc) else config.AjustesPc()
+    video = args.video
+
+    def abrir_fuente(dispositivo_id: str) -> FuenteVideo:
+        if video is not None:  # demos and end-to-end tests: every camera in use plays the file
+            return FuenteArchivo(video, repetir=True, tiempo_real=True)
+        return FuenteWebcamPorId(dispositivo_id)
+
+    camaras = FabricaCamaras(
+        ajustes=ajustes,
+        crear_estimador=crear_estimador,
+        abrir_fuente=abrir_fuente,
+        transporte=falso.transporte() if falso is not None else None,
+        canal=falso is None,
+    )
     return Coordinador(
         __version__,
         URL_API if falso is not None else api_url,
@@ -145,6 +167,7 @@ def construir(
         olvidar_instalacion=olvidar,
         transporte=falso.transporte() if falso is not None else None,
         canal_pc=falso is None,
+        fabrica=camaras,
     )
 
 

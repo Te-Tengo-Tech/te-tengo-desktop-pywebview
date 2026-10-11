@@ -82,6 +82,13 @@ class BackendFalso:
     pc_quitada: bool = False  # removed from the app (or unlinked): PC_DESVINCULADA
     instalacion_quitada: bool = False  # the installation's PC was removed from the app
 
+    # The PC's webcams (US-29): camaraId → {dispositivoId, nombreDispositivo, ambiente, conectada}.
+    webcams_pc: dict[str, dict[str, Any]] = field(default_factory=dict)
+    ambientes: dict[str, str] = field(default_factory=dict)  # ambienteId → name
+    otra_pc_ambientes: dict[str, str] = field(default_factory=dict)  # name → other PC's name
+    inventarios: list[list[dict[str, Any]]] = field(default_factory=list)
+    _tokens_camara: dict[str, str] = field(default_factory=dict)  # token → camaraId
+    _retirados: set[str] = field(default_factory=set)
     _codigos: dict[str, dict[str, Any]] = field(default_factory=dict)  # device_code → request
     _refresh: str | None = None  # the refresh token in force
     _refresh_usados: set[str] = field(default_factory=set)
@@ -152,6 +159,153 @@ class BackendFalso:
         with self._candado:
             self.instalacion_quitada = True
 
+    def asignar_desde_app(self, dispositivo_id: str, habitacion: str) -> str:
+        """The owner chooses a room for a webcam in the app (CA-29.2); returns its camaraId."""
+        with self._candado:
+            camara_id = self._camara_de(dispositivo_id)
+            self.webcams_pc[camara_id]["ambiente"] = self._ambiente(habitacion)
+            return camara_id
+
+    def dejar_de_usar_desde_app(self, camara_id: str) -> None:
+        """«Dejar de usar» in the app: its tokens answer ``401 PC_DESVINCULADA`` at once."""
+        with self._candado:
+            self._retirar(camara_id)
+
+    def _retirar(self, camara_id: str) -> None:
+        self.webcams_pc[camara_id]["ambiente"] = None
+        for token, cid in list(self._tokens_camara.items()):
+            if cid == camara_id:
+                self._retirados.add(token)
+                self._tokens.discard(token)
+                del self._tokens_camara[token]
+
+    def _camara_de(self, dispositivo_id: str, nombre: str | None = None) -> str:
+        for camara_id, webcam in self.webcams_pc.items():
+            if webcam["dispositivoId"] == dispositivo_id:
+                if nombre:
+                    webcam["nombreDispositivo"] = nombre
+                return camara_id
+        camara_id = f"camara-pc-{next(self._contador)}"
+        self.webcams_pc[camara_id] = {
+            "dispositivoId": dispositivo_id,
+            "nombreDispositivo": nombre or dispositivo_id,
+            "ambiente": None,
+            "conectada": True,
+        }
+        return camara_id
+
+    def _ambiente(self, nombre: str) -> str:
+        for ambiente_id, existente in self.ambientes.items():
+            if existente.lower() == nombre.lower():
+                return ambiente_id
+        ambiente_id = f"ambiente-{next(self._contador)}"
+        self.ambientes[ambiente_id] = nombre
+        return ambiente_id
+
+    def _camara_json(self, camara_id: str, con_token: bool) -> dict[str, Any]:
+        webcam = self.webcams_pc[camara_id]
+        ambiente = webcam["ambiente"]
+        token = None
+        if ambiente is not None and con_token:
+            token = f"token-camara-{next(self._contador)}"
+            self._tokens.add(token)
+            self._tokens_camara[token] = camara_id
+        return {
+            "camaraId": camara_id,
+            "dispositivoId": webcam["dispositivoId"],
+            "nombreDispositivo": webcam["nombreDispositivo"],
+            "enUso": ambiente is not None,
+            "conectada": webcam["conectada"],
+            "ambienteId": ambiente,
+            "nombreHabitacion": self.ambientes.get(ambiente) if ambiente else None,
+            "estadoConexion": "EN_LINEA" if ambiente else None,
+            "pausadaHasta": None,
+            "token": token,
+            "expiraEn": iso_utc(self.reloj() + timedelta(hours=1)) if token else None,
+        }
+
+    def _camaras_pc(self, solicitud: httpx.Request, metodo: str, ruta: str) -> httpx.Response:
+        if (metodo, ruta) == ("PUT", rutas_pc.RUTA_INVENTARIO):
+            webcams = _cuerpo(solicitud).get("webcams", [])
+            self.inventarios.append(webcams)
+            presentes = {w["dispositivoId"] for w in webcams}
+            for w in webcams:
+                self._camara_de(w["dispositivoId"], w.get("nombreDispositivo"))
+            for webcam in self.webcams_pc.values():
+                webcam["conectada"] = webcam["dispositivoId"] in presentes
+            return httpx.Response(200, json=[self._camara_json(c, True) for c in self.webcams_pc])
+        if (metodo, ruta) in (("GET", rutas_pc.RUTA_CAMARAS), ("POST", rutas_pc.RUTA_TOKENS)):
+            camaras = [
+                c
+                for c in self.webcams_pc
+                if ruta == rutas_pc.RUTA_CAMARAS or self.webcams_pc[c]["ambiente"]
+            ]
+            return httpx.Response(200, json=[self._camara_json(c, True) for c in camaras])
+        if (metodo, ruta) == ("GET", rutas_pc.RUTA_AMBIENTES):
+            usados = {w["ambiente"]: c for c, w in self.webcams_pc.items() if w["ambiente"]}
+            ambientes = [
+                {
+                    "id": a,
+                    "nombre": n,
+                    "camaras": [{"id": usados[a], "pcId": self.pc_id, "pcNombre": self.nombre_pc}]
+                    if a in usados
+                    else [],
+                }
+                for a, n in self.ambientes.items()
+            ]
+            for n, pc in self.otra_pc_ambientes.items():
+                ambientes.append(
+                    {
+                        "id": f"otra-{n}",
+                        "nombre": n,
+                        "camaras": [{"id": "x", "pcId": "otra", "pcNombre": pc}],
+                    }
+                )
+            return httpx.Response(200, json=ambientes)
+        if (metodo, ruta) == ("PUT", rutas_pc.RUTA_CAMARAS):
+            cuerpo = _cuerpo(solicitud)
+            nombre = (cuerpo.get("nombreAmbiente") or "").strip()
+            ambiente_id = cuerpo.get("ambienteId")
+            if ambiente_id is None and not nombre:
+                return _problema(422, "AMBIENTE_NOMBRE_VACIO", "Escribe el nombre del ambiente.")
+            if nombre.lower() in ("baño", "bano", "wc", "ss.hh."):
+                return _problema(422, "AMBIENTE_NO_PERMITIDO", "No se admiten cámaras en el baño")
+            for otro, pc in self.otra_pc_ambientes.items():
+                if otro.lower() == nombre.lower() or ambiente_id == f"otra-{otro}":
+                    problema = _problema(409, "AMBIENTE_OCUPADO", "Ambiente ocupado")
+                    datos = json.loads(problema.content)
+                    datos.update(
+                        {"ambiente": otro, "camara": {"id": "x", "pcId": "otra", "pcNombre": pc}}
+                    )
+                    return httpx.Response(409, json=datos)
+            destino = ambiente_id or self._ambiente(nombre)
+            camara_id = self._camara_de(cuerpo["dispositivoId"], cuerpo.get("nombreDispositivo"))
+            for otro_id, webcam in self.webcams_pc.items():
+                if otro_id != camara_id and webcam["ambiente"] == destino:
+                    problema = json.loads(
+                        _problema(409, "AMBIENTE_OCUPADO", "Ambiente ocupado").content
+                    )
+                    problema.update(
+                        {
+                            "ambiente": self.ambientes[destino],
+                            "camara": {
+                                "id": otro_id,
+                                "pcId": self.pc_id,
+                                "pcNombre": self.nombre_pc,
+                            },
+                        }
+                    )
+                    return httpx.Response(409, json=problema)
+            self.webcams_pc[camara_id]["ambiente"] = destino
+            return httpx.Response(200, json=self._camara_json(camara_id, True))
+        if metodo == "DELETE" and ruta.startswith(rutas_pc.RUTA_CAMARAS + "/"):
+            camara_id = ruta.removeprefix(rutas_pc.RUTA_CAMARAS + "/")
+            if camara_id not in self.webcams_pc:
+                return _problema(404, "CAMARA_NO_ENCONTRADA", "Cámara no encontrada")
+            self._retirar(camara_id)
+            return httpx.Response(204)
+        return _problema(404, "RUTA_NO_ENCONTRADA", f"{metodo} {ruta}")
+
     def _decidir(self, estado: str) -> None:
         with self._candado:
             for solicitud in self._codigos.values():
@@ -180,7 +334,7 @@ class BackendFalso:
                 rutas_oauth.RUTA_REVOCACION,
             ):
                 return self._oauth(ruta, _formulario(solicitud))
-            if ruta.startswith(rutas_pc.RUTA_PC):
+            if ruta.startswith(rutas_pc.RUTA_PC) or ruta == rutas_pc.RUTA_AMBIENTES:
                 return self._pc(solicitud, metodo, ruta)
             if (metodo, ruta) == ("POST", rutas.RUTA_REGISTRO):
                 if self.instalacion_quitada:
@@ -188,6 +342,9 @@ class BackendFalso:
                 return self._registrar(_cuerpo(solicitud))
             if self.instalacion_quitada:
                 return _problema(401, "PC_DESVINCULADA", "Esta PC se quitó de la vivienda")
+            token = solicitud.headers.get("Authorization", "").removeprefix("Bearer ")
+            if token in self._retirados or (self.pc_quitada and token in self._tokens_camara):
+                return _problema(401, "PC_DESVINCULADA", "La cámara ya no está en uso")
             if not self._autorizado(solicitud):
                 return _problema(401, "TOKEN_INVALIDO", "Token inválido o vencido")
             if (metodo, ruta) == ("GET", rutas.RUTA_ESTADO):
@@ -318,7 +475,7 @@ class BackendFalso:
             )
             self._quitar_pc()
             return httpx.Response(204)
-        return _problema(404, "RUTA_NO_ENCONTRADA", f"{metodo} {ruta}")
+        return self._camaras_pc(solicitud, metodo, ruta)
 
     def _pc_del_agente(self) -> dict[str, Any]:
         return {

@@ -9,8 +9,8 @@ desktop prototype (docs repo ``05-prototipos/app-escritorio/.impeccable/src/core
   no internet › no consent › a camera paused › someone watching live › all good;
 * each camera's row (``camStatus``): disconnected › no consent › paused › live › no internet ›
   online;
-* the tray dot (``trayState``): not linked › cameras not chosen › a camera lost › offline › no
-  consent › live › paused › all good.
+* the tray dot (``trayState``): someone previews a webcam to choose it › not linked › cameras not
+  chosen › a camera lost › offline › no consent › live › paused › all good.
 
 All the Spanish copy that depends on the state lives here, copied verbatim from ``core.js``
 (UI term «habitación»); where the prototype has no sentence for a case the agent can reach
@@ -54,6 +54,7 @@ class CamaraEntradas:
     pausada_hasta: datetime | None = None
     en_vivo_desde: datetime | None = None  # someone watches the live view (US-23)
     elegida_desde: str | None = None  # "app", "pc" or None (an installation)
+    fps: float | None = None  # the real rate of analysed frames (several cameras per PC)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +70,7 @@ class Webcam:
     nueva: bool = False
     elegida_desde: str | None = None
     vista_previa: bool = True  # the local preview can be shown
+    mirando: bool = False  # a family member previews it from the app to choose it (CA-29.7)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +131,8 @@ class FilaCamara:
     habitacion: str
     dispositivo: str
     estado: EstadoCamara
+    fps: float | None = None
+    elegida_desde: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,6 +204,8 @@ class EstadoAgente:
                     "st": asdict(f.estado),
                     "pause": self.pausas.get(f.clave),
                     "live": self.en_vivo.get(f.clave),
+                    "fps": round(f.fps, 1) if f.fps is not None else None,
+                    "by": f.elegida_desde,
                 }
                 for f in self.filas
             ],
@@ -226,6 +232,7 @@ def _webcam_json(w: Webcam) -> dict[str, Any]:
         "new": w.nueva,
         "by": w.elegida_desde,
         "preview": w.vista_previa,
+        "peek": w.mirando,
     }
 
 
@@ -421,6 +428,8 @@ def _estado_camara(c: CamaraEntradas, e: Entradas, pausa: str | None) -> EstadoC
 
 def _bandeja(s: Situacion, e: Entradas, pausas: dict[str, str]) -> EstadoBandeja:
     camaras = e.camaras
+    if any(w.mirando for w in e.webcams):
+        return EstadoBandeja("live", f"{QUIEN_MIRA} mira una cámara para elegirla")
     if s in (Situacion.SIN_CAMARAS, Situacion.FALTA_ELEGIR):
         return EstadoBandeja("warn", "falta elegir las cámaras en la app")
     if s is Situacion.WEBCAM_DESCONECTADA:
@@ -455,7 +464,12 @@ def derivar(
     }
     filas = tuple(
         FilaCamara(
-            c.clave, c.nombre_habitacion, c.dispositivo, _estado_camara(c, e, pausas.get(c.clave))
+            c.clave,
+            c.nombre_habitacion,
+            c.dispositivo,
+            _estado_camara(c, e, pausas.get(c.clave)),
+            c.fps,
+            c.elegida_desde,
         )
         for c in e.camaras
     )

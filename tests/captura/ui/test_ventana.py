@@ -112,6 +112,15 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         def desvincular(self, borrar: bool) -> dict[str, bool]:
             return {"ok": False}
 
+        def ambientes(self) -> list[dict[str, object]]:
+            return []
+
+        def usar_aqui(self, d: str, a: str | None, n: str | None) -> dict[str, object]:
+            return {"ok": False}
+
+        def dejar_de_usar(self, c: str) -> dict[str, object]:
+            return {"ok": False}
+
     agente = AgenteFalso()
     pasos = [arranque.Paso(22, 0, lambda: True), arranque.Paso(100, 2, lambda: True)]
     monkeypatch.setattr(arranque, "pasos", lambda _: pasos)
