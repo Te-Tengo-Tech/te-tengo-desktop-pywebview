@@ -103,14 +103,27 @@ def test_sube_el_archivo_y_lo_conserva_en_la_pc(
 def test_un_archivo_solo_para_la_nube_se_borra_al_subirlo(
     cola: ColaEnvios, cliente: ClienteBackend, backend: BackendFalso, almacen: AlmacenLocal
 ) -> None:
+    """Decided on 2026-10-11: with «Movimientos» off on the PC, a cloud retention chosen with the
+    consent in force still uploads every file, so the family can replay it on the phone; the
+    file is written only for the upload and deleted once the cloud has it."""
     almacen.cambiar(movimientos=False)
+    assert not almacen.guarda(TipoArchivo.MOVIMIENTOS)  # nothing is kept on the PC
+    assert almacen.sube_movimientos
     assert almacen.escribe_tramos  # still written: the cloud is on
     guardar_movimientos(almacen, AHORA)
     [ruta] = archivos(almacen)
-    cola.enviar(cliente)
-    assert len(backend.movimientos) == 1
+    resumen = cola.enviar(cliente)
+    assert resumen.movimientos_subidos == 1
+    [subido] = backend.movimientos.values()
+    assert subido["estado"] == "DISPONIBLE"
+    assert len(leer_parquet(subido["contenido"])[1]) == 40
     assert not ruta.exists()
     assert archivos(almacen) == []
+
+    # Without the cloud either, nothing is written at all.
+    backend.movimientos_en_la_nube_dias = None
+    almacen.revisar_permiso()
+    assert not almacen.escribe_tramos
 
 
 def test_va_despues_de_los_eventos(

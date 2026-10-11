@@ -22,6 +22,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ### Changed
 - **Replays watched on the PC reach the family (CA-39.3):** closing «Ver qué pasó» after playing or scrubbing also sends `REPETICION_VISTA` to `POST /api/agente/pc/actividad` with the camera, the moment replayed and the seconds watched, so the app shows it in «Actividad» and in the access log. Installations keep it on the PC.
+- Cloud movements with «Movimientos» off on the PC: confirmed by the project owner (docs/BLOCKERS.md); the test now also checks that nothing is kept on the PC and that nothing is written without a cloud retention.
 - An installation removed from the app («PC de la casa») stops capturing, deletes `credencial_instalacion` from `config.toml` and shows the link code (contract: "deletes its credentials").
 
 ### Changed
