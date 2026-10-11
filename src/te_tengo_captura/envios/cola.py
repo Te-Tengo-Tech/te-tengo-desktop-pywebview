@@ -26,8 +26,11 @@ Events are written here first and sent afterwards, so none is lost (AGENTS.md). 
   still sent without the clip).
 * **Privacy:** the clip file is deleted after a successful upload or when it is discarded, and
   clip files the database does not know are deleted at startup. A clip's landmarks
-  (``<eventoId>.puntos.parquet``) follow the same rules; without the movement consent they are
-  never made, and a ``409 SIN_CONSENTIMIENTO_DE_MOVIMIENTOS`` discards them.
+  (``<eventoId>.puntos.parquet``, and the same rows in the light replay format the app draws,
+  ``<eventoId>.puntos.ttmov``, uploaded right after it) follow the same rules; without the
+  movement consent they are never made, and a ``409 SIN_CONSENTIMIENTO_DE_MOVIMIENTOS``
+  discards them. An API without the light file's path (``404`` without ``codigo``) gets the
+  Parquet file only.
 """
 
 import json
@@ -41,6 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
+from te_tengo_captura.almacen.ligero import ruta_ligera
 from te_tengo_captura.backend.errores import (
     ErrorBackendError,
     EventoNoEncontradoError,
@@ -118,6 +122,8 @@ class Remitente(Protocol):
     def subir_clip(self, subida: SubidaClip, mp4: bytes) -> None: ...
 
     def solicitar_subida_puntos_clip(self, evento_id: str) -> SubidaClip: ...
+
+    def solicitar_subida_puntos_clip_ligero(self, evento_id: str) -> SubidaClip: ...
 
     def subir_archivo(
         self, url: str, cabeceras: dict[str, str], datos: bytes, que: str
@@ -217,12 +223,16 @@ class ColaEnvios:
                 (evento_id, archivo.name, int(self._reloj())),
             )
 
-    def agregar_puntos_clip(self, evento_id: str, parquet: bytes) -> None:
-        """The landmarks of an alert's clip (US-36), uploaded after the clip."""
+    def agregar_puntos_clip(self, evento_id: str, parquet: bytes, ligero: bytes = b"") -> None:
+        """The landmarks of an alert's clip (US-36), uploaded after the clip: the Parquet file and,
+        next to it, the light file the app draws."""
         archivo = self._directorio_clips / f"{evento_id}.puntos.parquet"
-        temporal = archivo.with_suffix(".tmp")
-        temporal.write_bytes(parquet)
-        temporal.replace(archivo)
+        for contenido, destino in ((ligero, _ligero(archivo)), (parquet, archivo)):
+            if not contenido:
+                continue
+            temporal = destino.with_suffix(".tmp")
+            temporal.write_bytes(contenido)
+            temporal.replace(destino)
         with self._candado:
             self._db.execute(
                 "INSERT OR REPLACE INTO puntos (evento_id, archivo, creado_en) VALUES (?, ?, ?)",
@@ -440,6 +450,7 @@ class ColaEnvios:
             remitente.subir_archivo(
                 subida.url_subida, subida.cabeceras, datos, "los puntos del clip"
             )
+            self._subir_puntos_ligeros(remitente, evento_id, _ligero(ruta))
         except (EventoNoEncontradoError, SinPermisoDeMovimientosError) as error:
             self._descartar_puntos(evento_id, ruta, str(error.codigo))
             return
@@ -451,8 +462,26 @@ class ColaEnvios:
         self._descartar_puntos(evento_id, ruta, None)
         self._exito()
 
+    def _subir_puntos_ligeros(self, remitente: Remitente, evento_id: str, ruta: Path) -> None:
+        """The light file of a clip's landmarks, right after its Parquet file."""
+        try:
+            datos = ruta.read_bytes()
+        except OSError:
+            return  # an older version made none
+        try:
+            subida = remitente.solicitar_subida_puntos_clip_ligero(evento_id)
+        except ErrorBackendError as error:
+            if error.estado == 404 and error.codigo is None:
+                logger.info("El backend no acepta archivos ligeros: solo se sube el Parquet")
+                return
+            raise
+        remitente.subir_archivo(
+            subida.url_subida, subida.cabeceras, datos, "los puntos ligeros del clip"
+        )
+
     def _descartar_puntos(self, evento_id: str, ruta: Path, motivo: str | None) -> None:
         ruta.unlink(missing_ok=True)
+        _ligero(ruta).unlink(missing_ok=True)
         self._db.execute("DELETE FROM puntos WHERE evento_id = ?", (evento_id,))
         if motivo is None:
             logger.info("Puntos del clip del evento %s subidos", evento_id)
@@ -476,14 +505,21 @@ class ColaEnvios:
             espera.fallo()
 
     def _limpiar_huerfanos(self) -> None:
-        conocidos = set(
-            self._db.execute(
-                "SELECT archivo FROM clips UNION SELECT archivo FROM puntos"
-            ).fetchall()
-        )
+        conocidos: set[str] = set()
+        for (archivo,) in self._db.execute(
+            "SELECT archivo FROM clips UNION SELECT archivo FROM puntos"
+        ).fetchall():
+            conocidos.add(archivo)
+            if (ligero := ruta_ligera(archivo)) is not None:
+                conocidos.add(ligero)
         for archivo in self._directorio_clips.iterdir():
-            if (archivo.name,) not in conocidos:
+            if archivo.name not in conocidos:
                 archivo.unlink(missing_ok=True)
+
+
+def _ligero(parquet: Path) -> Path:
+    """``<eventoId>.puntos.parquet`` → ``<eventoId>.puntos.ttmov``."""
+    return parquet.with_name(ruta_ligera(parquet.name) or f"{parquet.name}.ttmov")
 
 
 class EnviadorPendientes:

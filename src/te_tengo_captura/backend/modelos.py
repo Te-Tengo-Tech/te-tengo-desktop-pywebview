@@ -103,6 +103,14 @@ class SolicitudMovimientos(_Cuerpo):
         return iso_utc(instante)
 
 
+class SolicitudLigero(_Cuerpo):
+    """``POST /api/agente/movimientos/{archivoId}/ligero``: the light replay file next to a
+    movement file (US-39)."""
+
+    tamano_bytes: int
+    sha256: str
+
+
 class SubidaMovimientos(_Cuerpo):
     archivo_id: str
     url_subida: str

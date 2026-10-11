@@ -8,7 +8,9 @@
   limit. Defaults follow the prototype: movements on for 90 days, clips on and never deleted,
   continuous video **off** (CA-38.2), a 50 GB limit.
 * **Movements** (``puntos.py``): every analysed frame of a camera, the 33 points quantized with
-  the classifier's θ, P, v, phase and event, one Parquet+zstd file per camera every 5 minutes.
+  the classifier's θ, P, v, phase and event, one Parquet+zstd file per camera every 5 minutes,
+  and next to it the same rows in the light replay format the app draws (``ligero.py``, US-39):
+  written, encrypted, counted, uploaded and deleted together with its Parquet file.
   Only with the movement consent (``GET /api/agente/movimientos/estado``, at start and every 5
   minutes, CA-35.3); when it is revoked nothing more is stored and the window asks whether to
   delete what this PC kept (CA-35.4).
@@ -29,7 +31,8 @@
   local switch is off, uploaded by each camera's outbox (``envios/movimientos.py``) and then
   deleted if they were only kept for the upload.
 * **A clip's landmarks** (US-36): the writer keeps the last rows of each camera; when an alert's
-  clip is ready it hands the rows of its 12 seconds, as Parquet, to the camera's outbox.
+  clip is ready it hands the rows of its 12 seconds, as Parquet and as a light file, to the
+  camera's outbox.
 """
 
 import contextlib
@@ -55,6 +58,7 @@ from te_tengo_captura.almacen.cifrado import (
     cifrar_bytes,
 )
 from te_tengo_captura.almacen.indice import Archivo, IndiceArchivos, TipoArchivo
+from te_tengo_captura.almacen.ligero import escribir_ligero, ruta_ligera
 from te_tengo_captura.almacen.puntos import (
     FilaMovimiento,
     TramoCerrado,
@@ -262,6 +266,18 @@ class AlmacenLocal:
             logger.warning("No se pudo leer %s: %s", archivo.ruta, type(error).__name__)
             return None
 
+    def leer_ligero(self, archivo: Archivo) -> bytes | None:
+        """The decrypted light file next to a movement file (``None`` if there is none)."""
+        relativa = ruta_ligera(archivo.ruta)
+        clave = self.clave()
+        if relativa is None or clave is None or not (self.carpeta / relativa).exists():
+            return None
+        try:
+            return abrir_descifrado(clave, self.carpeta / relativa)
+        except Exception as error:  # damaged, or encrypted with a deleted key
+            logger.warning("No se pudo leer %s: %s", relativa, type(error).__name__)
+            return None
+
     def terminar_subida(self, archivo: Archivo) -> None:
         """The cloud has it (or will never take it): the file stays only if it is kept here."""
         indice = self._indice
@@ -338,7 +354,10 @@ class AlmacenLocal:
         return True
 
     def _borrar_archivo(self, relativa: str) -> None:
+        """Deletes a file, and the light file of a movement file with it."""
         (self.carpeta / relativa).unlink(missing_ok=True)
+        if (ligera := ruta_ligera(relativa)) is not None:
+            (self.carpeta / ligera).unlink(missing_ok=True)
 
     # ------------------------------------------------------------------ settings
 
@@ -598,7 +617,8 @@ class GrabadorCamara:
         self._cola: queue.Queue[tuple[str, Any] | None] = queue.Queue(maxsize=256)
         self._video: _SegmentoVideo | None = None
         self._recientes: deque[FilaMovimiento] = deque(maxlen=FILAS_RECIENTES)
-        self.al_puntos_clip: Callable[[str, bytes], None] | None = None  # the camera's outbox
+        # The camera's outbox: (eventoId, Parquet, light file).
+        self.al_puntos_clip: Callable[[str, bytes, bytes], None] | None = None
         self.descartados = 0
         self._hilo = threading.Thread(
             target=self._correr, name=f"guardar-{camara_id[:8]}", daemon=True
@@ -672,12 +692,21 @@ class GrabadorCamara:
             f"movimientos/{self._camara_id}/{momento:%Y/%m/%d}/{momento:%H%M%S}.parquet{EXTENSION}"
         )
 
+        ligera = ruta_ligera(relativa)
+
         def escribir(destino: Path, clave: bytes) -> int:
-            cifrado = cifrar_bytes(clave, tramo.datos)
-            temporal = destino.with_suffix(".tmp")
-            temporal.write_bytes(cifrado)
-            temporal.replace(destino)
-            return len(cifrado)
+            """The Parquet file and its light file, both encrypted; the index counts both."""
+            tamano = 0
+            for contenido, ruta in ((tramo.ligero, ligera), (tramo.datos, relativa)):
+                if not contenido or ruta is None:
+                    continue
+                final = destino.with_name(Path(ruta).name)
+                cifrado = cifrar_bytes(clave, contenido)
+                temporal = final.with_suffix(".tmp")
+                temporal.write_bytes(cifrado)
+                temporal.replace(final)
+                tamano += len(cifrado)
+            return tamano
 
         archivo_id = self._almacen.guardar(
             TipoArchivo.MOVIMIENTOS,
@@ -686,11 +715,14 @@ class GrabadorCamara:
             tramo.hasta_ms,
             relativa,
             escribir,
-            len(tramo.datos),
+            len(tramo.datos) + len(tramo.ligero),
         )
         if archivo_id is not None:
             logger.info(
-                "Movimientos guardados: %d filas, %d bytes", tramo.n_filas, len(tramo.datos)
+                "Movimientos guardados: %d filas, %d bytes (ligero %d bytes)",
+                tramo.n_filas,
+                len(tramo.datos),
+                len(tramo.ligero),
             )
             for oyente in list(self._almacen.al_movimientos):
                 oyente(self._camara_id, archivo_id)
@@ -706,13 +738,11 @@ class GrabadorCamara:
         ]
         if not filas:
             return
+        desde_ms, hasta_ms = centro - MEDIO_CLIP_MS, centro + MEDIO_CLIP_MS
         datos = escribir_parquet(
-            filas,
-            self._camara_id,
-            instante_ms(centro - MEDIO_CLIP_MS),
-            instante_ms(centro + MEDIO_CLIP_MS),
+            filas, self._camara_id, instante_ms(desde_ms), instante_ms(hasta_ms)
         )
-        oyente(evento_id, datos)
+        oyente(evento_id, datos, escribir_ligero(filas, desde_ms, hasta_ms))
 
     def _escribir_clip(self, evento_id: str, ocurrido_en: datetime, mp4: bytes) -> None:
         relativa = f"clips/{self._camara_id}/{ocurrido_en:%Y/%m/%d}/{evento_id}.mp4{EXTENSION}"
