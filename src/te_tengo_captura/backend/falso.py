@@ -88,6 +88,9 @@ class BackendFalso:
     otra_pc_ambientes: dict[str, str] = field(default_factory=dict)  # name → other PC's name
     inventarios: list[list[dict[str, Any]]] = field(default_factory=list)
     actividad: dict[str, dict[str, Any]] = field(default_factory=dict)  # US-33, by id
+    # Movements (US-35, US-37): what Rosa allowed in the app; None in the cloud: not allowed.
+    movimientos_en_la_pc: bool = True
+    movimientos_en_la_nube_dias: int | None = 90
     _tokens_camara: dict[str, str] = field(default_factory=dict)  # token → camaraId
     _retirados: set[str] = field(default_factory=set)
     _codigos: dict[str, dict[str, Any]] = field(default_factory=dict)  # device_code → request
@@ -335,6 +338,8 @@ class BackendFalso:
                 rutas_oauth.RUTA_REVOCACION,
             ):
                 return self._oauth(ruta, _formulario(solicitud))
+            if (metodo, ruta) == ("GET", rutas.RUTA_ESTADO_MOVIMIENTOS):
+                return self._estado_movimientos(solicitud)
             if ruta.startswith(rutas_pc.RUTA_PC) or ruta == rutas_pc.RUTA_AMBIENTES:
                 return self._pc(solicitud, metodo, ruta)
             if (metodo, ruta) == ("POST", rutas.RUTA_REGISTRO):
@@ -493,6 +498,25 @@ class BackendFalso:
             self._quitar_pc()
             return httpx.Response(204)
         return self._camaras_pc(solicitud, metodo, ruta)
+
+    def _estado_movimientos(self, solicitud: httpx.Request) -> httpx.Response:
+        token = solicitud.headers.get("Authorization", "").removeprefix("Bearer ")
+        if self.pc_quitada and token in self._tokens_pc | set(self._tokens_camara):
+            return _problema(401, "PC_DESVINCULADA", "Esta PC se quitó de la vivienda")
+        if not (token in self._tokens_pc or self._autorizado(solicitud)):
+            return _problema(401, "TOKEN_INVALIDO", "Token inválido o vencido")
+        vigente = self.consentimiento_vigente and self.motivo != MotivoCaptura.SIN_CONSENTIMIENTO
+        nube = vigente and self.movimientos_en_la_nube_dias is not None
+        return httpx.Response(
+            200,
+            json={
+                "consentimientoVigente": vigente,
+                "guardarEnLaPc": vigente and self.movimientos_en_la_pc,
+                "guardarEnLaNube": nube,
+                "retencionDias": self.movimientos_en_la_nube_dias if nube else None,
+                "versionTextoVigente": "v1" if vigente else None,
+            },
+        )
 
     def _pc_del_agente(self) -> dict[str, Any]:
         return {

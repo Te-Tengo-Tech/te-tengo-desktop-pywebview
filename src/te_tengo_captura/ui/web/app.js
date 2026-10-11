@@ -457,7 +457,47 @@
       : '<div class="actempty">'+ic('list')+'<b>Aún no hay actividad</b><span class="t-meta">Aquí verás quién cambió qué y cuándo.</span></div>';
     return '<div class="advhead">'+seg+'</div><div class="actlist" id="actlist">'+body+'</div><p class="actfoot">'+ic('lock')+'Nadie puede editar ni borrar esta lista.</p>';
   }
-  function advSubs(E){ return (E.advanced ? [['registro','terminal','Registro en vivo'], ['medidores','gauge','Medidores']] : []).concat([['actividad','list','Actividad']]); }
+
+  /* ---------- almacenamiento en esta PC (US-38) ---------- */
+  const RET = {mov:[7, 30, 90, 365, null], vid:[1, 7, 30, null], clip:[30, 90, 365, null], cap:[10, 25, 50, 100, 'otro']};
+  function dias(v){ return v==null ? 'Nunca borrar' : v===365 ? '1 año' : v===1 ? '1 día' : v+' días'; }
+  function gb(b){ return num((b||0)/1e9, 1); }
+  function retPills(st, key, campo, cur, dis, label){
+    return '<div class="ret'+(key==='cap'?' capret':'')+'" role="radiogroup" aria-label="'+label+'">'+RET[key].map(o => {
+      const on = key==='cap' ? (o==='otro' ? ![10,25,50,100].includes(cur) : o===cur) : o===cur;
+      const txt = key==='cap' ? (o==='otro' ? 'Otro' : o+' GB') : dias(o);
+      return '<button role="radio" aria-checked="'+on+'"'+(dis?' aria-disabled="true"':'')+' data-act="ret" data-arg="'+campo+'|'+(o==null?'null':o)+'">'+txt+'</button>'; }).join('')+'</div>';
+  }
+  function storageView(E, U){
+    const st = E.store; if(!st) return '';
+    const a = st.ajustes, u = st.uso, cap = st.limite || 1, used = u.movimientos + u.video + u.clips, pct = v => (v/cap*100).toFixed(2);
+    let band = '';
+    if(st.estado==='lleno') band = '<div class="notice warn stband" role="alert">'+ic('folder')+'<div><b>No podemos guardar en la carpeta</b><span>Revisa el espacio del disco. Detección y avisos siguen.</span></div><button class="btn btn-secondary btn-sm" data-act="folderChange">Elegir otra carpeta</button></div>';
+    else if(st.estado==='cerca') band = '<div class="notice warn stband" role="status">'+ic('drive')+'<div><b>Queda poco espacio: '+gb(used)+' GB de '+gb(cap)+' GB</b><span>Pronto borraremos el video más antiguo.</span></div></div>';
+    else if(st.estado==='limite') band = '<div class="notice info stband" role="status">'+ic('trash')+'<div><b>Borramos el video del '+esc(st.liberado)+' para liberar espacio</b><span>La detección sigue.</span></div></div>';
+    const mc = st.permisoMovimientos;
+    const trow = (icon, id, name, sub, on, act, key, campo, cur, dis, why) => '<div class="trow"><div class="trow-h"><span class="ci">'+ic(icon)+'</span><span class="grow"><b id="'+id+'">'+name+'</b><span>'+sub+'</span></span>'+sw(on, act, id, dis)+'</div>'+
+      retPills(st, key, campo, cur, dis || !on, 'Cuánto tiempo guardar: '+name)+(why?'<p class="why">'+ic('lock')+'<span>'+why+'</span></p>':'')+'</div>';
+    const capOtro = ![10,25,50,100].includes(a.limite_gb);
+    return band+'<div class="stwrap" id="stwrap"><div class="stgrid"><div class="stcol">'+
+      '<div class="stcard"><h3>Uso</h3><p class="usage-n"><b>'+gb(used)+' GB</b><span>de '+gb(cap).replace(/,0$/, '')+' GB</span></p>'+
+        '<div class="ubar" role="img" aria-label="Movimientos '+gb(u.movimientos)+' GB, video '+gb(u.video)+' GB, clips '+gb(u.clips)+' GB de '+gb(cap)+' GB"><i class="u-mov" style="width:'+pct(u.movimientos)+'%"></i><i class="u-vid" style="width:'+pct(u.video)+'%"></i><i class="u-clip" style="width:'+pct(u.clips)+'%"></i></div>'+
+        '<p class="ulg"><span><i class="u-mov"></i>Movimientos <b>'+gb(u.movimientos)+' GB</b></span><span><i class="u-vid"></i>Video <b>'+gb(u.video)+' GB</b></span><span><i class="u-clip"></i>Clips <b>'+gb(u.clips)+' GB</b></span><span>Libre <b>'+gb(Math.max(0, cap-used))+' GB</b></span></p></div>'+
+      '<div class="stcard"><h3>Carpeta</h3><div class="folder"><span class="code" title="'+esc(st.carpeta)+'">'+esc(st.carpeta)+'</span><button class="btn btn-secondary btn-xs" data-act="folderChange"'+(st.estado==='moviendo'?' disabled':'')+'>'+ic('folder')+'Cambiar carpeta</button></div>'+
+        (st.estado==='moviendo' ? '<div class="moving" role="status">Moviendo '+gb(used)+' GB… La detección sigue.<div class="tbar"><i style="transform:scaleX(.45)"></i></div></div>' : '')+'</div>'+
+      '<div class="stcard"><p class="irow"><span class="ci calma">'+ic('lock')+'</span><span><b>Datos cifrados</b>Solo Te Tengo Captura puede leerlos.</span></p></div>'+
+      '<div class="stcard"><p class="irow"><span class="ci">'+ic('cloud')+'</span><span><b>En la nube</b>'+(st.nube ? 'Movimientos: '+dias(st.nube)+' (lo eligió la familia).' : 'Movimientos: desactivado.')+' Video: nunca.</span></p></div>'+
+    '</div><div class="stcol">'+
+      '<div class="stcard"><h3>Qué se guarda aquí</h3>'+
+        trow('person', 'st-mov', 'Movimientos (puntos del cuerpo)', 'Sin imagen ni video', mc && a.movimientos, 'stMov', 'mov', 'dias_movimientos', a.dias_movimientos, !mc, mc ? '' : 'Requiere el permiso de '+esc(E.home.first)+' (se registra en la app).')+
+        trow('cam', 'st-vid', 'Video continuo', 'Nunca se sube', a.video, 'stVid', 'vid', 'dias_video', a.dias_video, false, '')+
+        trow('play', 'st-clip', 'Clips de los avisos', '12 s por aviso', a.clips, 'stClip', 'clip', 'dias_clips', a.dias_clips, false, '')+'</div>'+
+      '<div class="stcard"><h3>Límite de espacio</h3>'+retPills(st, 'cap', 'limite_gb', a.limite_gb, false, 'Límite de espacio')+
+        (capOtro || U.capOther ? '<div class="cap-other"><label class="sr" for="cap-val">Límite en GB</label><input class="input mono" id="cap-val" inputmode="numeric" value="'+esc(capOtro ? a.limite_gb : '')+'" placeholder="75"><span class="t-meta">GB</span></div>' : '')+
+        '<p class="capnote">Al llegar, borramos lo más antiguo: primero video, luego movimientos.</p></div>'+
+    '</div></div></div>';
+  }
+  function advSubs(E){ return (E.advanced ? [['registro','terminal','Registro en vivo'], ['medidores','gauge','Medidores']] : []).concat([['actividad','list','Actividad'], ['almacenamiento','drive','Almacenamiento']]); }
   function advSub(E, U){ const subs = advSubs(E); return subs.some(x => x[0]===U.adv.sub) ? U.adv.sub : (E.advanced ? 'registro' : 'actividad'); }
   function panelAvanzado(E, U){
     const sub = advSub(E, U), on = !!E.advanced, cam = advCam(E, U), camSel = on && (sub==='registro' || sub==='medidores');
@@ -469,7 +509,7 @@
           (camSel && cams.length ? '<span class="cam-l" id="cam-l">Cámara</span><div class="seg2 sm" role="radiogroup" aria-labelledby="cam-l">'+cams.map(c => '<button role="radio" aria-checked="'+(cam && c.id===cam.id)+'" data-act="advCam" data-arg="'+esc(c.id)+'">'+esc(c.room)+'</button>').join('')+'</div>' : '')+'</div>'
       : '<div class="card advcard"><span class="ci lg">'+ic('sliders')+'</span><div class="grow"><b id="adv-l">Modo avanzado</b><span>Qué detecta cada cámara y por qué avisa. Nada sale de esta PC.</span></div>'+sw(false, 'advToggle', 'adv-l')+'</div>';
     const sinCamara = '<div class="logempty">'+ic('cam')+'<b>Aún no pasa nada en esta cámara</b></div>';
-    const body = sub==='registro' ? (cam ? logView(E, U, cam) : sinCamara) : sub==='medidores' ? (cam ? metersView(E, U, cam) : sinCamara) : actView(E, U);
+    const body = sub==='registro' ? (cam ? logView(E, U, cam) : sinCamara) : sub==='medidores' ? (cam ? metersView(E, U, cam) : sinCamara) : sub==='almacenamiento' ? storageView(E, U) : actView(E, U);
     return '<h1 class="sr" id="scr-h" tabindex="-1">Avanzado</h1><div class="advhead">'+seg+btns+'</div>'+mode+'<div class="advbody" role="tabpanel" aria-labelledby="sub-'+sub+'">'+body+'</div>';
   }
 
@@ -485,6 +525,15 @@
         (rooms.length ? 'Se dejan de detectar caídas en '+esc(listY(rooms))+'. ' : '')+'La familia recibirá un aviso.',
         '<label class="checkrow"><input type="checkbox" id="unlink-wipe"'+(U.unlinkWipe?' checked':'')+'><span>Borrar también los datos de esta PC ('+num1(gb)+' GB)<span>Movimientos, video y clips.</span></span></label>',
         '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-danger" data-act="unlinkDo"'+(U.busy?' disabled':'')+'>'+ic('unlink')+'Desvincular</button>');
+    }
+    if(U.dlg==='video') return dlgBox('dlg-video', '<span class="ci lg">'+ic('cam')+'</span>', '¿Guardar video continuo en esta PC?',
+      'Se queda en esta PC, nunca se sube. 480p a 8 fps, en partes de 10 min. Ocupa mucho espacio.', '',
+      '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-primary" data-act="videoOn">Activar</button>');
+    if(U.dlg==='revoke' || (E.store && E.store.revocado && E.screen==='main' && !U.dlg)){
+      const mb = E.store ? gb(E.store.uso.movimientos) : '0,0';
+      return dlgBox('dlg-revoke', '<span class="ci lg aviso">'+ic('person')+'</span>', '¿Borrar los movimientos de esta PC ('+mb+'&nbsp;GB)?',
+        esc(E.home.first)+' ya no autoriza guardarlos (lo registró la familia). No guardamos nuevos y los de la nube se borran. Las alertas siguen.', '',
+        '<button class="btn btn-secondary" data-act="revokeKeep">Conservar</button><button class="btn btn-danger" data-act="revokeWipe">'+ic('trash')+'Borrar</button>');
     }
     if(U.dlg==='diag'){
       const d = U.diag, nombre = d.nombre || '';
@@ -545,6 +594,8 @@
     }
     if(!prev.online && E.online) return {kind:'ok', icon:'check', text:'Volvió internet. Avisos enviados.'};
     if(!prev.consent && E.consent) return {kind:'ok', icon:'check', text:'Consentimiento registrado en la app.'};
+    if(prev.store && E.store && prev.store.estado==='moviendo' && E.store.estado!=='moviendo')
+      return E.store.carpeta!==prev.store.carpeta ? {kind:'ok', icon:'folder', text:'Datos movidos a la carpeta nueva.'} : {kind:'warn', icon:'folder', text:'No pudimos mover los datos. Siguen en la carpeta anterior.'};
     return null;
   }
   /* What forces a full render; the countdown in the summary is only patched in place. */
@@ -555,7 +606,7 @@
     return JSON.stringify(o);
   }
 
-  const api = { panelAvanzado, metersInner, actView, ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
+  const api = { storageView, panelAvanzado, metersInner, actView, ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
 
   /* ---------- DOM: render with focus, folded sections and scroll preserved ---------- */
   if(typeof document === 'undefined'){ if(typeof module !== 'undefined') module.exports = api; return; }
@@ -684,6 +735,22 @@
         render();
       });
     },
+    stMov(){ const a = E.store.ajustes; guardarAlmacen({movimientos: !a.movimientos}, !a.movimientos ? 'Guardamos los movimientos en esta PC.' : 'Dejamos de guardar movimientos. Los guardados se borran a su plazo.'); },
+    stVid(el){ const a = E.store.ajustes; if(!a.video){ opener = el; U.dlg = 'video'; render(); return; } guardarAlmacen({video:false}, 'Dejamos de guardar video. El guardado se borra a su plazo.'); },
+    videoOn(){ U.dlg = null; guardarAlmacen({video:true}, 'Guardamos video continuo solo en esta PC.'); if(opener) restore({act:'stVid'}); },
+    stClip(){ const a = E.store.ajustes; guardarAlmacen({clips: !a.clips}, !a.clips ? 'Guardamos los clips de los avisos en esta PC.' : 'Dejamos de guardar clips. La familia los ve en la app.'); },
+    ret(el){
+      const [campo, v] = el.dataset.arg.split('|');
+      if(campo==='limite_gb'){
+        if(v==='otro'){ U.capOther = true; render(); const i = $('cap-val'); if(i) i.focus(); return; }
+        U.capOther = false; guardarAlmacen({limite_gb: Number(v)}, 'Límite de espacio: '+v+' GB.'); return;
+      }
+      const valor = v==='null' ? null : Number(v), nombres = {dias_movimientos:'los movimientos', dias_video:'el video', dias_clips:'los clips'};
+      guardarAlmacen({[campo]: valor}, valor==null ? 'No borraremos '+nombres[campo]+'.' : 'Guardaremos '+nombres[campo]+' '+dias(valor)+'.');
+    },
+    folderChange(){ call('cambiarCarpeta').then(r => { if(r && r.ok){ render(); } }); },
+    revokeKeep(){ U.dlg = null; call('conservarMovimientos').then(() => toast('ok', 'check', 'Conservamos los movimientos. No guardaremos nuevos.')); },
+    revokeWipe(){ U.dlg = null; call('borrarMovimientos').then(() => toast('ok', 'trash', 'Borramos los movimientos de esta PC.')); },
     diagShow(){ call('mostrarEnCarpeta', U.diag.ruta || ''); closeDlg(); },
     hereOn(){ U.here = true; U.pick = {room:null, otherOn:false, other:'', err:null}; render(); call('ambientes').then(r => { U.rooms = r || []; render(); }); },
     hereOff(){ U.here = false; render(); },
@@ -769,10 +836,15 @@
     LOG_K.forEach(k => { const c = $('cnt-'+k[0]); if(c) c.textContent = (U.log.lines[cam.id] || []).filter(l => l.k===k[0]).length; });
   }
   setInterval(pollAdv, 500);
+  function guardarAlmacen(cambios, texto){
+    call('cambiarAlmacenamiento', cambios).then(r => { if(r && r.ok){ Object.assign(E.store.ajustes, cambios); toast('ok', 'check', texto); } else render(); });
+  }
   function closeDlg(){ U.dlg = null; render(); if(opener && document.body.contains(opener)) opener.focus({preventScroll:true}); else restore({act:'unlinkAsk'}); opener = null; }
-  document.addEventListener('change', e => { if(e.target && e.target.id==='unlink-wipe') U.unlinkWipe = e.target.checked; });
+  document.addEventListener('change', e => {
+    if(e.target && e.target.id==='cap-val' && Number(e.target.value) > 0){ U.capOther = false; guardarAlmacen({limite_gb: Number(e.target.value)}, 'Límite de espacio: '+e.target.value+' GB.'); return; } if(e.target && e.target.id==='unlink-wipe') U.unlinkWipe = e.target.checked; });
   document.addEventListener('input', e => {
-    if(e.target && e.target.id==='log-q'){ U.log.q = e.target.value; renderAdv(); return; } if(e.target && e.target.id==='room-other'){ U.pick.other = e.target.value; if(U.pick.err){ U.pick.err = null; } const b = document.querySelector('#app [data-act="useCam"]'); if(b) b.disabled = !e.target.value.trim(); } });
+    if(e.target && e.target.id==='log-q'){ U.log.q = e.target.value; renderAdv(); return; }
+    if(e.target && e.target.id==='cap-val'){ U.capVal = e.target.value; return; } if(e.target && e.target.id==='room-other'){ U.pick.other = e.target.value; if(U.pick.err){ U.pick.err = null; } const b = document.querySelector('#app [data-act="useCam"]'); if(b) b.disabled = !e.target.value.trim(); } });
   document.addEventListener('toggle', e => { const d = e.target; if(d && d.matches && d.matches('details[data-k]')) U.open[d.dataset.k] = d.open; }, true);
   document.addEventListener('keydown', e => {
     const t = e.target, role = t.getAttribute && t.getAttribute('role');

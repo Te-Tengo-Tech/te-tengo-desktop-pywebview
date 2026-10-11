@@ -87,6 +87,10 @@ class Aplicacion:
                 exportar_diagnostico=self._exportar_diagnostico,
                 nombre_diagnostico=agente.nombre_diagnostico,
                 mostrar_en_carpeta=mostrar_en_carpeta,
+                cambiar_almacenamiento=agente.cambiar_almacenamiento,
+                cambiar_carpeta=self._cambiar_carpeta,
+                borrar_movimientos=agente.borrar_movimientos,
+                conservar_movimientos=agente.conservar_movimientos,
             ),
         )
         self._inicio = arranque.VentanaArranque(agente.version)
@@ -126,6 +130,12 @@ class Aplicacion:
         if destino is None:
             return {"ok": False, "cancelado": True}
         return self._agente.exportar_diagnostico(destino)
+
+    def _cambiar_carpeta(self) -> dict[str, object]:
+        carpeta = self._ventana.elegir_carpeta()
+        if carpeta is None:
+            return {"ok": False, "cancelado": True}
+        return self._agente.cambiar_carpeta(carpeta / "TeTengo" / "Datos")
 
     def _al_ocultar(self) -> None:
         self._avisos.ventana_oculta(self._agente.estado())

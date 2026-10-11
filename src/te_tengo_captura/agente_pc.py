@@ -36,11 +36,13 @@ from pydantic import ValidationError
 
 from te_tengo_captura.actividad import RegistroActividad
 from te_tengo_captura.agente import Agente, AjustesCamara
+from te_tengo_captura.almacen.gestor import AlmacenLocal
 from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.errores import ErrorBackendError, PcDesvinculadaError
 from te_tengo_captura.backend.modelos import (
     Ambiente,
     CamaraDeLaPc,
+    EstadoMovimientos,
     ModoVista,
     OrdenTransmision,
     PcDelAgente,
@@ -195,8 +197,10 @@ class AgentePc:
         al_contactar: Callable[[], None] = lambda: None,
         fabrica: FabricaCamaras | None = None,
         actividad: RegistroActividad | None = None,
+        almacen_local: AlmacenLocal | None = None,
     ) -> None:
         self.version = version
+        self._almacen_local = almacen_local
         self.actividad = actividad
         self._api_url = api_url
         self._fabrica = fabrica
@@ -373,6 +377,9 @@ class AgentePc:
     def vista_previa_jpeg(self, clave: str) -> bytes | None:
         return self.camaras.vista_previa_jpeg(clave)
 
+    def estado_movimientos(self) -> EstadoMovimientos:
+        return self._cliente.estado_movimientos()
+
     def ambientes(self) -> list[Ambiente]:
         return self.camaras.ambientes()
 
@@ -423,6 +430,7 @@ class AgentePc:
             zona=self._zona,
             vista_en_vivo=fabrica.canal,
             al_desvincular=retirada,
+            almacen=self._almacen_local,
         )
 
     def _renovar_camaras(self) -> None:

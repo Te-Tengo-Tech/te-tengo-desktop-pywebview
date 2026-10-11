@@ -53,6 +53,10 @@ def test_el_puente_expone_solo_los_metodos_del_contrato() -> None:
         "nombreDiagnostico",
         "exportarDiagnostico",
         "mostrarEnCarpeta",
+        "cambiarAlmacenamiento",
+        "cambiarCarpeta",
+        "borrarMovimientos",
+        "conservarMovimientos",
     }
     assert puente.estado() == {"situacion": "cuidando"}
     assert puente.vistaPrevia("sala") == {"jpeg": "/9hqcGVn"}

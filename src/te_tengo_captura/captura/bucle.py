@@ -114,6 +114,8 @@ class BucleCaptura:
         # They see every analysed frame in the capture thread: the advanced mode's log and
         # meters, and the local storage. They must be quick; errors are logged and ignored.
         self.observadores: list[Callable[[Analisis], None]] = []
+        # They get each encoded clip (eventoId, MP4): the local copy of US-38.
+        self.al_clip: list[Callable[[str, bytes], None]] = []
         self._reloj = reloj
 
     @property
@@ -245,6 +247,11 @@ class BucleCaptura:
             logger.error("Clip del evento %s no disponible: %s", clip.evento_id, error)
             return
         self._al_encolar()
+        for oyente in list(self.al_clip):
+            try:
+                oyente(clip.evento_id, mp4)
+            except Exception:
+                logger.exception("Error de un oyente del clip")
 
 
 ESPERA_ERROR_INICIAL_S = 1.0

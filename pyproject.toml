@@ -24,6 +24,8 @@ dependencies = [
     "comtypes>=1.4.17 ; sys_platform == 'win32'",
     "keyring>=25.7.0",
     "segno>=1.6.6",
+    "pyarrow>=26.0.0",
+    "cryptography>=50.0.2",
 ]
 
 [project.scripts]
@@ -86,6 +88,7 @@ module = [
     "AVFoundation.*",
     "Foundation.*",
     "comtypes.*",
+    "pyarrow.*",
 ]
 ignore_missing_imports = true
 

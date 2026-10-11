@@ -17,7 +17,11 @@ from te_tengo_captura.captura.pose import EstimadorMediaPipe, ruta_modelo_predet
 from te_tengo_captura.coordinador import Coordinador
 from te_tengo_captura.diario import Diario, ManejadorDiario
 from te_tengo_captura.instancia import Instancia
-from te_tengo_captura.vinculacion.credenciales import AlmacenCredenciales, LlaveroEnMemoria
+from te_tengo_captura.vinculacion.credenciales import (
+    AlmacenCredenciales,
+    Llavero,
+    LlaveroEnMemoria,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -160,12 +164,14 @@ def construir(
         transporte=falso.transporte() if falso is not None else None,
         canal=falso is None,
     )
+    # The demo never touches the OS credential store.
+    llavero: Llavero | None = LlaveroEnMemoria() if falso is not None else None
     return Coordinador(
         __version__,
         URL_API if falso is not None else api_url,
         args.datos or rutas.datos(),
         # The demo never touches the OS credential store.
-        AlmacenCredenciales(LlaveroEnMemoria() if falso is not None else None),
+        AlmacenCredenciales(llavero),
         instalacion=fabrica,
         olvidar_instalacion=olvidar,
         transporte=falso.transporte() if falso is not None else None,
@@ -173,6 +179,8 @@ def construir(
         fabrica=camaras,
         diario=diario,
         registros=args.logs or rutas.logs(),
+        llavero=llavero,
+        carpeta_datos=(args.datos or rutas.datos()) / "Datos",
     )
 
 

@@ -191,10 +191,11 @@ Cases the prototype has no screen for. Each is shown with an existing state (`do
 | Configuration | `%APPDATA%\TeTengoCaptura\config.toml` | `~/Library/Application Support/TeTengoCaptura/config.toml` | `~/.config/TeTengoCaptura/config.toml` |
 | Outbox and pending clips (`envios.sqlite3`, `clips/`, `estado_captura.json`) | `%LOCALAPPDATA%\TeTengoCaptura\` | `~/Library/Application Support/TeTengoCaptura/` | `~/.local/share/TeTengoCaptura/` |
 | Logs (`te-tengo-captura.log`, 1 MB × 5, no secrets, no images) | `%LOCALAPPDATA%\TeTengoCaptura\Logs\` | `~/Library/Logs/TeTengoCaptura/` | `~/.local/state/TeTengoCaptura/log/` |
+| Local storage (`movimientos/`, `video/`, `clips/`, `indice.sqlite3`; every file encrypted, `.ttg`) | `%LOCALAPPDATA%\TeTengoCaptura\Datos\` | `~/Library/Application Support/TeTengoCaptura/Datos/` | `~/.local/share/TeTengoCaptura/Datos/` |
 
 The macOS and Linux paths are the `platformdirs` defaults for the app name `TeTengoCaptura` (`src/te_tengo_captura/rutas.py`). `--datos <dir>` and `--logs <dir>` override them.
 
-The only images ever written to disk are the clips of events, and only until they are uploaded. To check a build without a webcam, run `te-tengo-captura.exe --autoprueba --logs .`. It writes `te-tengo-captura.log` with one line per check and exits with 0 when all checks pass.
+The only images ever written to disk are the clips of events (until they are uploaded, plus the local copy «Almacenamiento» keeps) and the continuous video if someone turns it on in «Almacenamiento»; both are encrypted in the data folder, whose key is in the OS credential store. «Cambiar carpeta» moves that folder (a `TeTengo\Datos` folder inside the one chosen). To check a build without a webcam, run `te-tengo-captura.exe --autoprueba --logs .`. It writes `te-tengo-captura.log` with one line per check and exits with 0 when all checks pass.
 
 ## 10. Start with the system
 

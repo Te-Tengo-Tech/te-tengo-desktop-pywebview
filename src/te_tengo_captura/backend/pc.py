@@ -20,6 +20,7 @@ import httpx
 
 from te_tengo_captura.backend.cliente import (
     API_VERSION,
+    RUTA_ESTADO_MOVIMIENTOS,
     TIMEOUT,
     error_de_respuesta,
     leer_modelo,
@@ -34,6 +35,7 @@ from te_tengo_captura.backend.modelos import (
     Ambiente,
     AsignacionCamara,
     CamaraDeLaPc,
+    EstadoMovimientos,
     Inventario,
     PcDelAgente,
     SenalPc,
@@ -107,6 +109,10 @@ class ClientePc:
 
     def dejar_de_usar(self, camara_id: str) -> None:
         self.autenticado("DELETE", f"{RUTA_CAMARAS}/{camara_id}")
+
+    def estado_movimientos(self) -> EstadoMovimientos:
+        """Whether movements may be stored (US-35, US-37), with the PC's token."""
+        return leer_modelo(EstadoMovimientos, self.autenticado("GET", RUTA_ESTADO_MOVIMIENTOS))
 
     def actividad(self, cambios: list[dict[str, Any]]) -> None:
         """The PC's own changes for the activity log (US-33), also those made offline."""

@@ -233,4 +233,27 @@ assert.match(diag, /Puntos del cuerpo/);
 assert.match(diag, /te-tengo-diagnostico-Sala-Rosa-2026-09-23\.zip/);
 assert.match(ui.win(E.avanzado, ADV({dlg:'diag', diag:{step:'done', ruta:'/Docs/x.zip', tamano:'1,4 MB'}}), ''), /Diagnóstico guardado · 1,4 MB/);
 assert.match(ui.win(E.avanzado, ADV({dlg:'diag', diag:{step:'err', nombre:'x.zip'}}), ''), /No pudimos guardar en esa carpeta<\/b><span>No quedó ningún archivo\. Elige otra\./);
+// «Almacenamiento» (US-38, US-35): always visible, video off, the consent gates movements.
+const store = {carpeta:'C:\\Users\\Rosa\\AppData\\Local\\TeTengoCaptura\\Datos', uso:{movimientos:1.1e9, video:0, clips:0.2e9}, limite:50e9, estado:null, liberado:null,
+  ajustes:{carpeta:null, movimientos:true, dias_movimientos:90, video:false, dias_video:7, clips:true, dias_clips:null, limite_gb:50}, permisoMovimientos:true, nube:30, revocado:false, hayVideo:false};
+const conStore = o => Object.assign({}, E.avanzadoApagado, {store: Object.assign({}, store, o || {})});
+const ST = o => U(Object.assign({tab:'avanzado', adv:{sub:'almacenamiento', cam:'c1'}, log:{filters:{}, q:'', paused:false, cut:0, open:null, lines:{}}, meters:{}, acts:[], actScope:'pc'}, o||{}));
+const almacen = ui.win(conStore(), ST(), '');
+assert.match(almacen, /data-act="advSub" data-arg="almacenamiento"/);
+assert.match(almacen, /<b>1,3 GB<\/b><span>de 50 GB<\/span>/);
+assert.match(almacen, /Movimientos: 30 días \(lo eligió la familia\)\. Video: nunca\./);
+assert.match(almacen, /Qué se guarda aquí/);
+assert.match(almacen, /Solo Te Tengo Captura puede leerlos\./);
+assert.match(almacen, /role="switch" aria-checked="false" aria-labelledby="st-vid" data-act="stVid"/);
+assert.match(almacen, /aria-checked="true"[^>]*data-arg="dias_clips\|null">Nunca borrar/);
+assert.match(almacen, /Al llegar, borramos lo más antiguo: primero video, luego movimientos\./);
+const sinPermiso = ui.win(conStore({permisoMovimientos:false, nube:null}), ST(), '');
+assert.match(sinPermiso, /Requiere el permiso de Rosa \(se registra en la app\)\./);
+assert.match(sinPermiso, /Movimientos: desactivado\. Video: nunca\./);
+assert.match(ui.win(conStore({estado:'lleno'}), ST(), ''), /No podemos guardar en la carpeta<\/b><span>Revisa el espacio del disco\. Detección y avisos siguen\./);
+assert.match(ui.win(conStore({estado:'limite', liberado:'01/10'}), ST(), ''), /Borramos el video del 01\/10 para liberar espacio/);
+assert.match(ui.win(conStore({revocado:true}), ST(), ''), /¿Borrar los movimientos de esta PC \(1,1&nbsp;GB\)\?/);
+assert.match(ui.win(conStore(), ST({dlg:'video'}), ''), /Se queda en esta PC, nunca se sube\. 480p a 8 fps, en partes de 10 min\. Ocupa mucho espacio\./);
+const movida = ui.transition(conStore({estado:'moviendo'}), conStore({carpeta:'D:\\TeTengo\\Datos'}));
+assert.equal(movida.text, 'Datos movidos a la carpeta nueva.');
 console.log('ok');
