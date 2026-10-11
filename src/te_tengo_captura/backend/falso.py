@@ -505,6 +505,7 @@ class BackendFalso:
                 "MODO_AVANZADO_DESACTIVADO",
                 "GUARDADO_LOCAL_CAMBIADO",
                 "DATOS_LOCALES_ELIMINADOS",
+                "REPETICION_VISTA",
             }
             if len(cambios) > 100 or any(c.get("tipo") not in permitidos for c in cambios):
                 return _problema(400, "VALIDACION", "Cambio inválido")

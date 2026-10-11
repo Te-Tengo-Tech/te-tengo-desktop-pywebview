@@ -49,6 +49,37 @@ def test_pendiente_de_enviar_hasta_que_vuelve_internet(registro: RegistroActivid
     assert registro.enviar(remitente) == 0  # sent once
 
 
+def test_una_repeticion_vista_lleva_la_camara_el_momento_y_la_duracion(
+    registro: RegistroActividad,
+) -> None:
+    """CA-39.3: a replay watched on this PC goes to the family's log as ``REPETICION_VISTA``."""
+    registro.anotar(
+        "Desde esta PC: se vio qué pasó en la Sala (23/09 10:36–10:46, 3 min)",
+        tipo="REPETICION_VISTA",
+        objeto="Sala",
+        datos={
+            "camaraId": "c1",
+            "momentoDesde": "2026-09-23T15:36:00.000Z",
+            "momentoHasta": "2026-09-23T15:46:00.000Z",
+            "duracionSegundos": 180,
+            "otro": "no se envía",
+        },
+    )
+    remitente = Remitente()
+    assert registro.enviar(remitente) == 1
+    [cambio] = remitente.lotes[0]
+    assert cambio["tipo"] == "REPETICION_VISTA"
+    assert cambio["objeto"] == "Sala"
+    assert cambio["camaraId"] == "c1"
+    assert (cambio["momentoDesde"], cambio["momentoHasta"]) == (
+        "2026-09-23T15:36:00.000Z",
+        "2026-09-23T15:46:00.000Z",
+    )
+    assert cambio["duracionSegundos"] == 180
+    assert "otro" not in cambio
+    assert "texto" not in cambio  # the window's sentence stays on this PC
+
+
 def test_lotes_de_cien(registro: RegistroActividad) -> None:
     for i in range(230):
         registro.anotar(

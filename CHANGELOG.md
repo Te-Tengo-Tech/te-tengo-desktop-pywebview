@@ -22,6 +22,8 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 - **«Ver qué pasó»** (US-39) in «Avanzado», from the movements kept on this PC: camera, date and time (with «Hace 15 min», «Hace 1 hora», «Hoy 07:00»), the body skeleton where the person was in the image with its phase («De pie», «Posible caída», «En el suelo · caída confirmada», «Se levantó»…), a 10-minute or 1-hour timeline with the fall, unstable movement and recovery marked by shape, colour and text, stretches without data hatched with their reason and skipped while playing, previous/next event, 0.5×–4×, the keyboard on the timeline, and «Sobre el video guardado» when continuous video exists (never leaves the PC). Without the movement consent or before the first data it says why. A replay that was played or scrubbed is written in the activity log when it closes («Acceso registrado»).
 
 ### Changed
+- **Replays watched on the PC reach the family (CA-39.3):** closing «Ver qué pasó» after playing or scrubbing also sends `REPETICION_VISTA` to `POST /api/agente/pc/actividad` with the camera, the moment replayed and the seconds watched, so the app shows it in «Actividad» and in the access log. Installations keep it on the PC.
+- Cloud movements with «Movimientos» off on the PC: confirmed by the project owner (docs/BLOCKERS.md); the test now also checks that nothing is kept on the PC and that nothing is written without a cloud retention.
 - An installation removed from the app («PC de la casa») stops capturing, deletes `credencial_instalacion` from `config.toml` and shows the link code (contract: "deletes its credentials").
 
 ### Changed
