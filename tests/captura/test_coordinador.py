@@ -125,6 +125,7 @@ def test_al_reiniciar_sigue_vinculada_sin_pedir_el_codigo(e: Escenario) -> None:
 def test_quitada_desde_la_app(e: Escenario) -> None:
     c = e.vincular()
     c.ir_a_estado()
+    esperar(lambda: c.pc is not None and c.pc.latido.pc is not None)  # the household is known
     e.falso.quitar_pc()
     c.reintentar_ahora()  # the next request answers 401 PC_DESVINCULADA
     esperar(lambda: c.estado().pantalla is Pantalla.QUITADA)

@@ -528,19 +528,15 @@ def aviso_en_vivo(habitacion: str) -> Notificacion:
 def aviso_sin_vincular(estado: EstadoAgente | None) -> Notificacion:
     """``osToast(S, 'closed')`` before the cameras run: not linked yet, or none chosen."""
     if estado is not None and estado.entradas.vinculada:
-        texto = (
-            "Falta elegir las cámaras desde la app Te Tengo, en tu celular. "
-            "Esta PC se actualiza sola."
-        )
+        texto = "Falta elegir las cámaras en la app."
     else:
-        texto = "Ábrelo desde su ícono, junto al reloj, para vincular esta PC."
-    return Notificacion("Te Tengo Captura sigue funcionando en segundo plano", texto)
+        texto = "Ábrelo junto al reloj para vincular esta PC."
+    return Notificacion("Sigue funcionando en segundo plano", texto)
 
 
 def aviso_pc_quitada(hora: str) -> Notificacion:
     """``osToast(S, 'removed')``: the PC was removed from the household in the app (D-31.2)."""
     return Notificacion(
         "Esta PC se quitó de la vivienda",
-        f"{QUIEN_PAUSA} la quitó desde la app a las {hora}. Ya no usa las cámaras. "
-        "Ábrela para vincularla de nuevo.",
+        f"{mayuscula(QUIEN_PAUSA)} la quitó a las {hora}. Ábrela para vincularla de nuevo.",
     )

@@ -169,14 +169,14 @@
     const off = (icon, t, s) => '<div class="card pair-card pair-off" role="status"><span class="ci lg aviso dash">'+ic(icon)+'</span><h2 class="t-h2">'+t+'</h2>'+
       '<p class="t-small">'+s+' Reintentamos en <span class="mono" id="retry" data-r="pr">'+mmss(p.retry)+'</span>.</p>'+
       '<button class="btn btn-secondary btn-sm" data-act="retryNow">'+ic('refresh')+'Reintentar ahora</button></div>';
-    if(p.fase==='sin_internet') return off('wifiOff', 'Sin internet', 'Conecta esta PC a internet para vincularla.');
-    if(p.fase==='sin_servidor') return off('cloud', 'No pudimos conectar con Te Tengo', 'Puede ser un problema nuestro: no tienes que hacer nada.');
+    if(p.fase==='sin_internet') return off('wifiOff', 'Sin internet', 'Conecta esta PC a internet.');
+    if(p.fase==='sin_servidor') return off('cloud', 'Te Tengo no responde', 'No tienes que hacer nada.');
     if(!p.code || !p.qr) return '<div class="card pair-card" role="status"><div class="pane-scan"><span class="spin"></span></div></div>';
     const spoken = p.code.replace('-', '').split('').join(' ').replace(/^(\S \S \S \S) /, '$1, guion, ');
     return '<div class="card pair-card'+(p.fresh?' fresh':'')+'">'+
       (p.renewed ? '<p class="renew">'+ic('refresh')+'Código nuevo · el anterior venció</p>' : '')+
       '<div class="qrwrap">'+qrSVG(p.qr)+'<span class="qr-logo" aria-hidden="true">'+LOGO+'</span></div>'+
-      '<p class="t-meta">¿No puedes escanearlo? Escribe este código en la app:</p>'+
+      '<p class="t-meta">O escribe este código en la app:</p>'+
       '<p class="code-big"><span aria-hidden="true">'+esc(p.code)+'</span><span class="sr">'+esc(spoken)+'</span></p>'+
       '<p class="pair-url">'+esc(p.url)+'</p>'+
       '<p class="pair-left'+(p.left<=60?' low':'')+'" data-r="pl">'+ic('clock')+'Vence en <span class="mono" id="pair-left">'+mmss(p.left)+'</span></p>'+
@@ -185,36 +185,36 @@
   function scrVincular(E, U, enter){
     const p = E.pair, ok = p.fase==='codigo' || p.fase==='pidiendo';
     return sec('pair', enter,
-      (p.re90 ? '<div class="notice warn band90" role="status">'+ic('clock')+'<div><b>Esta PC estuvo más de 90 días sin conexión</b><span>Vuelve a vincularla con tu celular.</span></div></div>' : '')+
+      (p.re90 ? '<div class="notice warn band90" role="status">'+ic('clock')+'<div><b>Más de 90 días sin conexión</b><span>Vincúlala de nuevo.</span></div></div>' : '')+
       '<div class="pair-grid"><div class="pair-l">'+
         '<h1 class="t-title" id="scr-h" tabindex="-1">Vincula esta PC con tu celular</h1>'+
-        '<ol class="steps2"><li><span class="n">1</span><span>Abre la app Te Tengo en tu celular</span></li>'+
+        '<ol class="steps2"><li><span class="n">1</span><span>Abre la app Te Tengo</span></li>'+
         '<li><span class="n">2</span><span class="path">Ajustes'+ic('chevR')+'PCs y cámaras'+ic('chevR')+'Agregar PC</span></li>'+
         '<li><span class="n">3</span><span>Escanea este código</span></li></ol>'+
-        '<p class="pcname"><span class="ci">'+ic('monitor')+'</span><span>Esta PC se llama <b>'+esc(E.pcname)+'</b></span></p>'+
-        det(U, 'help', 'phelp', ic('mobile')+'¿El celular muestra un error?',
-          '<ul class="helplist"><li><b>«Este código ya venció o ya se usó»</b>Escanea otra vez: esta PC ya muestra un código nuevo.</li>'+
-          '<li><b>«Demasiados intentos»</b>Espera hasta la hora que indica el celular y vuelve a intentarlo. Esta PC seguirá mostrando un código válido.</li></ul>')+
+        '<p class="pcname"><span class="ci">'+ic('monitor')+'</span><span>Esta PC: <b>'+esc(E.pcname)+'</b></span></p>'+
+        det(U, 'help', 'phelp', ic('mobile')+'¿Error en el celular?',
+          '<ul class="helplist"><li><b>«Este código ya venció o ya se usó»</b>Escanea el código nuevo.</li>'+
+          '<li><b>«Demasiados intentos»</b>Espera la hora que indica el celular.</li></ul>')+
       '</div>'+pairCard(E)+'</div>'+
-      '<div class="pair-foot">'+(ok ? '<p class="wait2" role="status"><span class="spin"></span>Esperando la aprobación en el celular…</p>'
-                                     : '<p class="wait2 stop"><span class="spin"></span>El código aparece cuando haya conexión</p>')+'</div>');
+      '<div class="pair-foot">'+(ok ? '<p class="wait2" role="status"><span class="spin"></span>Esperando aprobación en el celular…</p>'
+                                     : '<p class="wait2 stop"><span class="spin"></span>El código aparece con conexión</p>')+'</div>');
   }
   /* la PC informa las webcams que detectó; la familia las asigna desde la app */
   function foundList(E){
     const devs = E.devices;
-    if(!devs.length) return '<div class="notice warn">'+ic('cam')+'<div><b>No encontramos cámaras en esta PC</b><span>Conecta una webcam por USB y pulsa Buscar de nuevo.</span></div></div>';
-    return '<div class="found"><p class="found-h">'+ic('usb')+'<b>Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'</b><span>La familia las ve en la app con su nombre.</span></p>'+
+    if(!devs.length) return '<div class="notice warn">'+ic('cam')+'<div><b>No encontramos cámaras</b><span>Conecta una webcam por USB.</span></div></div>';
+    return '<div class="found"><p class="found-h">'+ic('usb')+'<b>Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'</b></p>'+
       '<ul class="found-l">'+devs.map(d => '<li><span class="thumb art'+(!d.connected?' dim':'')+'">'+roomSVG(d.room || '')+'</span><span class="grow"><b>'+esc(d.name)+'</b>'+devTag(d)+'</span></li>').join('')+'</ul></div>';
   }
   function scrVinculada(E, U, enter){
     const kept = E.cams.length;
     return sec('', enter, '<div class="result linked"><span class="ok-badge">'+ic('check')+'</span>'+
-      '<h1 class="t-title" id="scr-h" tabindex="-1">Esta PC quedó vinculada a la casa de '+esc(E.home.who)+'</h1>'+
-      '<p class="t-lead">Aprobada por '+esc(E.linkedBy || '')+' desde su celular a las <span class="mono">'+esc(E.linkedAt)+'</span> · Esta PC: <b>'+esc(E.pc.nombre)+'</b></p>'+
-      (kept ? '<div class="notice ok next">'+ic('check')+'<div><b>Las cámaras siguen en su habitación</b><span>'+esc(listY(E.cams.map(c => c.room)))+'. Se cambian desde la app Te Tengo, en tu celular.</span></div></div>'
-            : '<div class="notice info next">'+ic('mobile')+'<div><b>Listo. Ahora elige las cámaras desde la app Te Tengo, en tu celular.</b><span class="path">Ajustes'+ic('chevR')+'PCs y cámaras'+ic('chevR')+esc(E.pc.nombre)+' · esta PC se actualiza sola.</span></div></div>')+
+      '<h1 class="t-title" id="scr-h" tabindex="-1">Vinculada a la casa de '+esc(E.home.who)+'</h1>'+
+      '<p class="t-lead">Aprobó '+esc(E.linkedBy || '')+' a las <span class="mono">'+esc(E.linkedAt)+'</span> · <b>'+esc(E.pc.nombre)+'</b></p>'+
+      (kept ? '<div class="notice ok next">'+ic('check')+'<div><b>Las cámaras siguen en su habitación</b><span>'+esc(listY(E.cams.map(c => c.room)))+' · se cambian en la app</span></div></div>'
+            : '<div class="notice info next">'+ic('mobile')+'<div><b>Ahora elige las cámaras en la app</b><span class="path">Ajustes'+ic('chevR')+'PCs y cámaras'+ic('chevR')+esc(E.pc.nombre)+'</span></div></div>')+
       foundList(E)+
-      (!E.consent ? '<div class="notice warn">'+ic('doc')+'<div><b>Falta el consentimiento de '+esc(E.home.first)+'</b><span>Las cámaras no enviarán nada hasta que la familia lo registre en la app.</span></div></div>' : '')+
+      (!E.consent ? '<div class="notice warn">'+ic('doc')+'<div><b>Falta el consentimiento de '+esc(E.home.first)+'</b><span>Hasta registrarlo en la app, las cámaras no se usan.</span></div></div>' : '')+
       '<div class="actions"><button class="btn btn-primary btn-lg" data-act="toEstado">'+ic('pulse')+'Ir a Estado</button></div></div>');
   }
   function scrRechazada(E, U, enter){
@@ -225,8 +225,8 @@
   }
   function scrQuitada(E, U, enter){
     return sec('', enter, '<div class="result"><span class="ci lg pausa">'+ic('unlink')+'</span>'+
-      '<h1 class="t-title" id="scr-h" tabindex="-1">'+(E.who ? 'Esta PC se quitó de la casa de '+esc(E.who) : 'Esta PC se quitó de la vivienda')+'</h1>'+
-      '<p class="t-lead">La familia la quitó desde la app a las <span class="mono">'+esc(E.at)+'</span>. Ya no usa las cámaras.</p>'+
+      '<h1 class="t-title" id="scr-h" tabindex="-1">'+(E.who ? 'Se quitó de la casa de '+esc(E.who) : 'Se quitó de la vivienda')+'</h1>'+
+      '<p class="t-lead">La familia la quitó desde la app a las <span class="mono">'+esc(E.at)+'</span>.</p>'+
       '<div class="actions"><button class="btn btn-primary btn-lg" data-act="pairAgain">'+ic('link')+'Vincular de nuevo</button></div></div>');
   }
 
@@ -282,7 +282,7 @@
   function thisPc(E){
     if(!E.unlink) return '';
     return '<div class="thispc"><span class="ci">'+ic('monitor')+'</span><span class="grow"><b>Esta PC: '+esc(E.pc.nombre)+'</b><span>Vinculada por '+esc(E.pc.vinculada_por || '')+' el '+esc(E.pc.vinculada_el || '')+'</span></span>'+
-      '<button class="btn btn-danger-ghost btn-xs" data-act="unlinkAsk">'+ic('unlink')+'Desvincular esta PC</button></div>';
+      '<button class="btn btn-danger-ghost btn-xs" data-act="unlinkAsk">'+ic('unlink')+'Desvincular</button></div>';
   }
   function selDev(E, U){ return E.devices.find(d => d.id===U.sel) || E.devices[0] || null; }
   function camInfo(E, U, d){
@@ -321,8 +321,8 @@
     if(U.dlg==='unlink' && E.screen==='main'){
       const rooms = E.cams.map(c => c.room), gb = (E.dataBytes || 0) / 1e9;
       return dlgBox('dlg-unlink', '<span class="ci lg caida">'+ic('unlink')+'</span>', '¿Desvincular esta PC?',
-        (rooms.length ? 'Dejaremos de detectar caídas en '+esc(listY(rooms))+'. ' : '')+'Esta PC borrará su acceso y la familia recibirá un aviso.',
-        '<label class="checkrow"><input type="checkbox" id="unlink-wipe"'+(U.unlinkWipe?' checked':'')+'><span>Borrar también los datos guardados en esta PC ('+num1(gb)+' GB)<span>Movimientos, video y clips de la carpeta de Te Tengo.</span></span></label>',
+        (rooms.length ? 'Se dejan de detectar caídas en '+esc(listY(rooms))+'. ' : '')+'La familia recibirá un aviso.',
+        '<label class="checkrow"><input type="checkbox" id="unlink-wipe"'+(U.unlinkWipe?' checked':'')+'><span>Borrar también los datos de esta PC ('+num1(gb)+' GB)<span>Movimientos, video y clips.</span></span></label>',
         '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-danger" data-act="unlinkDo"'+(U.busy?' disabled':'')+'>'+ic('unlink')+'Desvincular</button>');
     }
     return '';
@@ -479,7 +479,7 @@
       const wipe = U.unlinkWipe;
       call('desvincular', wipe).then(r => {
         U.busy = false; U.dlg = null; opener = null;
-        if(r && r.ok){ U.tab = 'estado'; toast('ok', 'unlink', wipe ? 'Esta PC se desvinculó y borró sus datos. La familia recibió un aviso.' : 'Esta PC se desvinculó. La familia recibió un aviso.'); call('estado').then(s => { if(s) actualizar(s); }); }
+        if(r && r.ok){ U.tab = 'estado'; toast('ok', 'unlink', wipe ? 'PC desvinculada y datos borrados. La familia recibió un aviso.' : 'PC desvinculada. La familia recibió un aviso.'); call('estado').then(s => { if(s) actualizar(s); }); }
         else render();
       });
     },

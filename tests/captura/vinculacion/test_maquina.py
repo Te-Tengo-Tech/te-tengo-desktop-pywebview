@@ -156,7 +156,7 @@ def test_sin_internet_al_empezar_y_servidor_caido(e: Escenario) -> None:
     e.falso.sin_conexion = False
     e.falso.fallos.append(503)
     e.avanzar(REINTENTO_S)
-    assert e.v.estado().fase is Fase.SIN_SERVIDOR  # «No pudimos conectar con Te Tengo»
+    assert e.v.estado().fase is Fase.SIN_SERVIDOR  # «Te Tengo no responde»
     e.avanzar(REINTENTO_S)
     assert e.v.estado().fase is Fase.CODIGO
 

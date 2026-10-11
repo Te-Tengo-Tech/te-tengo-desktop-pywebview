@@ -201,7 +201,7 @@ def test_avisos_antes_de_vincular_y_al_quitar_la_pc() -> None:
         Pantalla.VINCULAR, EstadoBandeja("off", "sin vincular"), None, {"screen": "vincular"}
     )
     a.ventana_oculta(sin_vincular)
-    assert avisos[-1].texto == "Ábrelo desde su ícono, junto al reloj, para vincular esta PC."
+    assert avisos[-1].texto == "Ábrelo junto al reloj para vincular esta PC."
     quitada = EstadoVentana(
         Pantalla.QUITADA,
         EstadoBandeja("off", "se quitó de la vivienda"),
@@ -214,7 +214,6 @@ def test_avisos_antes_de_vincular_y_al_quitar_la_pc() -> None:
     a.estado(quitada)  # once
     assert avisos[-1] == Notificacion(
         "Esta PC se quitó de la vivienda",
-        "La familia la quitó desde la app a las 11:20. Ya no usa las cámaras. "
-        "Ábrela para vincularla de nuevo.",
+        "La familia la quitó a las 11:20. Ábrela para vincularla de nuevo.",
     )
     assert len(avisos) == 2
