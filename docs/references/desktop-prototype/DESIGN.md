@@ -83,3 +83,7 @@ Punto de la bandeja: verde (cuidando), gris (pausa), ámbar (problema o falta el
 - El detector marca un «glow» por las sombras violetas sobre la píldora oscura del aviso: es la sombra `--shadow-2` del kit, con desplazamiento y difuminado, no un halo.
 - El detector marca «rayas decorativas» en `.tl-gap`: es el **rayado de tramo sin datos** que pide el brief (§5.7) para «Sin persona», «En pausa» o «PC apagada», y lleva su motivo en texto debajo. No es decoración.
 - Los avisos de «tarjeta dentro de tarjeta» corresponden al marco de la ventana y a los diálogos sobre el contenido.
+
+## Ayuda en ícono «?»
+
+- **`infoTip(texto, tema, {k, up, end, start, icon, cls})`** (core.js, estilos `.itip`): es el mismo componente de la app móvil, un «?» de 24 px con 44 px de clic, `aria-expanded` y `aria-describedby` hacia una tarjeta `role="tooltip"` clara con borde lila. Con `icon:'lock'` y `cls:'pv-lock'` es el candado de la vista previa local, solo con ícono. Lo prepara `itipInit` y lo recoloca `itipSync` al final de cada `render`. En la galería, `S.tipOpen` lo pinta abierto (64 «Ayuda «?» abierta»).

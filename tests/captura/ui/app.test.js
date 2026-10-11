@@ -5,6 +5,13 @@ const ui = require(process.argv[2]);
 const E = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
 const U = (o) => Object.assign({tab:'estado', sel:null, open:{}, toast:null, adv:{sub:'actividad', cam:null}, log:{filters:{}, q:'', paused:false, cut:0, open:null, lines:{}}, meters:{}, acts:[], actScope:'pc', diag:{step:'intro'}}, o || {});
 
+// A help behind a «?» icon (core.js infoTip): a button that names its topic, tied to a card with role="tooltip".
+const tip = (html, label, text) => {
+  const m = html.match(new RegExp('<button type="button" class="itip-b" aria-label="Más información: '+label+'" aria-expanded="false" aria-describedby="(itip-[^"]+)">'));
+  assert.ok(m, 'no «?» for '+label);
+  assert.ok(html.includes('<span class="itip-pop" role="tooltip" id="'+m[1]+'">'+text+'</span>'), 'no text for '+label);
+};
+
 // 01 Todo funciona: the title bar, the tab bar, one summary and a row per camera.
 const html = ui.win(E.tres, U(), '');
 assert.match(html, /<span>Te Tengo Captura<\/span>/);
@@ -62,6 +69,10 @@ const vivo = ui.win(E.vivo, U(), '');
 assert.match(vivo, /class="health live"/);
 assert.match(vivo, /Un familiar está viendo la sala en vivo/);
 assert.match(vivo, /<b class="stx live">En vivo<\/b>/);
+assert.match(vivo, /<span data-r="hd">Desde las <span class="mono">\d\d:\d\d<\/span><\/span>/);
+assert.doesNotMatch(vivo, /no se graba · queda registrado/);
+tip(vivo, 'privacidad', 'No se graba. Queda en el registro de accesos que ve la familia en la app.');
+assert.match(vivo, /class="itip end" data-tip="health-live"/);
 
 // Names from the API are escaped.
 assert.match(ui.win(E.html, U(), ''), /Dormitorio &lt;b&gt;/);
@@ -75,9 +86,16 @@ assert.match(camaras, /role="radiogroup" aria-labelledby="g-cams"/);
 assert.match(camaras, /aria-checked="true" tabindex="0" data-act="selCam" data-arg="dormitorio"/);
 assert.match(camaras, /En uso · Dormitorio/);
 assert.match(camaras, /id="pv" data-clave="dormitorio"/);
-assert.match(camaras, /Solo se ve en esta PC/);
-assert.match(camaras, /Usa la vista previa para revisar el encuadre\./);
-assert.match(camaras, /Si la detección va lenta, pasa alguna cámara a otra PC\./);
+assert.match(camaras, /class="itip up start pv-lock" data-tip="pvlock"><button type="button" class="itip-b" aria-label="Más información: vista previa local"[^>]*><svg[^>]*><rect x="5" y="10.5"/);
+tip(camaras, 'vista previa local', 'La vista previa solo se ve en esta PC: no se graba ni sale de la casa. Úsala para revisar el encuadre.');
+assert.match(camaras, /<p class="grp-l tip-l"><span id="g-cams">Cámaras conectadas<\/span><span class="itip start" data-tip="many">/);
+tip(camaras, 'rendimiento', 'Si la detección va lenta, pasa alguna cámara a otra PC.');
+assert.doesNotMatch(camaras, /class="help-l"|Solo se ve en esta PC<\/span>/);
+assert.doesNotMatch(ui.win(E.uno, U({tab:'camaras'}), ''), /data-tip="many"/);  // only from the third camera
+// A tip stays open across renders (ITIP.open) and says so to assistive technology.
+ui.ITIP.open = 'pvlock';
+assert.match(ui.win(E.tres, U({tab:'camaras', sel:'dormitorio'}), ''), /class="itip up start pv-lock open" data-tip="pvlock"><button type="button" class="itip-b" aria-label="Más información: vista previa local" aria-expanded="true"/);
+ui.ITIP.open = null;
 const desconectada = ui.win(E.perdida, U({tab:'camaras', sel:'sala'}), '');
 assert.match(desconectada, /Desconectada · Sala/);
 assert.match(desconectada, /No responde: revisa el cable USB/);
@@ -162,18 +180,25 @@ assert.equal(ui.transition(E.vinculada, E.pcPrincipal), null);
 // Several cameras: the violet light while the app previews a webcam (CA-29.7), «Elegir aquí».
 const mirando = ui.win(E.pcMirando, U({tab:'camaras'}), '');
 assert.match(mirando, /class="cpick peeking"/);
-assert.match(mirando, /Un familiar la mira para elegirla · No se graba/);
-assert.match(ui.win(E.pcMirando, U(), ''), /Un familiar mira la Logitech C920 para elegirla/);
+assert.match(mirando, /Un familiar la mira para elegirla<\/span>/);
+assert.doesNotMatch(mirando, /· No se graba/);
+const mirandoEstado = ui.win(E.pcMirando, U(), '');
+assert.match(mirandoEstado, /Un familiar mira la Logitech C920 para elegirla<\/b><\/div><span class="itip end" data-tip="peek">/);
+tip(mirandoEstado, 'privacidad', 'No se graba. Queda en el registro de accesos que ve la familia en la app.');
+assert.doesNotMatch(mirandoEstado, /No se graba · queda registrado/);
 assert.match(mirando, /data-act="hereOn">.*Elegir aquí \(si estás instalando\)/);
 const aqui = ui.win(E.pcPrincipal, U({tab:'camaras', here:true, sel:'id-2', rooms:[{id:'a-1', nombre:'Cocina', camaras:[{id:'x', pc:'Cocina-Rosa', estaPc:false}]}], pick:{room:'Sala', otherOn:false, other:'', err:null}}), '');
 assert.match(aqui, /Elegir aquí, si estás instalando/);
 assert.match(aqui, /Elige la habitación de cada cámara\. La familia lo verá en la app\./);
 assert.match(aqui, /data-act="hereOff">.*Volver/);
-assert.match(aqui, /¿En qué habitación está\?/);
+assert.match(aqui, /<span class="rooms-l"><span id="rooms-l">¿En qué habitación está\?<\/span><span class="itip start" data-tip="bath">/);
+assert.match(aqui, /role="group" aria-labelledby="rooms-l"/);
 assert.match(aqui, /aria-disabled="true" title="Ya tiene cámara en la PC Cocina-Rosa"><span>Cocina<\/span><small>Ya tiene cámara · Cocina-Rosa<\/small>/);
 assert.match(aqui, /class="chip2 sel" aria-pressed="true" data-act="pickRoom" data-arg="Sala"/);
 assert.match(aqui, /data-act="useCam">.*Usar esta cámara/);
-assert.match(aqui, /Por privacidad, no se admiten cámaras en el baño\./);
+tip(aqui, 'habitaciones', 'Por privacidad, no se admiten cámaras en el baño.');
+assert.doesNotMatch(aqui, /class="help-l"/);
+assert.match(ui.win(E.pcPrincipal, U({tab:'camaras', here:true, sel:'id-2', rooms:[], pick:{room:null, otherOn:true, other:'Baño', err:'bath'}}), ''), /role="alert">.*<span>Por privacidad, no se admiten cámaras en el baño\.<\/span>/);  // the error stays visible
 const duplicada = ui.win(E.pcPrincipal, U({tab:'camaras', here:true, sel:'id-2', rooms:[], pick:{room:null, otherOn:true, other:'sala', err:'dup', errRoom:'Sala', errPc:'Sala-Rosa'}}), '');
 assert.match(duplicada, /Sala ya tiene cámara \(PC Sala-Rosa\)\. Una cámara por habitación\./);
 assert.match(duplicada, /id="room-other" value="sala"/);
@@ -192,7 +217,8 @@ const ADV = o => U(Object.assign({tab:'avanzado', adv:{sub:'registro', cam:'c1'}
 const lineas = [{id:1, t:'10:41:50', k:'persona', tone:'persona', i:'person', m:'Persona detectada en la Sala', x:'2026-09-23T10:41:50.111-05:00 INFO pose persona=1'},
   {id:2, t:'10:41:52', k:'evento', tone:'caida', i:'warn', m:'Caída: en el suelo. Aviso enviado', x:'2026-09-23T10:41:52.000-05:00 WARN clasificador fase=CAIDA'}];
 const vacio = ui.win(E.avanzado, ADV(), '');
-assert.match(vacio, /Modo avanzado<\/b> · Nada sale de esta PC\./);
+assert.match(vacio, /<b id="adv-l">Modo avanzado<\/b><\/span><span class="itip start" data-tip="adv">/);
+tip(vacio, 'modo avanzado', 'Nada sale de esta PC: el registro y los medidores solo se ven aquí.');
 assert.match(vacio, /Aún no pasa nada en esta cámara/);
 assert.match(vacio, /data-act="diagOpen">.*Exportar diagnóstico/);
 assert.match(vacio, /role="radiogroup" aria-labelledby="cam-l"><button role="radio" aria-checked="true" data-act="advCam" data-arg="c1">Sala/);
@@ -216,7 +242,13 @@ assert.match(medidores, /Avisa por debajo de 45°/);
 assert.match(medidores, /class="ph cur inestable" aria-current="step">.*Posible caída/);
 assert.match(medidores, /Ventana de caída <b>0,62 s<\/b>/);
 assert.match(medidores, /class="pbar low"><span>Tobillos<\/span>/);
-assert.match(medidores, /Solo se ve en esta PC/);
+tip(medidores, 'vista local', 'El esqueleto solo se ve en esta PC: no se graba ni sale de la casa.');
+assert.match(medidores, /class="itip start pv-lock" data-tip="skel-lock"/);
+assert.match(medidores, /<h3>.*Fase<span class="itip start" data-tip="fase">/);
+tip(medidores, 'fases', 'Avisa si sigue en el suelo tras 1,48 s; confirma a los 30 s.');
+assert.match(medidores, /<h3>.*Puntos del cuerpo<span class="itip end" data-tip="plow">/);
+tip(medidores, 'visibilidad', 'Visibilidad de 0 a 1. Por debajo de 0,5 el punto no cuenta.');
+assert.doesNotMatch(medidores, /class="plow"|class="msub mt8"|Solo se ve en esta PC<\/span>/);
 assert.match(medidores, /<g class="skel">/);
 const sinPersona = ui.win(E.avanzado, ADV({adv:{sub:'medidores', cam:'c1'}, meters:{c1:{motivo:'sin_persona'}}}), '');
 assert.match(sinPersona, /Sin persona en la imagen/);
@@ -225,7 +257,8 @@ assert.match(ui.win(E.avanzado, ADV({adv:{sub:'medidores', cam:'c1'}, meters:{c1
 const actividad = ui.win(E.avanzado, ADV({adv:{sub:'actividad', cam:'c1'}, acts:[{d:'Hoy', t:'10:42', m:'Desde esta PC: se activó el modo avanzado', who:'pc', pend:true}]}), '');
 assert.match(actividad, /<h3 class="actday">Hoy<\/h3>/);
 assert.match(actividad, /Pendiente de enviar/);
-assert.match(actividad, /Nadie puede editar ni borrar esta lista\.<\/p>/);
+tip(actividad, 'registro de actividad', 'Nadie puede editar ni borrar esta lista.');
+assert.doesNotMatch(actividad, /class="actfoot"/);
 const diag = ui.win(E.avanzado, ADV({dlg:'diag', diag:{step:'intro', nombre:'te-tengo-diagnostico-Sala-Rosa-2026-09-23.zip'}}), '');
 assert.match(diag, /Un archivo para el equipo de soporte\./);
 assert.match(diag, /Contraseñas ni accesos/);
@@ -246,7 +279,9 @@ assert.match(almacen, /Qué se guarda aquí/);
 assert.match(almacen, /Solo Te Tengo Captura puede leerlos\./);
 assert.match(almacen, /role="switch" aria-checked="false" aria-labelledby="st-vid" data-act="stVid"/);
 assert.match(almacen, /aria-checked="true"[^>]*data-arg="dias_clips\|null">Nunca borrar/);
-assert.match(almacen, /Al llegar, borramos lo más antiguo: primero video, luego movimientos\./);
+assert.match(almacen, /<h3>Límite de espacio<span class="itip up start" data-tip="cap">/);
+tip(almacen, 'límite de espacio', 'Al llegar, borramos lo más antiguo: primero video, luego movimientos.');
+assert.doesNotMatch(almacen, /class="capnote"/);
 const sinPermiso = ui.win(conStore({permisoMovimientos:false, nube:null}), ST(), '');
 assert.match(sinPermiso, /Requiere el permiso de Rosa \(se registra en la app\)\./);
 assert.match(sinPermiso, /Movimientos: desactivado\. Video: nunca\./);
@@ -268,7 +303,17 @@ const RP = o => ADV({rp:Object.assign({}, rpBase, o||{})});
 const rep = ui.win(E.avanzado, RP(), '');
 assert.match(rep, /Ver qué pasó<\/h1>/);
 assert.match(rep, /Sala · miércoles 23\/09/);
-assert.match(rep, /Solo puntos del cuerpo, nunca video<span>· Queda en el registro de accesos/);
+assert.match(rep, /Solo puntos del cuerpo, nunca video<span class="itip start" data-tip="rp">/);
+tip(rep, 'privacidad', 'Ver la repetición queda en el registro de accesos.');
+assert.doesNotMatch(rep, /· Queda en el registro de accesos/);
+assert.match(rep, /<b><span id="rp-vl">Sobre el video guardado<\/span><\/b><span>No hay video de ese momento\.<\/span>/);  // no video: the state stays visible
+const conVideo = ui.win(E.avanzado, RP({video:true, win:Object.assign({}, rpBase.win, {video:true})}), '');
+assert.match(conVideo, /Video guardado solo en esta PC<span class="itip start" data-tip="rp">/);
+tip(conVideo, 'privacidad', 'El video nunca sale de esta PC. Ver la repetición queda en el registro de accesos.');
+assert.match(conVideo, /<b><span id="rp-vl">Sobre el video guardado<\/span><span class="itip up start" data-tip="rp-vid">/);
+tip(conVideo, 'video guardado', 'El video nunca sale de esta PC.');
+assert.match(conVideo, /role="switch" aria-checked="true" aria-labelledby="rp-vl"/);
+assert.doesNotMatch(conVideo, /Nunca sale de esta PC\./);
 assert.match(rep, /class="rp-phase " id="rp-phase" aria-live="polite">.*De pie/);
 assert.match(rep, /<g class="skel"><line /);
 assert.match(rep, /aria-label="Caída, 10:41:12"/);

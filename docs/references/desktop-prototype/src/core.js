@@ -16,6 +16,7 @@ const P = {
   eyeOff:'<path d="M3 3l18 18"/><path d="M10.6 6A9.5 9.5 0 0 1 21.5 12a15 15 0 0 1-2.7 3.4M6.4 7.6A14.5 14.5 0 0 0 2.5 12S6 18.5 12 18.5a9 9 0 0 0 4-1"/><path d="M9.9 10a3 3 0 0 0 4.1 4.1"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  help:'<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.85.85c0 1.7-2.45 2.2-2.45 3.75"/><circle cx="12" cy="17" r="1.1" fill="currentColor" stroke="none"/>',
   info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r="1.1" fill="currentColor" stroke="none"/>',
   warn:'<path d="M12 3.5 21.5 20h-19L12 3.5Z"/><path d="M12 9.5v5"/><circle cx="12" cy="17.3" r="1.1" fill="currentColor" stroke="none"/>',
   key:'<circle cx="8" cy="15" r="4.5"/><path d="M11.2 11.8 20 3M16.5 6.5l2.5 2.5M14 9l2 2"/>',
@@ -63,6 +64,46 @@ function ic(n, extra){ return '<svg viewBox="0 0 24 24" fill="none" stroke="curr
 const WG = {min:'<path d="M0 5.5h10"/>', max:'<rect x=".5" y=".5" width="9" height="9" rx="1.4"/>', close:'<path d="M.6.6l8.8 8.8M9.4.6.6 9.4"/>'};
 function wg(n){ return '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">'+WG[n]+'</svg>'; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+/* ---------- Ayuda en ícono «?»: el texto de privacidad o de ayuda queda detrás de un botón de 24 px (44 px de toque).
+   Un toque lo fija; el cursor encima o el foco del teclado lo muestran; Escape, un toque fuera o desplazar lo cierran.
+   infoTip(texto, tema, {k, up, end, start, icon, cls}): k identifica la ayuda para que siga abierta al volver a pintar;
+   up la abre hacia arriba y end/start la alinean al borde; en el navegador se voltea si no cabe. ---------- */
+const ITIP={open:null, pin:false, n:0, quiet:0, mute:null};
+function infoTip(text, label, o){ o=o||{}; const k=String(o.k||label), id='itip-'+k.replace(/[^a-z0-9]+/gi,'-')+'-'+(++ITIP.n), on=ITIP.open===k;
+  return '<span class="itip'+(o.up?' up':'')+(o.end?' end':'')+(o.start?' start':'')+(o.cls?' '+o.cls:'')+(on?' open':'')+'" data-tip="'+esc(k)+'">'+
+    '<button type="button" class="itip-b'+(o.icon?' chip':'')+'" aria-label="Más información: '+esc(label)+'" aria-expanded="'+on+'" aria-describedby="'+id+'">'+ic(o.icon||'help')+'</button>'+
+    '<span class="itip-pop" role="tooltip" id="'+id+'">'+text+'</span></span>'; }
+/* caja visible: la pantalla (o la ventana) recortada por cada contenedor con desplazamiento */
+function itipBox(t){ let r={top:0, left:0, bottom:window.innerHeight, right:window.innerWidth};
+  for(let e=t.parentElement; e && e!==document.body; e=e.parentElement){ const cs=getComputedStyle(e);
+    if(cs.overflow!=='visible' || e.matches('.screen,.win,.wb')){ const b=e.getBoundingClientRect(); r={top:Math.max(r.top,b.top), left:Math.max(r.left,b.left), bottom:Math.min(r.bottom,b.bottom), right:Math.min(r.right,b.right)}; }
+    if(e.matches('.screen,.win')) break; }
+  return r; }
+function itipPlace(t){ const pop=t.querySelector('.itip-pop'); if(!pop || t.closest('.land-r')) return; /* girada: queda como se pintó */
+  t.classList.remove('flip'); pop.style.removeProperty('--dx');
+  const v=itipBox(t), b=t.getBoundingClientRect(), r=pop.getBoundingClientRect(), up=t.classList.contains('up'), M=8;
+  if(up? (r.top<v.top+M && b.bottom+r.height+M<=v.bottom) : (r.bottom>v.bottom-M && b.top-r.height-M>=v.top)) t.classList.add('flip');
+  const sc=t.offsetWidth? b.width/t.offsetWidth : 1; let dx=0;
+  if(r.left<v.left+M) dx=v.left+M-r.left; else if(r.right>v.right-M) dx=v.right-M-r.right;
+  if(dx) pop.style.setProperty('--dx', Math.round(dx/(sc||1))+'px'); }
+function itipShow(t, pin){ document.querySelectorAll('.itip.open').forEach(x=>{ if(x!==t) itipHide(x); });
+  t.classList.add('open'); t.firstChild.setAttribute('aria-expanded','true'); ITIP.open=t.dataset.tip; ITIP.pin=!!pin; itipPlace(t); }
+function itipHide(t){ t.classList.remove('open','flip'); t.firstChild.setAttribute('aria-expanded','false'); if(ITIP.open===t.dataset.tip){ ITIP.open=null; ITIP.pin=false; } }
+function itipCloseAll(){ document.querySelectorAll('.itip.open').forEach(itipHide); ITIP.open=null; ITIP.pin=false; }
+/* después de volver a pintar: la ayuda abierta se recoloca (el desplazamiento que restaura la pantalla no la cierra) */
+function itipSync(root){ ITIP.quiet=Date.now()+200; (root||document).querySelectorAll('.itip.open').forEach(itipPlace); }
+function itipInit(){ if(ITIP.on || typeof document==='undefined') return; ITIP.on=true;
+  const tipOf=e=>{ const b=e.target.closest && e.target.closest('.itip-b'); return b? b.parentNode : null; };
+  document.addEventListener('click', e=>{ const t=tipOf(e); ITIP.mute=null;
+    if(t){ e.preventDefault(); if(t.classList.contains('open') && ITIP.pin) itipHide(t); else itipShow(t, true); return; }
+    if(ITIP.open!=null && !(e.target.closest && e.target.closest('.itip-pop'))) itipCloseAll(); }, true);
+  document.addEventListener('pointerover', e=>{ const t=tipOf(e); if(t && e.pointerType==='mouse' && !t.classList.contains('open') && ITIP.mute!==t.dataset.tip) itipShow(t, false); });
+  document.addEventListener('pointerout', e=>{ const t=e.target.closest && e.target.closest('.itip'); if(t && !t.contains(e.relatedTarget)) ITIP.mute=null; if(t && e.pointerType==='mouse' && !ITIP.pin && t.classList.contains('open') && !t.contains(e.relatedTarget)) itipHide(t); });
+  document.addEventListener('focusin', e=>{ const t=tipOf(e); if(t && e.target.matches(':focus-visible') && !t.classList.contains('open')) itipShow(t, false); });
+  document.addEventListener('focusout', e=>{ const t=tipOf(e); if(t && !ITIP.pin && t.classList.contains('open')) itipHide(t); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape' && document.querySelector('.itip.open')){ ITIP.mute=ITIP.open; itipCloseAll(); e.stopPropagation(); e.preventDefault(); } }, true);
+  document.addEventListener('scroll', ()=>{ if(ITIP.open!=null && Date.now()>ITIP.quiet) itipCloseAll(); }, true);
+  window.addEventListener('resize', ()=>itipSync()); }
 /* ---------- Marca Te Tengo: dos figuras abrazadas (kit de marca; archivos en 05-prototipos/marca/) ---------- */
 const BRAND={morado:'#4B2E83', coral:'#FF8F7E', durazno:'#FF8F7E', crema:'#FFF7F1'};
 /* Calcado del kit de marca (05-prototipos/marca/): cabeza y cuerpo de quien abraza (violeta) y de quien es abrazado (coral) */
@@ -361,7 +402,7 @@ function health(S){
   const pr = pausedRoom(S);
   if(pr){ const others = rooms.filter(r => r!==pr);
     return H('idle', 'pause', 'pause', cap1(deRoomD(pr))+' está en pausa hasta las <span class="mono">'+S.pause+'</span>', (others.length ? listY(others)+(others.length>1?' siguen':' sigue')+' cuidando · ' : '')+'la pausó '+esc(S.pauseBy||'la familia')+' desde la app'); }
-  if(S.live) return H('live', 'live', 'eye', esc(S.live.who)+' está viendo '+deRoomD(S.live.room)+' en vivo', 'Desde las <span class="mono">'+S.live.since+'</span> · no se graba · queda registrado');
+  if(S.live) return H('live', 'live', 'eye', esc(S.live.who)+' está viendo '+deRoomD(S.live.room)+' en vivo', 'Desde las <span class="mono">'+S.live.since+'</span>', infoTip('No se graba. Queda en el registro de accesos que ve la familia en la app.','privacidad',{k:'health-live',end:1}));
   return H('ok', 'send', 'check', cams.length===1 ? 'Te Tengo cuida '+deRoomD(rooms[0]) : 'Te Tengo cuida '+cams.length+' habitaciones', 'Todo funciona bien.');
 }
 function camRowE(S, c){
@@ -373,7 +414,7 @@ function camRowE(S, c){
 /* la app pide la vista previa de una cámara para elegir su habitación: se avisa en la PC, como la vista en vivo */
 function peekNotice(S, here){
   if(!S.peek || !connected(S).includes(S.peek)) return '';
-  return '<div class="notice info peek-n" role="status"><span class="led" aria-hidden="true"></span><div><b>'+(here ? PC.by+' mira esta cámara para elegirla' : PC.by+' mira la '+esc(DEVS[S.peek].name)+' para elegirla')+'</b><span>No se graba · queda registrado</span></div></div>';
+  return '<div class="notice info peek-n" role="status"><span class="led" aria-hidden="true"></span><div><b>'+(here ? PC.by+' mira esta cámara para elegirla' : PC.by+' mira la '+esc(DEVS[S.peek].name)+' para elegirla')+'</b></div>'+infoTip('No se graba. Queda en el registro de accesos que ve la familia en la app.','privacidad',{k:'peek',end:1})+'</div>';
 }
 function panelEstado(S){
   const list = S.cams.length ? '<ul class="crows" aria-label="Cámaras de esta PC">'+S.cams.map(c => camRowE(S, c)).join('')+'</ul>' : '';
@@ -425,12 +466,11 @@ function camPane(S, id){
   const changed = r ? (ps.room && norm(ps.room)!==norm(r)) : (ps.otherOn || !!ps.room);
   const primary = r ? '<button class="btn btn-primary" data-act="useCam"'+(changed?'':' disabled')+'>'+ic('check')+'Guardar cambio</button>'
                     : '<button class="btn btn-primary" data-act="useCam"'+(changed?'':' disabled')+'>'+ic('check')+'Usar esta cámara</button>';
-  return '<div class="cpane"><figure class="pv2 art">'+roomSVG(D.view)+'<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(D.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></figure>'+
+  return '<div class="cpane"><figure class="pv2 art">'+roomSVG(D.view)+'<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(D.name)+'</figcaption>'+infoTip('La vista previa solo se ve en esta PC: no se graba ni sale de la casa. Úsala para revisar el encuadre.','vista previa local',{k:'pvlock',icon:'lock',cls:'pv-lock',up:1,start:1})+'</figure>'+
     (S.adv.on ? '<p class="devid">'+ic('usb')+'<span>Identificador:</span><span class="code">'+esc(D.uid)+'</span></p>' : '')+
-    '<span class="rooms-l" id="rooms-l">¿En qué habitación está?</span><div class="chips2" role="group" aria-labelledby="rooms-l">'+chips+'</div>'+
+    '<span class="rooms-l"><span id="rooms-l">¿En qué habitación está?</span>'+infoTip('Por privacidad, no se admiten cámaras en el baño.','habitaciones',{k:'bath',start:1})+'</span><div class="chips2" role="group" aria-labelledby="rooms-l">'+chips+'</div>'+
     (ps.otherOn ? '<div class="other-row field'+(err?' err':'')+'"><label class="sr" for="room-other">Nombre de la habitación</label><input class="input" id="room-other" value="'+esc(ps.otherVal)+'" placeholder="Por ejemplo, Sala comedor" autocomplete="off"'+(err?' aria-invalid="true" aria-describedby="room-err"':'')+'></div>' : '')+
     (err ? '<p class="field-msg err-msg" id="room-err" role="alert">'+ic('warn')+'<span>'+err+'</span></p>' : '')+
-    '<p class="help-l">'+ic('info')+'Por privacidad, no se admiten cámaras en el baño.</p>'+
     '<div class="pane-actions">'+(r ? '<button class="btn btn-danger-ghost btn-sm" data-act="unuse">Dejar de usar</button>' : '')+primary+'</div></div>';
 }
 /* vista informativa de una cámara: vista previa para revisar el encuadre, habitación (elegida en la app) y conexión */
@@ -438,13 +478,11 @@ function camInfo(S, id){
   const D = DEVS[id], c = S.cams.find(x => x.id===id);
   if(S.scan || isLost(S, id) || isBusy(S, id)) return camPane(S, id);
   const by = c ? (c.by==='pc' ? 'Elegida en esta PC' : 'La eligió '+PC.by+' en la app') : 'Se elige en la app';
-  return '<div class="cpane info"><figure class="pv2 art">'+roomSVG(D.view)+'<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(D.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></figure>'+
+  return '<div class="cpane info"><figure class="pv2 art">'+roomSVG(D.view)+'<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(D.name)+'</figcaption>'+infoTip('La vista previa solo se ve en esta PC: no se graba ni sale de la casa. Úsala para revisar el encuadre.','vista previa local',{k:'pvlock',icon:'lock',cls:'pv-lock',up:1,start:1})+'</figure>'+
     peekNotice(S, true)+
     '<dl class="cinfo"><div><dt>Habitación</dt><dd><b>'+(c ? esc(c.room) : 'Sin usar')+'</b><span>'+by+'</span></dd></div>'+
     '<div><dt>Conexión</dt><dd><b class="ok">'+ic('check')+'Conectada</b><span>'+(id==='d4' ? 'Nueva · por USB' : 'Por USB')+'</span></dd></div></dl>'+
     (S.adv.on ? '<p class="devid">'+ic('usb')+'<span>Identificador:</span><span class="code">'+esc(D.uid)+'</span></p>' : '')+
-    '<p class="help-l">'+ic('eye')+'Usa la vista previa para revisar el encuadre.</p>'+
-    (S.cams.length >= 3 ? '<p class="help-l">'+ic('info')+'Si la detección va lenta, pasa alguna cámara a otra PC.</p>' : '')+
     '<div class="pane-actions start"><button class="btn btn-ghost btn-sm" data-act="hereOn">'+ic('cam')+'Elegir aquí (si estás instalando)</button></div></div>';
 }
 function panelCamaras(S){
@@ -457,12 +495,11 @@ function panelCamaras(S){
   if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">No encontramos cámaras</h2>'+
     '<p class="t-small">Conecta una webcam por USB.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc();
   const sel = selDev(S);
-  const peekRow = id => !here && S.peek===id ? '<span class="peek"><span class="led" aria-hidden="true"></span><span>'+PC.by+' la mira para elegirla · No se graba</span></span>' : '';
+  const peekRow = id => !here && S.peek===id ? '<span class="peek"><span class="led" aria-hidden="true"></span><span>'+PC.by+' la mira para elegirla</span></span>' : '';
   const rows = devs.map(id => '<button class="cpick'+(isLost(S,id)?' lost':'')+(!here && S.peek===id?' peeking':'')+'" role="radio" aria-checked="'+(id===sel)+'" tabindex="'+(id===sel?0:-1)+'" data-act="selCam" data-arg="'+id+'">'+
     '<span class="thumb art'+(isLost(S,id)||isBusy(S,id)?' dim':'')+'">'+roomSVG(DEVS[id].view)+'</span><span class="grow"><b>'+esc(DEVS[id].name)+'</b>'+devTag(S, id)+'</span>'+peekRow(id)+'</button>').join('');
-  const many = here && S.cams.length >= 3 ? '<p class="many">'+ic('info')+'<span>Si la detección va lenta, pasa alguna cámara a otra PC.</span></p>' : '';
-  return head+'<div class="camgrid"><div class="clist"><p class="grp-l" id="g-cams">Cámaras conectadas</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
-    '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+many+thisPc()+'</div>'+(here ? camPane(S, sel) : camInfo(S, sel))+'</div>';
+  return head+'<div class="camgrid"><div class="clist"><p class="grp-l tip-l"><span id="g-cams">Cámaras conectadas</span>'+(S.cams.length >= 3 ? infoTip('Si la detección va lenta, pasa alguna cámara a otra PC.','rendimiento',{k:'many',start:1}) : '')+'</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
+    '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc()+'</div>'+(here ? camPane(S, sel) : camInfo(S, sel))+'</div>';
 }
 
 /* =================== Avanzado: registro en vivo, medidores, actividad y almacenamiento =================== */
@@ -568,11 +605,11 @@ function metersInner(S){
     meas('Descenso de la cadera (M1)', num(m.m1, 3), 'cuerpos/s', 'Avisa desde 0,01', m.m1 >= .01, m.m1/.02*100, 50)+
     meas('Inclinación del tronco (M2)', Math.round(m.m2)+'°', '', 'Avisa por debajo de 45°', m.m2 < 45, (90-m.m2)/90*100, 50)+
     meas('Forma del cuerpo, ancho/alto (M3)', num(m.m3, 2), '', 'Avisa desde 1', m.m3 >= 1, m.m3/2*100, 50)+
-    '<div class="mcard mphase"><h3>'+ic('pulse')+'Fase</h3><div class="phs">'+PHASES.map((p, i) => (i?ic('chevR'):'')+'<span class="ph'+(i===ph?' cur '+p[1]:'')+'"'+(i===ph?' aria-current="step"':'')+'>'+(i===ph?ic('check'):'')+p[0]+'</span>').join('')+'</div>'+
-      '<p class="msub mt8">Avisa si sigue en el suelo tras 1,48 s; confirma a los 30 s.</p></div>'+
-    '<div class="mside"><div class="mcard"><h3>'+ic('person')+'Puntos del cuerpo</h3><div class="pbars">'+bars+'</div><p class="plow">Visibilidad 0–1 · mínimo 0,5</p></div>'+
+    '<div class="mcard mphase"><h3>'+ic('pulse')+'Fase'+infoTip('Avisa si sigue en el suelo tras 1,48 s; confirma a los 30 s.','fases',{k:'fase',start:1})+'</h3><div class="phs">'+PHASES.map((p, i) => (i?ic('chevR'):'')+'<span class="ph'+(i===ph?' cur '+p[1]:'')+'"'+(i===ph?' aria-current="step"':'')+'>'+(i===ph?ic('check'):'')+p[0]+'</span>').join('')+'</div>'+
+      '</div>'+
+    '<div class="mside"><div class="mcard"><h3>'+ic('person')+'Puntos del cuerpo'+infoTip('Visibilidad de 0 a 1. Por debajo de 0,5 el punto no cuenta.','visibilidad',{k:'plow',end:1})+'</h3><div class="pbars">'+bars+'</div></div>'+
       '<div class="mcard" style="flex:1;display:flex;flex-direction:column"><h3>'+ic('eye')+'Esqueleto</h3><div class="mskel">'+
-        (off ? '' : floorSVG(skelG(pose, fx, 132, '#2B1D4E', .95), 240, 150, 134))+'<span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></div></div></div>';
+        (off ? '' : floorSVG(skelG(pose, fx, 132, '#2B1D4E', .95), 240, 150, 134))+''+infoTip('El esqueleto solo se ve en esta PC: no se graba ni sale de la casa.','vista local',{k:'skel-lock',icon:'lock',cls:'pv-lock',start:1})+'</div></div></div>';
 }
 function metersView(S){ return '<div class="mgrid'+(meterReason(S)?' off':'')+'" id="meters" aria-label="Medidores de '+deRoomD(S.adv.cam)+'">'+metersInner(S)+'</div>'; }
 
@@ -592,7 +629,7 @@ function actView(S){
   const body = rows.length ? days.map(d => '<h3 class="actday">'+d+'</h3>'+rows.filter(a => a.d===d).map(a =>
       '<div class="arow">'+av(a.who)+'<span>'+a.m+'</span><span class="when">'+(a.pend?'<span class="ptag">'+ic('clock')+'Pendiente de enviar</span>':'')+'<span class="mono">'+a.t+'</span></span></div>').join('')).join('')
     : '<div class="actempty">'+ic('list')+'<b>Aún no hay actividad</b><span class="t-meta">Aquí verás quién cambió qué y cuándo.</span></div>';
-  return '<div class="advhead">'+seg+'</div><div class="actlist" id="actlist">'+body+'</div><p class="actfoot">'+ic('lock')+'Nadie puede editar ni borrar esta lista.</p>';
+  return '<div class="advhead">'+seg+infoTip('Nadie puede editar ni borrar esta lista.','registro de actividad',{k:'act',start:1})+'</div><div class="actlist" id="actlist">'+body+'</div>';
 }
 
 /* ---------- almacenamiento en esta PC ---------- */
@@ -630,9 +667,9 @@ function storageView(S){
       trow('person', 'st-mov', 'Movimientos (puntos del cuerpo)', 'Sin imagen ni video', mc && st.moves, 'stMov', 'mov', st.retMov, !mc, mc ? '' : 'Requiere el permiso de '+HOME.first+' (se registra en la app).')+
       trow('cam', 'st-vid', 'Video continuo', 'Nunca se sube', st.video, 'stVid', 'vid', st.retVid, false, '')+
       trow('play', 'st-clip', 'Clips de los avisos', '12 s por aviso', st.clips, 'stClip', 'clip', st.retClip, false, '')+'</div>'+
-    '<div class="stcard"><h3>Límite de espacio</h3>'+retPills(S, 'cap', st.cap, false, 'Límite de espacio')+
+    '<div class="stcard"><h3>Límite de espacio'+infoTip('Al llegar, borramos lo más antiguo: primero video, luego movimientos.','límite de espacio',{k:'cap',start:1,up:1})+'</h3>'+retPills(S, 'cap', st.cap, false, 'Límite de espacio')+
       (st.capOther ? '<div class="cap-other"><label class="sr" for="cap-val">Límite en GB</label><input class="input mono" id="cap-val" inputmode="numeric" value="'+esc(st.capVal)+'" placeholder="75"><span class="t-meta">GB</span></div>' : '')+
-      '<p class="capnote">Al llegar, borramos lo más antiguo: primero video, luego movimientos.</p></div>'+
+      '</div>'+
   '</div></div></div>';
 }
 
@@ -645,7 +682,7 @@ function panelAvanzado(S){
   const seg = '<div class="seg2" role="tablist" aria-label="Avanzado">'+advSubs(S).map(x => '<button role="tab" id="sub-'+x[0]+'" aria-selected="'+(x[0]===sub)+'" tabindex="'+(x[0]===sub?0:-1)+'" data-act="advSub" data-arg="'+x[0]+'">'+(S.adv.on?'':ic(x[1]))+x[2]+'</button>').join('')+'</div>';
   const btns = '<div class="advbtns"><button class="btn btn-secondary btn-sm" data-act="replayOpen">'+ic('replay')+'Ver qué pasó</button>'+(a.on ? '<button class="btn btn-secondary btn-sm" data-act="diagOpen">'+ic('download')+'Exportar diagnóstico</button>' : '')+'</div>';
   const mode = a.on
-    ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">Modo avanzado</b> · Nada sale de esta PC.</span>'+
+    ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">Modo avanzado</b></span>'+infoTip('Nada sale de esta PC: el registro y los medidores solo se ven aquí.','modo avanzado',{k:'adv',start:1})+
         (camSel && rooms.length ? '<span class="cam-l" id="cam-l">Cámara</span><div class="seg2 sm" role="radiogroup" aria-labelledby="cam-l">'+rooms.map(r => '<button role="radio" aria-checked="'+(r===a.cam)+'" data-act="advCam" data-arg="'+esc(r)+'">'+esc(r)+'</button>').join('')+'</div>' : '')+'</div>'
     : '<div class="card advcard"><span class="ci lg">'+ic('sliders')+'</span><div class="grow"><b id="adv-l">Modo avanzado</b><span>Qué detecta cada cámara y por qué avisa. Nada sale de esta PC.</span></div>'+sw(false, 'advToggle', 'adv-l')+'</div>';
   const body = sub==='registro' ? logView(S) : sub==='medidores' ? metersView(S) : sub==='almacenamiento' ? storageView(S) : actView(S);
@@ -708,7 +745,7 @@ function rpForm(S){
     '<div class="qchips">'+[['Hace 15 min','10:27'], ['Hace 1 hora','09:42'], ['Hoy 07:00','07:00']].map(q => '<button data-act="rpQuick" data-arg="'+q[1]+'"'+(dis?' disabled':'')+'>'+q[0]+'</button>').join('')+'</div>'+
     '<button class="btn btn-primary btn-sm" data-act="rpGo"'+(dis?' disabled':'')+'>'+ic('replay')+'Ver</button>'+
     '<p class="t-meta">'+(dis ? 'No hay movimientos guardados.' : 'Datos desde el 24/08/2026.')+'</p>'+
-    '<div class="vtoggle mt12"><span><b id="rp-vl">Sobre el video guardado</b><span>'+(vOk ? 'Nunca sale de esta PC.' : 'No hay video de ese momento.')+'</span></span>'+sw(r.video && vOk, 'rpVideo', 'rp-vl', !vOk || dis, true)+'</div></div>';
+    '<div class="vtoggle mt12"><span><b id="rp-vl">Sobre el video guardado'+(vOk ? infoTip('El video nunca sale de esta PC.','video guardado',{k:'rp-vid',start:1,up:1}) : '')+'</b>'+(vOk ? '' : '<span>No hay video de ese momento.</span>')+'</span>'+sw(r.video && vOk, 'rpVideo', 'rp-vl', !vOk || dis, true)+'</div></div>';
 }
 function panelReplay(S){
   const r = S.rp, day = (RP_DAYS.find(d => d[0]===r.day) || RP_DAYS[0])[2];
@@ -719,8 +756,8 @@ function panelReplay(S){
   else if(r.state==='old') main = '<div class="rp-main"><div class="card rp-block"><div class="notice info">'+ic('clock')+'<div><b>Ya no hay movimientos de ese momento.</b><span>Hay datos desde el 24/08/2026. Elige otra fecha.</span></div></div></div></div>';
   else {
     const p = rpPose(S, r.t), evs = rpEvents(S).filter(e => { const w = rpWin(S); return e.t >= w[0] && e.t <= w[1]; });
-    const strip = r.video && S.store.videoStored ? '<p class="rp-strip video">'+ic('lock')+'Video guardado solo en esta PC<span>· Queda en el registro de accesos</span></p>'
-      : '<p class="rp-strip">'+ic('eye')+'Solo puntos del cuerpo, nunca video<span>· Queda en el registro de accesos</span></p>';
+    const strip = r.video && S.store.videoStored ? '<p class="rp-strip video">'+ic('lock')+'Video guardado solo en esta PC'+infoTip('El video nunca sale de esta PC. Ver la repetición queda en el registro de accesos.','privacidad',{k:'rp',start:1})+'</p>'
+      : '<p class="rp-strip">'+ic('eye')+'Solo puntos del cuerpo, nunca video'+infoTip('Ver la repetición queda en el registro de accesos.','privacidad',{k:'rp',start:1})+'</p>';
     main = '<div class="rp-main">'+strip+
       '<div class="rp-canvas" id="rp-canvas">'+(r.video && S.store.videoStored ? '<div class="rp-vid">'+roomSVG(DEVS[S.cams.find(c => c.room===r.cam) ? S.cams.find(c => c.room===r.cam).id : 'd1'].view)+'</div>' : '')+
         '<div class="rp-fig" id="rp-fig">'+rpFig(S, r.t)+'</div><span class="rp-phase '+p.tone+'" id="rp-phase" aria-live="polite">'+ic(p.i)+p.label+'</span><span class="rp-clock" id="rp-clock">'+hms(r.t)+'</span></div>'+
@@ -914,9 +951,10 @@ const PRESETS = [
   {g:G.dg, slug:'60-exportar-diagnostico', name:'Exportar diagnóstico', desc:'Qué incluye y qué no, antes de guardar.', S:mk(DG('intro'))},
   {g:G.dg, slug:'61-preparando-diagnostico', name:'Preparando el diagnóstico', desc:'Barra de progreso.', S:mk(DG('busy'))},
   {g:G.dg, slug:'62-diagnostico-guardado', name:'Diagnóstico guardado', desc:'Nombre, tamaño y «Mostrar en la carpeta».', S:mk(DG('done'))},
+  {g:G.cam, slug:'64-ayuda-vista-previa-abierta', name:'Ayuda «?» abierta', desc:'El candado de la vista previa explica, al tocarlo, que solo se ve en esta PC.', S:mk({tab:'camaras', tipOpen:'pvlock'})},
   {g:G.dg, slug:'63-error-al-guardar', name:'Error al guardar', desc:'No queda archivo a medias; se elige otra carpeta.', S:mk(DG('err'))}
 ];
-function renderPreset(p, o){ return p.S.screen==='cerrado' ? desktopCorner(p.S, p.S.kind) : p.S.screen==='arranque' ? desktopBoot(p.S) : win(p.S, o); }
+function renderPreset(p, o){ ITIP.open = p.S.tipOpen || null; return p.S.screen==='cerrado' ? desktopCorner(p.S, p.S.kind) : p.S.screen==='arranque' ? desktopBoot(p.S) : win(p.S, o); }
 
-if(typeof module!=='undefined') module.exports = {PRESETS, renderPreset, win, baseState, logotipo, G,
+if(typeof module!=='undefined') module.exports = {ITIP, infoTip, PRESETS, renderPreset, win, baseState, logotipo, G,
   ic, esc, appIcon, LOGO, titlebar, tabbar, roomSVG, POSES, lerpPose, skelG, floorSVG, sw, DEVS, HOME, PC, num, T, hms, sec, det, mk};

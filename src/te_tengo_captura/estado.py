@@ -104,6 +104,23 @@ class Accion:
 
 
 @dataclass(frozen=True, slots=True)
+class Ayuda:
+    """A help behind a «?» icon (core.js ``infoTip``): text, topic of its button, key."""
+
+    texto: str
+    tema: str
+    clave: str
+
+
+# core.js health: the live view's privacy note, moved from the summary's detail into the «?» icon
+AYUDA_EN_VIVO = Ayuda(
+    "No se graba. Queda en el registro de accesos que ve la familia en la app.",
+    "privacidad",
+    "health-live",
+)
+
+
+@dataclass(frozen=True, slots=True)
 class Aviso:
     """``health``: the summary block at the top of «Estado»."""
 
@@ -113,6 +130,7 @@ class Aviso:
     titulo_html: str
     detalle_html: str
     accion: Accion | None
+    ayuda: Ayuda | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,10 +418,9 @@ def _aviso(
             "live",
             "eye",
             escape(f"{QUIEN_MIRA} está viendo {de_habitacion(viendo.nombre_habitacion)} en vivo"),
-            "Desde las "
-            + _mono(en_vivo.get(viendo.clave, ""))
-            + " · no se graba · queda registrado",
+            "Desde las " + _mono(en_vivo.get(viendo.clave, "")),
             None,
+            AYUDA_EN_VIVO,
         )
     if len(camaras) == 1:
         titulo = f"Te Tengo cuida {de_habitacion(habitaciones[0])}"

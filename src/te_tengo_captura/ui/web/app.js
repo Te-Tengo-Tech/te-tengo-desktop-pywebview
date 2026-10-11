@@ -29,6 +29,7 @@
     eyeOff:'<path d="M3 3l18 18"/><path d="M10.6 6A9.5 9.5 0 0 1 21.5 12a15 15 0 0 1-2.7 3.4M6.4 7.6A14.5 14.5 0 0 0 2.5 12S6 18.5 12 18.5a9 9 0 0 0 4-1"/><path d="M9.9 10a3 3 0 0 0 4.1 4.1"/>',
     plus:'<path d="M12 5v14M5 12h14"/>',
     clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    help:'<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.85.85c0 1.7-2.45 2.2-2.45 3.75"/><circle cx="12" cy="17" r="1.1" fill="currentColor" stroke="none"/>',
     info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r="1.1" fill="currentColor" stroke="none"/>',
     warn:'<path d="M12 3.5 21.5 20h-19L12 3.5Z"/><path d="M12 9.5v5"/><circle cx="12" cy="17.3" r="1.1" fill="currentColor" stroke="none"/>',
     key:'<circle cx="8" cy="15" r="4.5"/><path d="M11.2 11.8 20 3M16.5 6.5l2.5 2.5M14 9l2 2"/>',
@@ -76,6 +77,15 @@
   const WG = {min:'<path d="M0 5.5h10"/>', max:'<rect x=".5" y=".5" width="9" height="9" rx="1.4"/>', close:'<path d="M.6.6l8.8 8.8M9.4.6.6 9.4"/>'};
   function wg(n){ return '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">'+WG[n]+'</svg>'; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  /* ---------- help behind a «?» icon (core.js infoTip): a 24 px button (44 px to click) whose text shows in a
+     card with role="tooltip". A click pins it; hovering with the mouse or keyboard focus shows it; Escape, a click
+     outside or scrolling close it. k names the tip so it stays open across renders; up opens it upwards and
+     end/start align it to an edge; it flips when it does not fit. ---------- */
+  const ITIP = {open:null, pin:false, n:0, quiet:0, mute:null, on:false};
+  function infoTip(text, label, o){ o = o||{}; const k = String(o.k||label), id = 'itip-'+k.replace(/[^a-z0-9]+/gi, '-')+'-'+(++ITIP.n), on = ITIP.open===k;
+    return '<span class="itip'+(o.up?' up':'')+(o.end?' end':'')+(o.start?' start':'')+(o.cls?' '+o.cls:'')+(on?' open':'')+'" data-tip="'+esc(k)+'">'+
+      '<button type="button" class="itip-b" aria-label="Más información: '+esc(label)+'" aria-expanded="'+on+'" aria-describedby="'+id+'">'+ic(o.icon||'help')+'</button>'+
+      '<span class="itip-pop" role="tooltip" id="'+id+'">'+text+'</span></span>'; }
 
   /* ---------- marca Te Tengo: dos figuras abrazadas (core.js, kit de marca) ---------- */
   const BRAND={morado:'#4B2E83', coral:'#FF8F7E', durazno:'#FF8F7E', crema:'#FFF7F1'};
@@ -248,7 +258,8 @@
   function health(E){
     const h = E.health, a = h.accion;
     const btn = a ? '<button class="btn btn-secondary btn-sm" data-act="'+a.act+'">'+ic(a.icono)+esc(a.texto)+'</button>' : '';
-    return '<div class="health '+h.clase+'" role="status"><span class="st '+h.k+'">'+ic(h.icono)+'</span><div class="grow"><b>'+h.titulo_html+'</b><span data-r="hd">'+h.detalle_html+'</span></div>'+btn+'</div>';
+    const tip = h.ayuda ? infoTip(esc(h.ayuda.texto), h.ayuda.tema, {k:h.ayuda.clave, end:1}) : '';
+    return '<div class="health '+h.clase+'" role="status"><span class="st '+h.k+'">'+ic(h.icono)+'</span><div class="grow"><b>'+h.titulo_html+'</b><span data-r="hd">'+h.detalle_html+'</span></div>'+tip+btn+'</div>';
   }
   function camRow(c){
     const st = c.st;
@@ -268,7 +279,7 @@
   function peekNotice(E, here){
     const d = (E.devices || []).find(x => x.peek);
     if(!d) return '';
-    return '<div class="notice info peek-n" role="status"><span class="led" aria-hidden="true"></span><div><b>'+(here ? 'Un familiar mira esta cámara para elegirla' : 'Un familiar mira la '+esc(d.name)+' para elegirla')+'</b><span>No se graba · queda registrado</span></div></div>';
+    return '<div class="notice info peek-n" role="status"><span class="led" aria-hidden="true"></span><div><b>'+(here ? 'Un familiar mira esta cámara para elegirla' : 'Un familiar mira la '+esc(d.name)+' para elegirla')+'</b></div>'+infoTip('No se graba. Queda en el registro de accesos que ve la familia en la app.','privacidad',{k:'peek',end:1})+'</div>';
   }
   function panelEstado(E, U){
     const list = E.cams.length ? '<ul class="crows" aria-label="Cámaras de esta PC">'+E.cams.map(camRow).join('')+'</ul>' : '';
@@ -299,14 +310,14 @@
       '<p class="t-small">Ciérralo y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
     const by = d.room ? (d.by==='pc' ? 'Elegida en esta PC' : d.by==='app' ? 'La eligió la familia en la app' : 'El nombre se cambia en la app Te Tengo') : 'Se elige en la app';
     return '<div class="cpane info"><figure class="pv2 art" id="pv" data-clave="'+esc(d.id)+'">'+roomSVG(d.room || '')+'<img class="pv-img" id="pv-img" alt="" hidden>'+
-      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></figure>'+
+      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption>'+PV_TIP()+'</figure>'+
       (d.peek ? peekNotice(E, true) : '')+
       '<dl class="cinfo"><div><dt>Habitación</dt><dd><b>'+(d.room ? esc(d.room) : 'Sin usar')+'</b><span>'+by+'</span></dd></div>'+
       '<div><dt>Conexión</dt><dd><b class="ok">'+ic('check')+'Conectada</b><span>'+(d.new ? 'Nueva · por USB' : 'Por USB')+'</span></dd></div></dl>'+
-      '<p class="help-l">'+ic('eye')+'Usa la vista previa para revisar el encuadre.</p>'+
-      (E.cams.length >= 3 ? '<p class="help-l">'+ic('info')+'Si la detección va lenta, pasa alguna cámara a otra PC.</p>' : '')+
       (E.unlink ? '<div class="pane-actions start"><button class="btn btn-ghost btn-sm" data-act="hereOn">'+ic('cam')+'Elegir aquí (si estás instalando)</button></div>' : '')+'</div>';
   }
+  /* the lock over a local preview opens its help (core.js: 'pvlock' and 'skel-lock') */
+  function PV_TIP(){ return infoTip('La vista previa solo se ve en esta PC: no se graba ni sale de la casa. Úsala para revisar el encuadre.','vista previa local',{k:'pvlock',icon:'lock',cls:'pv-lock',up:1,start:1}); }
   /* «Elegir aquí, si estás instalando» (CA-29.8): the same rules as the app */
   const ROOMS = ['Sala', 'Dormitorio', 'Cocina', 'Comedor', 'Pasillo'];
   function norm(s){ return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(); }
@@ -332,11 +343,10 @@
     const changed = r ? (room && norm(room)!==norm(r)) : (otherOn || !!room);
     const primary = '<button class="btn btn-primary" data-act="useCam"'+(changed && !U.busy?'':' disabled')+'>'+ic('check')+(r?'Guardar cambio':'Usar esta cámara')+'</button>';
     return '<div class="cpane"><figure class="pv2 art" id="pv" data-clave="'+esc(d.id)+'">'+roomSVG(d.room || '')+'<img class="pv-img" id="pv-img" alt="" hidden>'+
-      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></figure>'+
-      '<span class="rooms-l" id="rooms-l">¿En qué habitación está?</span><div class="chips2" role="group" aria-labelledby="rooms-l">'+chips+'</div>'+
+      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption>'+PV_TIP()+'</figure>'+
+      '<span class="rooms-l"><span id="rooms-l">¿En qué habitación está?</span>'+infoTip('Por privacidad, no se admiten cámaras en el baño.','habitaciones',{k:'bath',start:1})+'</span><div class="chips2" role="group" aria-labelledby="rooms-l">'+chips+'</div>'+
       (otherOn ? '<div class="other-row field'+(err?' err':'')+'"><label class="sr" for="room-other">Nombre de la habitación</label><input class="input" id="room-other" value="'+esc(pk.other || (custom ? r : ''))+'" placeholder="Por ejemplo, Sala comedor" autocomplete="off"'+(err?' aria-invalid="true" aria-describedby="room-err"':'')+'></div>' : '')+
       (err ? '<p class="field-msg err-msg" id="room-err" role="alert">'+ic('warn')+'<span>'+err+'</span></p>' : '')+
-      '<p class="help-l">'+ic('info')+'Por privacidad, no se admiten cámaras en el baño.</p>'+
       '<div class="pane-actions">'+(r ? '<button class="btn btn-danger-ghost btn-sm" data-act="unuse">Dejar de usar</button>' : '')+primary+'</div></div>';
   }
   function panelCamaras(E, U){
@@ -349,12 +359,12 @@
     if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">No encontramos cámaras</h2>'+
       '<p class="t-small">Conecta una webcam por USB.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc(E);
     const sel = selDev(E, U);
-    const peekRow = d => !here && d.peek ? '<span class="peek"><span class="led" aria-hidden="true"></span><span>Un familiar la mira para elegirla · No se graba</span></span>' : '';
+    const peekRow = d => !here && d.peek ? '<span class="peek"><span class="led" aria-hidden="true"></span><span>Un familiar la mira para elegirla</span></span>' : '';
     const rows = devs.map(d => '<button class="cpick'+(!d.connected?' lost':'')+(!here && d.peek?' peeking':'')+'" role="radio" aria-checked="'+(d===sel)+'" tabindex="'+(d===sel?0:-1)+'" data-act="selCam" data-arg="'+esc(d.id)+'">'+
       '<span class="thumb art'+(!d.connected||d.busy?' dim':'')+'">'+roomSVG(d.room || '')+'</span><span class="grow"><b>'+esc(d.name)+'</b>'+devTag(d)+'</span>'+peekRow(d)+'</button>').join('');
-    const many = here && E.cams.length >= 3 ? '<p class="many">'+ic('info')+'<span>Si la detección va lenta, pasa alguna cámara a otra PC.</span></p>' : '';
-    return head+'<div class="camgrid"><div class="clist"><p class="grp-l" id="g-cams">Cámaras conectadas</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
-      '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+many+thisPc(E)+'</div>'+(here ? camPane(E, U, sel) : camInfo(E, U, sel))+'</div>';
+    const many = E.cams.length >= 3 ? infoTip('Si la detección va lenta, pasa alguna cámara a otra PC.','rendimiento',{k:'many',start:1}) : '';
+    return head+'<div class="camgrid"><div class="clist"><p class="grp-l tip-l"><span id="g-cams">Cámaras conectadas</span>'+many+'</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
+      '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc(E)+'</div>'+(here ? camPane(E, U, sel) : camInfo(E, U, sel))+'</div>';
   }
 
 
@@ -442,11 +452,11 @@
       meas('Descenso de la cadera (M1)', m.m1==null ? '—' : num(v, 3), 'cuerpos/s', 'Avisa desde '+num(uv, 2).replace(/0+$/, '').replace(/,$/, ''), v >= uv, v/(uv*2)*100, 50)+
       meas('Inclinación del tronco (M2)', m.m2==null ? '—' : Math.round(th)+'°', '', 'Avisa por debajo de '+Math.round(ua)+'°', th < ua || !!m.cabezaBajoPies, (90-th)/90*100, 50)+
       meas('Forma del cuerpo, ancho/alto (M3)', m.m3==null ? '—' : num(P, 2), '', 'Avisa desde '+num(ur, 0), P >= ur || !!m.cabezaBajoPies, P/(ur*2)*100, 50)+
-      '<div class="mcard mphase"><h3>'+ic('pulse')+'Fase</h3><div class="phs">'+PHASES.map((p, i) => (i?ic('chevR'):'')+'<span class="ph'+(i===ph?' cur '+p[1]:'')+'"'+(i===ph?' aria-current="step"':'')+'>'+(i===ph?ic('check'):'')+p[0]+'</span>').join('')+'</div>'+
-        '<p class="msub mt8">Avisa si sigue en el suelo tras 1,48 s; confirma a los 30 s.</p></div>'+
-      '<div class="mside"><div class="mcard"><h3>'+ic('person')+'Puntos del cuerpo</h3><div class="pbars">'+bars+'</div><p class="plow">Visibilidad 0–1 · mínimo 0,5</p></div>'+
+      '<div class="mcard mphase"><h3>'+ic('pulse')+'Fase'+infoTip('Avisa si sigue en el suelo tras 1,48 s; confirma a los 30 s.','fases',{k:'fase',start:1})+'</h3><div class="phs">'+PHASES.map((p, i) => (i?ic('chevR'):'')+'<span class="ph'+(i===ph?' cur '+p[1]:'')+'"'+(i===ph?' aria-current="step"':'')+'>'+(i===ph?ic('check'):'')+p[0]+'</span>').join('')+'</div>'+
+        '</div>'+
+      '<div class="mside"><div class="mcard"><h3>'+ic('person')+'Puntos del cuerpo'+infoTip('Visibilidad de 0 a 1. Por debajo de 0,5 el punto no cuenta.','visibilidad',{k:'plow',end:1})+'</h3><div class="pbars">'+bars+'</div></div>'+
         '<div class="mcard" style="flex:1;display:flex;flex-direction:column"><h3>'+ic('eye')+'Esqueleto</h3><div class="mskel">'+
-          (off ? '' : skelReal(m.esqueleto))+'<span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></div></div></div>';
+          (off ? '' : skelReal(m.esqueleto))+infoTip('El esqueleto solo se ve en esta PC: no se graba ni sale de la casa.','vista local',{k:'skel-lock',icon:'lock',cls:'pv-lock',start:1})+'</div></div></div>';
   }
   function metersView(E, U, cam){ const M = U.meters[cam.id]; return '<div class="mgrid'+(meterReason(E, M)?' off':'')+'" id="meters" aria-label="Medidores de '+esc(cam.room)+'">'+metersInner(E, M)+'</div>'; }
   function actView(E, U){
@@ -457,7 +467,7 @@
     const body = rows.length ? days.map(d => '<h3 class="actday">'+esc(d)+'</h3>'+rows.filter(a => a.d===d).map(a =>
         '<div class="arow">'+av(a.who)+'<span>'+esc(a.m)+'</span><span class="when">'+(a.pend?'<span class="ptag">'+ic('clock')+'Pendiente de enviar</span>':'')+'<span class="mono">'+esc(a.t)+'</span></span></div>').join('')).join('')
       : '<div class="actempty">'+ic('list')+'<b>Aún no hay actividad</b><span class="t-meta">Aquí verás quién cambió qué y cuándo.</span></div>';
-    return '<div class="advhead">'+seg+'</div><div class="actlist" id="actlist">'+body+'</div><p class="actfoot">'+ic('lock')+'Nadie puede editar ni borrar esta lista.</p>';
+    return '<div class="advhead">'+seg+infoTip('Nadie puede editar ni borrar esta lista.','registro de actividad',{k:'act',start:1})+'</div><div class="actlist" id="actlist">'+body+'</div>';
   }
 
   /* ---------- almacenamiento en esta PC (US-38) ---------- */
@@ -494,9 +504,9 @@
         trow('person', 'st-mov', 'Movimientos (puntos del cuerpo)', 'Sin imagen ni video', mc && a.movimientos, 'stMov', 'mov', 'dias_movimientos', a.dias_movimientos, !mc, mc ? '' : 'Requiere el permiso de '+esc(E.home.first)+' (se registra en la app).')+
         trow('cam', 'st-vid', 'Video continuo', 'Nunca se sube', a.video, 'stVid', 'vid', 'dias_video', a.dias_video, false, '')+
         trow('play', 'st-clip', 'Clips de los avisos', '12 s por aviso', a.clips, 'stClip', 'clip', 'dias_clips', a.dias_clips, false, '')+'</div>'+
-      '<div class="stcard"><h3>Límite de espacio</h3>'+retPills(st, 'cap', 'limite_gb', a.limite_gb, false, 'Límite de espacio')+
+      '<div class="stcard"><h3>Límite de espacio'+infoTip('Al llegar, borramos lo más antiguo: primero video, luego movimientos.','límite de espacio',{k:'cap',start:1,up:1})+'</h3>'+retPills(st, 'cap', 'limite_gb', a.limite_gb, false, 'Límite de espacio')+
         (capOtro || U.capOther ? '<div class="cap-other"><label class="sr" for="cap-val">Límite en GB</label><input class="input mono" id="cap-val" inputmode="numeric" value="'+esc(capOtro ? a.limite_gb : '')+'" placeholder="75"><span class="t-meta">GB</span></div>' : '')+
-        '<p class="capnote">Al llegar, borramos lo más antiguo: primero video, luego movimientos.</p></div>'+
+        '</div>'+
     '</div></div></div>';
   }
   function advSubs(E){ return (E.advanced ? [['registro','terminal','Registro en vivo'], ['medidores','gauge','Medidores']] : []).concat([['actividad','list','Actividad'], ['almacenamiento','drive','Almacenamiento']]); }
@@ -507,7 +517,7 @@
     const btns = '<div class="advbtns"><button class="btn btn-secondary btn-sm" data-act="replayOpen">'+ic('replay')+'Ver qué pasó</button>'+(on ? '<button class="btn btn-secondary btn-sm" data-act="diagOpen">'+ic('download')+'Exportar diagnóstico</button>' : '')+'</div>';
     const cams = advCams(E);
     const mode = on
-      ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">Modo avanzado</b> · Nada sale de esta PC.</span>'+
+      ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">Modo avanzado</b></span>'+infoTip('Nada sale de esta PC: el registro y los medidores solo se ven aquí.','modo avanzado',{k:'adv',start:1})+
           (camSel && cams.length ? '<span class="cam-l" id="cam-l">Cámara</span><div class="seg2 sm" role="radiogroup" aria-labelledby="cam-l">'+cams.map(c => '<button role="radio" aria-checked="'+(cam && c.id===cam.id)+'" data-act="advCam" data-arg="'+esc(c.id)+'">'+esc(c.room)+'</button>').join('')+'</div>' : '')+'</div>'
       : '<div class="card advcard"><span class="ci lg">'+ic('sliders')+'</span><div class="grow"><b id="adv-l">Modo avanzado</b><span>Qué detecta cada cámara y por qué avisa. Nada sale de esta PC.</span></div>'+sw(false, 'advToggle', 'adv-l')+'</div>';
     const sinCamara = '<div class="logempty">'+ic('cam')+'<b>Aún no pasa nada en esta cámara</b></div>';
@@ -587,7 +597,7 @@
       '<div class="qchips">'+[['Hace 15 min','m15'], ['Hace 1 hora','h1'], ['Hoy 07:00','h7']].map(q => '<button data-act="rpQuick" data-arg="'+q[1]+'"'+(dis?' disabled':'')+'>'+q[0]+'</button>').join('')+'</div>'+
       '<button class="btn btn-primary btn-sm" data-act="rpGo"'+(dis?' disabled':'')+'>'+ic('replay')+'Ver</button>'+
       '<p class="t-meta">'+(dis || !cam || !cam.desde ? 'No hay movimientos guardados.' : 'Datos desde el '+esc(cam.desde)+'.')+'</p>'+
-      '<div class="vtoggle mt12"><span><b id="rp-vl">Sobre el video guardado</b><span>'+(vOk ? 'Nunca sale de esta PC.' : 'No hay video de ese momento.')+'</span></span>'+sw(rp.video && vOk, 'rpVideo', 'rp-vl', !vOk || dis, true)+'</div></div>';
+      '<div class="vtoggle mt12"><span><b><span id="rp-vl">Sobre el video guardado</span>'+(vOk ? infoTip('El video nunca sale de esta PC.','video guardado',{k:'rp-vid',start:1,up:1}) : '')+'</b>'+(vOk ? '' : '<span>No hay video de ese momento.</span>')+'</span>'+sw(rp.video && vOk, 'rpVideo', 'rp-vl', !vOk || dis, true)+'</div></div>';
   }
   function panelReplay(E, U){
     const rp = U.rp, info = rp.info || {permitida:false, camaras:[]}, cam = rpCamInfo(rp);
@@ -602,8 +612,8 @@
     else {
       const p = rpPhase(rp, rp.t), w = rp.win || {eventos:[]}, a = rp.w0, b = a + rpSpan(rp), evs = w.eventos.filter(e => e.t >= a && e.t <= b);
       const conVideo = rp.video && w.video;
-      const strip = conVideo ? '<p class="rp-strip video">'+ic('lock')+'Video guardado solo en esta PC<span>· Queda en el registro de accesos</span></p>'
-        : '<p class="rp-strip">'+ic('eye')+'Solo puntos del cuerpo, nunca video<span>· Queda en el registro de accesos</span></p>';
+      const strip = conVideo ? '<p class="rp-strip video">'+ic('lock')+'Video guardado solo en esta PC'+infoTip('El video nunca sale de esta PC. Ver la repetición queda en el registro de accesos.','privacidad',{k:'rp',start:1})+'</p>'
+        : '<p class="rp-strip">'+ic('eye')+'Solo puntos del cuerpo, nunca video'+infoTip('Ver la repetición queda en el registro de accesos.','privacidad',{k:'rp',start:1})+'</p>';
       main = '<div class="rp-main">'+strip+
         '<div class="rp-canvas" id="rp-canvas">'+(conVideo ? '<div class="rp-vid"><img id="rp-img" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain" hidden></div>' : '')+
           '<div class="rp-fig" id="rp-fig">'+rpFig(rp, rp.t)+'</div><span class="rp-phase '+p.tone+'" id="rp-phase" aria-live="polite">'+ic(p.i)+esc(p.label)+'</span><span class="rp-clock" id="rp-clock">'+hmsMs(rp.t)+'</span></div>'+
@@ -712,7 +722,7 @@
     return JSON.stringify(o);
   }
 
-  const api = { panelReplay, rpPhase, timeline, storageView, panelAvanzado, metersInner, actView, ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
+  const api = { ITIP, infoTip, panelReplay, rpPhase, timeline, storageView, panelAvanzado, metersInner, actView, ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
 
   /* ---------- DOM: render with focus, folded sections and scroll preserved ---------- */
   if(typeof document === 'undefined'){ if(typeof module !== 'undefined') module.exports = api; return; }
@@ -724,14 +734,69 @@
   let opener = null;
   const bridge = () => (global.pywebview && global.pywebview.api) || null;
 
+  /* ---------- help «?»: placement and the click, hover, focus, Escape and scroll behaviour (core.js itip*) ---------- */
+  /* the visible box: the window clipped by every scrolling container */
+  function itipBox(t){
+    let r = {top:0, left:0, bottom:window.innerHeight, right:window.innerWidth};
+    for(let e = t.parentElement; e && e !== document.body; e = e.parentElement){
+      const cs = getComputedStyle(e);
+      if(cs.overflow !== 'visible' || e.matches('.win,.wb')){ const b = e.getBoundingClientRect(); r = {top:Math.max(r.top, b.top), left:Math.max(r.left, b.left), bottom:Math.min(r.bottom, b.bottom), right:Math.min(r.right, b.right)}; }
+      if(e.matches('.win')) break;
+    }
+    return r;
+  }
+  function itipPlace(t){
+    const pop = t.querySelector('.itip-pop'); if(!pop) return;
+    t.classList.remove('flip'); pop.style.removeProperty('--dx');
+    const v = itipBox(t), b = t.getBoundingClientRect(), r = pop.getBoundingClientRect(), up = t.classList.contains('up'), M = 8;
+    if(up ? (r.top < v.top+M && b.bottom+r.height+M <= v.bottom) : (r.bottom > v.bottom-M && b.top-r.height-M >= v.top)) t.classList.add('flip');
+    let dx = 0;
+    if(r.left < v.left+M) dx = v.left+M-r.left; else if(r.right > v.right-M) dx = v.right-M-r.right;
+    if(dx) pop.style.setProperty('--dx', Math.round(dx)+'px');
+  }
+  function itipShow(t, pin){
+    document.querySelectorAll('.itip.open').forEach(x => { if(x !== t) itipHide(x); });
+    t.classList.add('open'); t.firstChild.setAttribute('aria-expanded', 'true'); ITIP.open = t.dataset.tip; ITIP.pin = !!pin; itipPlace(t);
+  }
+  function itipHide(t){ t.classList.remove('open', 'flip'); t.firstChild.setAttribute('aria-expanded', 'false'); if(ITIP.open === t.dataset.tip){ ITIP.open = null; ITIP.pin = false; } }
+  function itipCloseAll(){ document.querySelectorAll('.itip.open').forEach(itipHide); ITIP.open = null; ITIP.pin = false; }
+  /* after a render the open help is placed again; the scroll a render restores does not close it */
+  function itipSync(){ ITIP.quiet = Date.now() + 200; document.querySelectorAll('.itip.open').forEach(itipPlace); }
+  function itipInit(){
+    if(ITIP.on) return; ITIP.on = true;
+    const tipOf = e => { const b = e.target.closest && e.target.closest('.itip-b'); return b ? b.parentNode : null; };
+    document.addEventListener('click', e => {
+      const t = tipOf(e); ITIP.mute = null;
+      if(t){ e.preventDefault(); if(t.classList.contains('open') && ITIP.pin) itipHide(t); else itipShow(t, true); return; }
+      if(ITIP.open != null && !(e.target.closest && e.target.closest('.itip-pop'))) itipCloseAll();
+    }, true);
+    document.addEventListener('pointerover', e => { const t = tipOf(e); if(t && e.pointerType === 'mouse' && !t.classList.contains('open') && ITIP.mute !== t.dataset.tip) itipShow(t, false); });
+    document.addEventListener('pointerout', e => {
+      const t = e.target.closest && e.target.closest('.itip'); if(!t || t.contains(e.relatedTarget)) return;
+      ITIP.mute = null;
+      if(e.pointerType === 'mouse' && !ITIP.pin && t.classList.contains('open')) itipHide(t);
+    });
+    document.addEventListener('focusin', e => { const t = tipOf(e); if(t && e.target.matches(':focus-visible') && !t.classList.contains('open') && ITIP.mute !== t.dataset.tip) itipShow(t, false); });
+    document.addEventListener('focusout', e => { const t = tipOf(e); if(t && !ITIP.pin && t.classList.contains('open')) itipHide(t); });
+    document.addEventListener('keydown', e => {
+      if(e.key === 'Tab') ITIP.mute = null;
+      if(e.key === 'Escape' && document.querySelector('.itip.open')){ ITIP.mute = ITIP.open; itipCloseAll(); e.stopPropagation(); e.preventDefault(); }
+    }, true);
+    document.addEventListener('scroll', () => { if(ITIP.open != null && Date.now() > ITIP.quiet) itipCloseAll(); }, true);
+    global.addEventListener('resize', () => itipSync());
+  }
+  itipInit();
+
   function snap(){
     const a = document.activeElement;
     if(!a || a === document.body || !$('app').contains(a)) return null;
+    if(a.classList.contains('itip-b')) return {tip:a.parentNode.dataset.tip};
     return {id:a.id, act:a.dataset && a.dataset.act, arg:a.dataset && a.dataset.arg};
   }
   function restore(f){
     if(!f) return;
     let el = f.id ? $(f.id) : null;
+    if(f.tip!=null) el = document.querySelector('#app .itip[data-tip="'+CSS.escape(f.tip)+'"] .itip-b');
     if(!el && f.act) el = document.querySelector('#app [data-act="'+f.act+'"]'+(f.arg!=null ? '[data-arg="'+CSS.escape(f.arg)+'"]' : '')) || document.querySelector('#app [data-act="'+f.act+'"]');
     if(el && !el.disabled) el.focus({preventScroll:true});
   }
@@ -746,6 +811,7 @@
     const d = document.querySelector('#app .dlg');
     if(d && !d.contains(document.activeElement)){ const b = d.querySelector('.dlg-actions .btn:not([disabled])'); if(b) b.focus({preventScroll:true}); }
     else if(enter){ const t = $('scr-h'); if(t) t.focus({preventScroll:true}); } else restore(f);
+    itipSync();
   }
   function patch(){
     const tpl = document.createElement('template');
@@ -932,13 +998,14 @@
         if(ev && !lg.paused){ const a = $('log-ann'); if(a) a.textContent = ev.m; }
       });
     } else if(sub==='medidores'){
-      call('medidores', cam.id).then(m => { U.meters[cam.id] = m; const g = $('meters'); if(g){ g.outerHTML = metersView(E, U, cam); } });
+      call('medidores', cam.id).then(m => { U.meters[cam.id] = m; const g = $('meters'); if(g){ const f = snap(); g.outerHTML = metersView(E, U, cam); if(f && f.tip!=null) restore(f); itipSync(); } });
     }
   }
   function renderAdv(){
     const cam = advCam(E, U), box = $('logbox');
     if(!cam || !box){ render(); return; }
     if(U.log.paused){ const n = $('log-new'), all = U.log.lines[cam.id] || [], k = all.length - U.log.cut; if(n) n.textContent = k+' '+(k===1?'línea nueva':'líneas nuevas'); return; }
+    ITIP.quiet = Date.now() + 200;
     const top = box.scrollTop; box.innerHTML = logRows(E, U, cam); box.scrollTop = top;
     LOG_K.forEach(k => { const c = $('cnt-'+k[0]); if(c) c.textContent = (U.log.lines[cam.id] || []).filter(l => l.k===k[0]).length; });
   }

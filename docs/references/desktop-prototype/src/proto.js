@@ -21,6 +21,7 @@
   const ROOM_ART = r => ({Sala:'la Sala', Dormitorio:'el Dormitorio', Cocina:'la Cocina', Comedor:'el Comedor', Pasillo:'el Pasillo'})[r] || '«'+r+'»';
   function act(m){ S.acts.unshift({t:'10:42', m:m, pend:!S.online}); }
 
+  itipInit(); /* ayudas «?»: clic, cursor, foco, Escape, clic fuera y desplazar */
   /* ---------- render con foco, plegables y desplazamiento preservados ---------- */
   function snap(){
     const a = document.activeElement;
@@ -57,6 +58,7 @@
     }
     else if(focusScreen && !closed && !booting){ const t = $('scr-h'); if(t) t.focus({preventScroll:true}); }
     else restore(f);
+    itipSync();
   }
   function toast(kind, icon, text){
     S.toast = {kind, icon, text}; render();

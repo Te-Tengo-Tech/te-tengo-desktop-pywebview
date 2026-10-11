@@ -157,7 +157,7 @@ def test_prioridad(camaras: tuple, cambios: dict[str, Any], situacion: Situacion
                 "live",
                 "eye",
                 "Un familiar está viendo la sala en vivo",
-                'Desde las <span class="mono">10:42</span> · no se graba · queda registrado',
+                'Desde las <span class="mono">10:42</span>',
                 None,
             ),
             ("live", "En vivo", "Un familiar mira", "eye"),
@@ -178,6 +178,23 @@ def test_textos_del_prototipo(
     assert (a.clase, a.k, a.icono, a.titulo_html, a.detalle_html, accion) == aviso
     assert (f.k, f.titulo, f.detalle_html, f.icono) == fila
     assert (b.k, b.etiqueta) == bandeja
+
+
+def test_la_privacidad_de_la_vista_en_vivo_va_en_el_icono_de_ayuda() -> None:
+    """core.js health: «no se graba · queda registrado» moved from the detail into a «?» icon."""
+    vivo = estado(camara(en_vivo_desde=VIVO), zona=LIMA)
+    assert vivo.aviso.ayuda is not None
+    assert (vivo.aviso.ayuda.texto, vivo.aviso.ayuda.tema, vivo.aviso.ayuda.clave) == (
+        "No se graba. Queda en el registro de accesos que ve la familia en la app.",
+        "privacidad",
+        "health-live",
+    )
+    assert vivo.a_json()["health"]["ayuda"] == {
+        "texto": "No se graba. Queda en el registro de accesos que ve la familia en la app.",
+        "tema": "privacidad",
+        "clave": "health-live",
+    }
+    assert estado(*TRES, zona=LIMA).aviso.ayuda is None
 
 
 def test_pc_vinculada_sin_camaras_elegidas() -> None:

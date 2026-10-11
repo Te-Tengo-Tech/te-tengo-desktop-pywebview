@@ -556,8 +556,6 @@ details.inst .conf-kv>div{grid-template-columns:120px 1fr}
 .ctag.busy{background:var(--aviso-soft);color:var(--aviso-ink)}
 .ctag.new{background:var(--morado-soft);color:var(--morado-ink)}
 .clist-tools{padding:2px 6px 0}
-.many{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.35;color:var(--ink-2);padding:4px 8px 2px}
-.many svg{width:16px;height:16px;flex:none;color:var(--morado);margin-top:1px}
 .thispc{margin-top:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 8px 6px;box-shadow:0 -1px 0 var(--line)}
 .thispc .grow{flex:1;min-width:0}
 .thispc .btn{flex-basis:100%}
@@ -774,8 +772,6 @@ details.phelp{margin-top:14px;max-width:440px;box-shadow:0 -1px 0 var(--line)}
 .arow .sub{display:block;font-size:12.5px;color:var(--ink-3)}
 .actempty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;height:100%;min-height:180px;color:var(--ink-2)}
 .actempty svg{width:30px;height:30px;color:var(--ink-3)}
-.actfoot{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-3);margin-top:8px;flex:none}
-.actfoot svg{width:15px;height:15px}
 
 /* almacenamiento */
 .stwrap{flex:1;min-height:0;overflow:auto;margin:10px -6px 0;padding:0 6px 4px;scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
@@ -820,7 +816,6 @@ details.phelp{margin-top:14px;max-width:440px;box-shadow:0 -1px 0 var(--line)}
 .cap-other .input{width:90px;height:34px;font-size:14px}
 .trow .why{display:flex;gap:6px;align-items:flex-start;font-size:12.5px;color:var(--aviso-ink);margin:6px 0 0 44px;line-height:1.4}
 .trow .why svg{width:15px;height:15px;flex:none;margin-top:1px}
-.capnote{font-size:12.5px;line-height:1.4;color:var(--ink-3);margin-top:8px}
 
 /* ---------- Ver qué pasó: repetición con línea de tiempo ---------- */
 .rp-head{display:flex;align-items:center;gap:10px;flex:none}
@@ -842,7 +837,6 @@ select.input{appearance:none;background:#fff url("data:image/svg+xml,%3Csvg xmln
 .rp-main{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0}
 .rp-strip{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:12px;background:var(--morado-soft);color:var(--morado-ink);font-size:13px;font-weight:600;flex:none}
 .rp-strip svg{width:17px;height:17px;flex:none}
-.rp-strip span{color:var(--ink-2);font-weight:500;white-space:nowrap}
 .rp-strip.video{background:var(--aviso-soft);color:var(--aviso-ink)}
 .rp-canvas{position:relative;flex:1;min-height:150px;border-radius:14px;background:var(--ground-2);overflow:hidden;box-shadow:0 0 0 1px var(--line) inset}
 .rp-fig,.rp-vid{position:absolute;inset:0}
@@ -981,6 +975,38 @@ details.rp-ev>summary{min-height:38px;font-size:14px}
 .cpane .notice.peek-n b{font-size:14px}
 .cpane .notice.peek-n span{font-size:13px}
 @media (prefers-reduced-motion:reduce){.led{animation:none}}
+
+/* ---------- Ayuda en ícono «?»: 24 px a la vista, 44 px de toque; el texto en una tarjeta clara con borde lila ---------- */
+.itip{position:relative;display:inline-flex;align-items:center;vertical-align:middle;flex:none;width:24px;height:24px;line-height:1.4;text-align:left;font-weight:500;white-space:normal}
+.itip-b{appearance:none;border:0;background:none;padding:0;margin:-10px;width:44px;height:44px;flex:none;display:grid;place-items:center;color:var(--ink-3);cursor:pointer;border-radius:50%;font:inherit;-webkit-tap-highlight-color:transparent}
+.itip-b svg{width:24px;height:24px;flex:none}
+.itip-b:hover,.itip.open .itip-b{color:var(--morado-ink)}
+.itip-b:focus-visible{outline:3px solid var(--focus);outline-offset:-7px}
+.itip-pop{display:none;position:absolute;z-index:80;left:50%;top:calc(100% + 10px);transform:translateX(calc(-50% + var(--dx,0px)));width:max-content;max-width:248px;
+  padding:10px 13px;border-radius:12px;background:var(--card);border:1.5px solid #D6C6F1;color:var(--ink);font-size:14px;font-weight:500;line-height:1.4;letter-spacing:0;text-transform:none;box-shadow:var(--shadow-2);cursor:auto}
+.itip.open .itip-pop{display:block;animation:itip-in .14s var(--ease)}
+.itip.end .itip-pop{left:auto;right:-6px;transform:translateX(var(--dx,0px))}
+.itip.start .itip-pop{left:-6px;transform:translateX(var(--dx,0px))}
+.itip.up:not(.flip) .itip-pop,.itip:not(.up).flip .itip-pop{top:auto;bottom:calc(100% + 10px)}
+@keyframes itip-in{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.itip.open .itip-pop{animation:none}}
+.itip-pop{font-size:13.5px;max-width:280px}
+/* dónde va el ícono «?» */
+:is(.card,.pv2,.cpane,.stcard,.mcard,.mskel,.health,.notice,.clist,.vtoggle,.rp-strip,.advhead):has(.itip.open){overflow:visible}
+.itip.pv-lock{position:absolute;width:32px;height:32px;padding:0;gap:0;justify-content:center;border-radius:9px;z-index:3}
+.itip.pv-lock .itip-b{margin:-6px;color:#fff}
+.itip.pv-lock .itip-b svg{width:17px;height:17px}
+.itip.pv-lock .itip-pop{font-weight:500}
+.tip-l,.rooms-l{display:flex;align-items:center;gap:8px}
+.mcard h3 .itip,.stcard h3 .itip{margin-left:6px}
+.stcard h3 .itip-b svg,.mcard h3 .itip-b svg{width:20px;height:20px}
+.rp-strip .itip{margin-left:2px}
+.rp-strip .itip-b{color:inherit}
+.vtoggle b .itip{margin-left:6px;vertical-align:-6px}
+.advstrip>.itip{margin:0 6px}
+.advhead>.seg2+.itip{margin:0 auto 0 4px}
+.health>.itip{margin:0 8px}
+.notice.peek-n>.itip{margin:0 4px 0 auto}
 
 /* ---------- Te Tengo Captura: the real window ---------- */
 html,body{margin:0;height:100%;overflow:hidden;background:var(--ground)}
