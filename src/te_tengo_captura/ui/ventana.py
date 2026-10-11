@@ -69,6 +69,18 @@ class VentanaEstado:
         if self._cargada.is_set() and not self._saliendo:
             self._ventana.evaluate_js(script_actualizar(estado.a_json()))
 
+    def elegir_destino(self, nombre: str) -> Path | None:
+        """The system's «Guardar como» with ``nombre`` proposed; ``None`` if cancelled."""
+        import webview
+
+        elegido = self._ventana.create_file_dialog(
+            webview.SAVE_DIALOG, save_filename=nombre, file_types=("Zip (*.zip)",)
+        )
+        if not elegido:
+            return None
+        ruta = elegido if isinstance(elegido, str) else elegido[0]
+        return Path(ruta)
+
     def destruir(self) -> None:
         self._saliendo = True
         self._ventana.destroy()

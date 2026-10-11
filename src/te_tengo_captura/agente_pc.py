@@ -34,6 +34,7 @@ from typing import Any
 import httpx
 from pydantic import ValidationError
 
+from te_tengo_captura.actividad import RegistroActividad
 from te_tengo_captura.agente import Agente, AjustesCamara
 from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.errores import ErrorBackendError, PcDesvinculadaError
@@ -193,8 +194,10 @@ class AgentePc:
         zona: tzinfo | None = None,
         al_contactar: Callable[[], None] = lambda: None,
         fabrica: FabricaCamaras | None = None,
+        actividad: RegistroActividad | None = None,
     ) -> None:
         self.version = version
+        self.actividad = actividad
         self._api_url = api_url
         self._fabrica = fabrica
         self.sesion = sesion
@@ -216,6 +219,12 @@ class AgentePc:
             fps_vivo=fabrica.ajustes.vista_en_vivo.fps if fabrica is not None else 15.0,
         )
         sesion.al_renovar.append(self._renovar_camaras)
+        if actividad is not None:
+
+            def anotar(texto: str, quien: str) -> None:
+                actividad.anotar(texto, quien=quien)
+
+            self.camaras.al_actividad = anotar
         self._canal = (
             CanalTransmision(
                 sesion,
@@ -457,6 +466,8 @@ class AgentePc:
         self._despertar.set()
         try:
             self.latido.latir()
+            if self.latido.en_linea and self.actividad is not None:
+                self.actividad.enviar(self._cliente)
         except PcDesvinculadaError:
             return False
         return self.latido.en_linea is True
@@ -488,6 +499,8 @@ class AgentePc:
             if self.latido.espera() == 0:
                 try:
                     self.latido.latir()
+                    if self.latido.en_linea and self.actividad is not None:
+                        self.actividad.enviar(self._cliente)  # CA-33.3: what waited offline
                 except PcDesvinculadaError:
                     return
                 except Exception:

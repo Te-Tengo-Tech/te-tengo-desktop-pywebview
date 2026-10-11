@@ -22,12 +22,13 @@ from pathlib import Path
 
 from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.transmision import CanalTransmision
-from te_tengo_captura.captura.bucle import BucleCaptura, HiloCaptura
+from te_tengo_captura.captura.bucle import Analisis, BucleCaptura, HiloCaptura
 from te_tengo_captura.captura.en_vivo import TransmisionEnVivo
 from te_tengo_captura.captura.fuentes import Captador, FuenteVideo, Imagen
 from te_tengo_captura.captura.pose import Estimador
 from te_tengo_captura.captura.vista_previa import VistaPreviaLocal
 from te_tengo_captura.config import Configuracion, VistaEnVivo
+from te_tengo_captura.diario import Narrador
 from te_tengo_captura.envios.cola import ColaEnvios, EnviadorPendientes
 from te_tengo_captura.estado import (
     CamaraEntradas,
@@ -151,6 +152,13 @@ class Agente:
             instalada_el=instalacion.instalada_el.strftime("%d/%m/%Y") if instalacion else None,
         )
         self._detenido = threading.Event()
+        self.narrador = Narrador(
+            camara=lambda: self.clave_camara,
+            habitacion=lambda: self.nombre_habitacion,
+            dispositivo=lambda: self.ajustes.nombre_webcam,
+            reloj=time.monotonic,
+        )
+        self.bucle.observadores.append(self._analizado)
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -183,8 +191,10 @@ class Agente:
     # ------------------------------------------------------------------ state
 
     def camara(self) -> CamaraEntradas:
-        """This camera as the window's state sees it (one row of «Estado»)."""
+        """This camera as the window's state sees it (one row of «Estado»). The notifier calls
+        it every second, so it also tells the advanced mode's log about connection changes."""
         latido = self.latido
+        self.narrador.estado(self.bucle.webcam_conectada, latido.en_linea, latido.pausada_hasta())
         return CamaraEntradas(
             clave=self.clave_camara,
             nombre_habitacion=self.nombre_habitacion,
@@ -260,6 +270,50 @@ class Agente:
         """The owner renamed the room or moved the camera (the heartbeat confirms it)."""
         if nombre_habitacion != self.ajustes.nombre_habitacion:
             self.ajustes = replace(self.ajustes, nombre_habitacion=nombre_habitacion)
+
+    def medidores(self) -> dict[str, object]:
+        """The «Medidores» of this camera (CA-32.3), with the reason when there is nothing to
+        measure (CA-32.4)."""
+        m = self.narrador.medicion
+        latido = self.latido
+        if not self.bucle.webcam_conectada:
+            motivo = "desconectada"
+        elif latido.pausada_hasta() is not None:
+            motivo = "pausa"
+        elif latido.estado is not None and latido.sin_consentimiento():
+            motivo = "consentimiento"
+        elif not m.persona or not self.bucle.activa:
+            motivo = "sin_persona"
+        else:
+            motivo = None
+        pausa = latido.pausada_hasta()
+        return {
+            "motivo": motivo,
+            "pausa": pausa.astimezone(self._zona).strftime("%H:%M") if pausa else None,
+            "fps": round(self.bucle.fps, 1),
+            "demora": round(self.bucle.demora, 3),
+            "persona": m.persona,
+            "m1": m.m1,
+            "m2": m.m2,
+            "m3": m.m3,
+            "cabezaBajoPies": m.cabeza_bajo_pies,
+            "umbralV": m.umbral_v,
+            "umbralAngulo": m.umbral_angulo,
+            "umbralRazon": m.umbral_razon,
+            "umbralVisibilidad": m.umbral_visibilidad,
+            "fase": m.fase,
+            "ventana": m.ventana if m.ventana is not None else m.ventana_total,
+            "ventanaTotal": m.ventana_total,
+            "suelo": m.suelo,
+            "confirmacion": m.confirmacion,
+            "visibilidad": m.visibilidad,
+            "esqueleto": {k: list(v) for k, v in m.esqueleto.items()},
+        }
+
+    def _analizado(self, analisis: Analisis) -> None:
+        self.narrador.analizado(
+            analisis.fotograma.instante, analisis.pose, analisis.clasificador, analisis.eventos
+        )
 
     def _permitida(self) -> bool:
         return not self._bloqueada and self.latido.captura_permitida()

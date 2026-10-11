@@ -24,6 +24,14 @@ class Acciones:
         "ok": False
     }
     dejar_de_usar: Callable[[str], dict[str, Any]] = lambda _c: {"ok": False}
+    # Advanced mode (US-32 to US-34).
+    modo_avanzado: Callable[[bool], bool] = lambda _activar: False
+    registro: Callable[[str, int], list[dict[str, Any]]] = lambda _c, _u: []
+    medidores: Callable[[str], dict[str, Any] | None] = lambda _c: None
+    actividad: Callable[[], list[dict[str, Any]]] = lambda: []
+    exportar_diagnostico: Callable[[], dict[str, Any]] = lambda: {"ok": False}
+    nombre_diagnostico: Callable[[], str] = lambda: ""
+    mostrar_en_carpeta: Callable[[str], None] = lambda _ruta: None
 
 
 class Puente:
@@ -101,3 +109,30 @@ class Puente:
     def dejarDeUsar(self, camara_id: str) -> dict[str, Any]:  # noqa: N802 (JavaScript name)
         """«Dejar de usar» from this PC."""
         return self._acciones.dejar_de_usar(str(camara_id))
+
+    def modoAvanzado(self, activar: bool) -> dict[str, bool]:  # noqa: N802 (JavaScript name)
+        """The «Modo avanzado» switch (CA-32.1)."""
+        return {"on": self._acciones.modo_avanzado(bool(activar))}
+
+    def registro(self, camara: str, ultimo: int) -> list[dict[str, Any]]:
+        """New lines of a camera's live log (CA-32.2)."""
+        return self._acciones.registro(str(camara), int(ultimo or 0))
+
+    def medidores(self, camara: str) -> dict[str, Any] | None:
+        """A camera's meters (CA-32.3, CA-32.4)."""
+        return self._acciones.medidores(str(camara))
+
+    def actividad(self) -> list[dict[str, Any]]:
+        """The activity log as the window shows it (US-33)."""
+        return self._acciones.actividad()
+
+    def nombreDiagnostico(self) -> str:  # noqa: N802 (JavaScript name)
+        return self._acciones.nombre_diagnostico()
+
+    def exportarDiagnostico(self) -> dict[str, Any]:  # noqa: N802 (JavaScript name)
+        """«Elegir dónde guardar» and the zip (US-34); ``cancelado`` if no folder was chosen."""
+        return self._acciones.exportar_diagnostico()
+
+    def mostrarEnCarpeta(self, ruta: str) -> None:  # noqa: N802 (JavaScript name)
+        """«Mostrar en la carpeta»."""
+        self._acciones.mostrar_en_carpeta(str(ruta))

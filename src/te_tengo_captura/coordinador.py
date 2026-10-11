@@ -27,6 +27,7 @@ in their own thread, so no thread ever waits for itself to stop.
 
 import json
 import logging
+import os
 import shutil
 import threading
 import time
@@ -39,6 +40,7 @@ from typing import Any
 
 import httpx
 
+from te_tengo_captura.actividad import RegistroActividad, para_la_ventana
 from te_tengo_captura.agente import Agente
 from te_tengo_captura.agente_pc import (
     AgentePc,
@@ -49,6 +51,8 @@ from te_tengo_captura.agente_pc import (
 from te_tengo_captura.backend.errores import ErrorBackendError
 from te_tengo_captura.backend.pc import ClientePc
 from te_tengo_captura.captura.dispositivos import Dispositivo, listar_dispositivos
+from te_tengo_captura.diagnostico import exportar, nombre_archivo
+from te_tengo_captura.diario import Diario
 from te_tengo_captura.estado import EstadoAgente, EstadoBandeja, Hogar, hora_local
 from te_tengo_captura.sistema import nombre_pc, sistema_operativo
 from te_tengo_captura.vinculacion.credenciales import (
@@ -70,7 +74,16 @@ ARCHIVO_QUITADA = "quitada.json"
 REVOCACION_REINTENTO_S = 30.0
 # What a removed PC deletes from its data folder: the outbox and the capture state belong to the
 # identity that left (the cameras' folders arrive with US-29).
-ESTADO_DE_LA_IDENTIDAD = ("envios.sqlite3", "clips", "estado_captura.json", "pc.json", "camaras")
+ESTADO_DE_LA_IDENTIDAD = (
+    "envios.sqlite3",
+    "clips",
+    "estado_captura.json",
+    "pc.json",
+    "camaras",
+    "actividad.jsonl",
+    "actividad-enviada.txt",
+)
+ARCHIVO_VENTANA = "ventana.json"  # the advanced mode's switch (off by default, CA-32.1)
 
 
 class Pantalla(StrEnum):
@@ -110,9 +123,16 @@ class Coordinador:
         reloj: Callable[[], float] = time.time,
         zona: tzinfo | None = None,
         fabrica: FabricaCamaras | None = None,
+        diario: Diario | None = None,
+        registros: Path | None = None,
     ) -> None:
-        """``fabrica`` builds the agents of a linked PC's cameras (US-29)."""
+        """``fabrica`` builds the agents of a linked PC's cameras (US-29); ``diario`` keeps the
+        advanced mode's live log (US-32); ``registros`` is the log folder (diagnostic, US-34)."""
         self.version = version
+        self.diario = diario or Diario()
+        self._registros = registros
+        self.actividad = RegistroActividad(directorio_datos)
+        self._cpu = MedidorProceso()
         self._fabrica = fabrica
         self._api_url = api_url
         self._directorio = directorio_datos
@@ -136,6 +156,7 @@ class Coordinador:
         self._re90 = False
         self._desvinculando = False
         self._tamano: tuple[float, int] | None = None
+        self._avanzado = bool((self._leer_json(ARCHIVO_VENTANA) or {}).get("modoAvanzado", False))
         self._oyentes: list[Callable[[EstadoVentana], None]] = []
         self._detenido = threading.Event()
         self._hilo_estado = threading.Thread(target=self._notificar, name="estado", daemon=True)
@@ -147,6 +168,7 @@ class Coordinador:
 
     def iniciar(self) -> None:
         self._directorio.mkdir(parents=True, exist_ok=True)
+        self.diario.activo = self.modo_avanzado
         if self._instalacion is not None:
             self.agente = self._instalacion(self._al_desvincular)
             self.agente.iniciar()
@@ -206,7 +228,9 @@ class Coordinador:
             )
         if agente is not None:
             e = agente.estado()
-            return EstadoVentana(Pantalla.PRINCIPAL, e.bandeja, e, e.a_json())
+            return EstadoVentana(
+                Pantalla.PRINCIPAL, e.bandeja, e, {**e.a_json(), "advanced": self._avanzado}
+            )
         if pc is not None:
             e = pc.estado()
             if pantalla is Pantalla.VINCULADA:
@@ -220,7 +244,12 @@ class Coordinador:
                 Pantalla.PRINCIPAL,
                 e.bandeja,
                 e,
-                {**e.a_json(), "unlink": True, "dataBytes": self._tamano_datos()},
+                {
+                    **e.a_json(),
+                    "unlink": True,
+                    "dataBytes": self._tamano_datos(),
+                    "advanced": self._avanzado,
+                },
             )
         if vinculador is not None and vinculador.fase is Fase.RECHAZADA:
             return EstadoVentana(
@@ -354,6 +383,106 @@ class Coordinador:
             return {"ok": False, "codigo": "PC_DESVINCULADA"}
         return {"ok": r.ok, "codigo": r.codigo}
 
+    # ------------------------------------------------------------------ advanced (US-32 to US-34)
+
+    @property
+    def modo_avanzado(self) -> bool:
+        return self._avanzado
+
+    def cambiar_modo_avanzado(self, activar: bool) -> bool:
+        """The switch of «Avanzado»; the change goes to the activity log (CA-32.1)."""
+        if activar == self.modo_avanzado:
+            return activar
+        self._guardar_json(ARCHIVO_VENTANA, {"modoAvanzado": activar})
+        self._avanzado = activar
+        self.diario.activo = activar
+        if not activar:
+            self.diario.vaciar()
+        self.actividad.anotar(
+            "Desde esta PC: se activó el modo avanzado"
+            if activar
+            else "Desde esta PC: se desactivó el modo avanzado",
+            tipo="MODO_AVANZADO_ACTIVADO" if activar else "MODO_AVANZADO_DESACTIVADO",
+        )
+        return activar
+
+    def _agentes(self) -> dict[str, Agente]:
+        if self.agente is not None:
+            return {self.agente.clave_camara: self.agente}
+        if self.pc is not None:
+            with self.pc.camaras._candado:
+                return dict(self.pc.camaras.agentes)
+        return {}
+
+    def registro(self, camara: str, ultimo: int) -> list[dict[str, Any]]:
+        """New lines of a camera's live log since ``ultimo`` (CA-32.2)."""
+        if not self.diario.activo:
+            return []
+        return [linea.a_json() for linea in self.diario.desde(camara, ultimo)]
+
+    def medidores(self, camara: str) -> dict[str, Any] | None:
+        """A camera's meters (CA-32.3, CA-32.4), with this program's CPU use."""
+        agente = self._agentes().get(camara)
+        if agente is None or not self.diario.activo:
+            return None
+        return {**agente.medidores(), "cpu": round(self._cpu.medir())}
+
+    def lista_actividad(self) -> list[dict[str, Any]]:
+        return para_la_ventana(self.actividad.entradas(), self._zona)
+
+    def nombre_diagnostico(self) -> str:
+        nombre = self.pc.datos_pc().nombre if self.pc is not None else nombre_pc()
+        return nombre_archivo(
+            nombre, datetime.fromtimestamp(self._reloj(), UTC).astimezone(self._zona).date()
+        )
+
+    def datos_diagnostico(self) -> dict[str, Any]:
+        """What the support team gets (CA-34.1): no credential, image or landmark."""
+        e = self.estado().agente
+        camaras = []
+        for clave, agente in self._agentes().items():
+            fila = agente.camara()
+            camaras.append(
+                {
+                    "habitacion": fila.nombre_habitacion,
+                    "dispositivo": fila.dispositivo,
+                    "conectada": fila.webcam_conectada,
+                    "fps": round(agente.bucle.fps, 1),
+                    "umbrales": agente.bucle.umbrales.model_dump(),
+                    "camaraId": clave,
+                }
+            )
+        return {
+            "programa": f"Te Tengo Captura {self.version}",
+            "sistema": sistema_operativo(),
+            "pc": self.pc.datos_pc().nombre if self.pc is not None else nombre_pc(),
+            "modo": "instalacion"
+            if self.agente is not None
+            else "pc"
+            if self.pc is not None
+            else "sin_vincular",
+            "enLinea": e.entradas.en_linea if e is not None else None,
+            "situacion": e.situacion.value if e is not None else None,
+            "webcamsDetectadas": [w.nombre for w in e.entradas.webcams] if e is not None else [],
+            "camaras": camaras,
+            "generado": datetime.fromtimestamp(self._reloj(), UTC).isoformat(),
+        }
+
+    def exportar_diagnostico(self, destino: Path) -> dict[str, Any]:
+        """«Elegir dónde guardar»: the zip at ``destino`` (CA-34.1 to CA-34.3)."""
+        try:
+            tamano = exportar(
+                destino,
+                self._registros or self._directorio,
+                self.datos_diagnostico(),
+                self.secretos(),
+            )
+        except OSError as error:
+            logger.warning("No se pudo guardar el diagnóstico: %s", error)
+            return {"ok": False}
+        logger.info("Diagnóstico guardado (%d bytes)", tamano)
+        return {"ok": True, "ruta": str(destino), "nombre": destino.name, "tamano": tamano}
+
     def otro_codigo(self) -> None:
         """«Mostrar otro código» (D-28.5)."""
         vinculador, hilo = self._vinculador, self._hilo_vinculacion
@@ -449,7 +578,23 @@ class Coordinador:
             self._re90 = False
             self._iniciar_pc(credenciales)
             self._pantalla = Pantalla.VINCULADA
+        threading.Thread(target=self._anotar_vinculacion, name="actividad", daemon=True).start()
         self.publicar_estado()
+
+    def _anotar_vinculacion(self) -> None:
+        """«Carmen vinculó la PC Sala-Rosa» once the PC knows who approved it."""
+        for _ in range(50):
+            pc = self.pc
+            if pc is None or self._detenido.is_set():
+                return
+            datos = pc.latido.pc
+            if datos is not None:
+                quien = datos.vinculada_por or "La familia"
+                self.actividad.anotar(
+                    f"{quien} vinculó la PC {datos.nombre}", quien=_iniciales(quien)
+                )
+                return
+            self._detenido.wait(0.2)
 
     def _iniciar_pc(self, credenciales: CredencialesPc) -> None:
         sesion = SesionPc(self._oauth, self._almacen, credenciales, self._al_desvincular)
@@ -467,6 +612,7 @@ class Coordinador:
             zona=self._zona,
             al_contactar=self._contacto,
             fabrica=self._fabrica,
+            actividad=self.actividad,
         )
         self.pc.iniciar()
 
@@ -588,3 +734,26 @@ class Coordinador:
             except Exception:
                 logger.exception("Error al enviar la desvinculación pendiente")
             self._detenido.wait(REVOCACION_REINTENTO_S)
+
+
+def _iniciales(nombre: str) -> str:
+    """«CH» for «Carmen Huamán»: the avatar of a family member in «Actividad»."""
+    partes = [p for p in nombre.split() if p]
+    return "".join(p[0] for p in partes[:2]).upper() or "TT"
+
+
+class MedidorProceso:
+    """«Uso del procesador»: this program's share of the PC's CPU since the last reading."""
+
+    def __init__(self) -> None:
+        self._anterior = (time.monotonic(), time.process_time())
+        self.uso = 0.0
+
+    def medir(self) -> float:
+        ahora, cpu = time.monotonic(), time.process_time()
+        pared, usado = ahora - self._anterior[0], cpu - self._anterior[1]
+        if pared >= 0.5:
+            nucleos = os.cpu_count() or 1
+            self.uso = max(0.0, min(100.0, usado / pared / nucleos * 100))
+            self._anterior = (ahora, cpu)
+        return self.uso

@@ -47,6 +47,20 @@ def mostrar_icono_en_el_dock(ruta: Path) -> None:
         NSApplication.sharedApplication().setApplicationIconImage_(imagen)
 
 
+def mostrar_en_carpeta(ruta: str) -> None:
+    """Opens the file manager on the saved file (Explorer, Finder or the desktop's)."""
+    import subprocess
+    import sys
+
+    archivo = Path(ruta)
+    if sys.platform == "win32":
+        subprocess.Popen(["explorer", f"/select,{archivo}"])
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-R", str(archivo)])
+    else:
+        subprocess.Popen(["xdg-open", str(archivo.parent)])
+
+
 class Aplicacion:
     def __init__(self, agente: Coordinador) -> None:
         self._agente = agente
@@ -66,6 +80,13 @@ class Aplicacion:
                 ambientes=agente.ambientes,
                 usar_aqui=agente.usar_aqui,
                 dejar_de_usar=agente.dejar_de_usar,
+                modo_avanzado=agente.cambiar_modo_avanzado,
+                registro=agente.registro,
+                medidores=agente.medidores,
+                actividad=agente.lista_actividad,
+                exportar_diagnostico=self._exportar_diagnostico,
+                nombre_diagnostico=agente.nombre_diagnostico,
+                mostrar_en_carpeta=mostrar_en_carpeta,
             ),
         )
         self._inicio = arranque.VentanaArranque(agente.version)
@@ -99,6 +120,12 @@ class Aplicacion:
     def salir(self) -> None:
         logger.info("Salir desde la bandeja")
         self._ventana.destruir()
+
+    def _exportar_diagnostico(self) -> dict[str, object]:
+        destino = self._ventana.elegir_destino(self._agente.nombre_diagnostico())
+        if destino is None:
+            return {"ok": False, "cancelado": True}
+        return self._agente.exportar_diagnostico(destino)
 
     def _al_ocultar(self) -> None:
         self._avisos.ventana_oculta(self._agente.estado())

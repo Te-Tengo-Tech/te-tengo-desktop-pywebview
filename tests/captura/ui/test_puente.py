@@ -46,6 +46,13 @@ def test_el_puente_expone_solo_los_metodos_del_contrato() -> None:
         "ambientes",
         "usarAqui",
         "dejarDeUsar",
+        "modoAvanzado",
+        "registro",
+        "medidores",
+        "actividad",
+        "nombreDiagnostico",
+        "exportarDiagnostico",
+        "mostrarEnCarpeta",
     }
     assert puente.estado() == {"situacion": "cuidando"}
     assert puente.vistaPrevia("sala") == {"jpeg": "/9hqcGVn"}
@@ -189,6 +196,22 @@ def _pantallas_de_vinculacion() -> dict[str, Any]:
             "devices": [
                 {**vinculada["devices"][0], "room": "Sala", "by": "app"},
                 *vinculada["devices"][1:],
+            ],
+        },
+        "avanzadoApagado": {**vinculada, "unlink": True, "advanced": False},
+        "avanzado": {
+            **vinculada,
+            "unlink": True,
+            "advanced": True,
+            "cams": [
+                {
+                    "id": "c1",
+                    "room": "Sala",
+                    "device": "Webcam USB HD",
+                    "st": {"k": "send", "titulo": "En línea", "detalle_html": "", "icono": "check"},
+                    "pause": None,
+                    "live": None,
+                }
             ],
         },
         "rechazada": {"screen": "rechazada"},

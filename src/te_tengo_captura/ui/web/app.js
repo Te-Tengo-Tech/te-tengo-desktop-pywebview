@@ -231,7 +231,7 @@
   }
 
   /* ---------- barra de pestañas ---------- */
-  function tabs(E){ return [['estado','pulse','Estado'], ['camaras','cam','Cámaras']]; }
+  function tabs(E){ return [['estado','pulse','Estado'], ['camaras','cam','Cámaras'], ['avanzado','sliders','Avanzado']]; }
   function tabbar(E, U){
     const t = x => '<button class="tab'+(U.tab===x[0]?' sel':'')+'" role="tab" id="tab-'+x[0]+'" aria-selected="'+(U.tab===x[0])+'" aria-controls="panel" tabindex="'+(U.tab===x[0]?0:-1)+'" data-act="tab" data-arg="'+x[0]+'">'+ic(x[1])+'<span>'+x[2]+'</span></button>';
     return '<nav class="tabbar" aria-label="Te Tengo Captura"><div class="tabs" role="tablist" aria-label="Secciones">'+tabs(E).map(t).join('')+'</div>'+
@@ -239,7 +239,7 @@
   }
   function scrMain(E, U, enter){
     const tab = tabs(E).some(x => x[0]===U.tab) ? U.tab : 'estado';
-    const panel = tab==='camaras' ? panelCamaras(E, U) : panelEstado(E, U);
+    const panel = tab==='camaras' ? panelCamaras(E, U) : tab==='avanzado' ? panelAvanzado(E, U) : panelEstado(E, U);
     return sec('main', enter, tabbar(E, Object.assign({}, U, {tab:tab}))+'<div class="panel '+tab+'" id="panel" role="tabpanel" aria-labelledby="tab-'+tab+'">'+panel+'</div>');
   }
 
@@ -356,6 +356,123 @@
       '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+many+thisPc(E)+'</div>'+(here ? camPane(E, U, sel) : camInfo(E, U, sel))+'</div>';
   }
 
+
+  /* =================== Avanzado: registro en vivo, medidores y actividad =================== */
+  function num(n, d){ return Number(n).toFixed(d).replace('.', ','); }
+  function sw(on, act, lb, dis){
+    return '<span class="sw-l'+(on&&!dis?' on':'')+'"><button class="switch" role="switch" aria-checked="'+(!!on && !dis)+'"'+(lb?' aria-labelledby="'+lb+'"':'')+(dis?' aria-disabled="true"':'')+' data-act="'+act+'"><i></i></button>'+(on&&!dis?'Sí':'No')+'</span>';
+  }
+  const LOG_K = [['persona','person','Personas'], ['evento','warn','Eventos'], ['descarte','eyeOff','Descartadas'], ['conexion','wifi','Conexión'], ['programa','monitor','Programa']];
+  function advCams(E){ return E.cams.map(c => ({id:c.id, room:c.room})); }
+  function advCam(E, U){ const cs = advCams(E); return cs.find(c => c.id===U.adv.cam) || cs[0] || null; }
+  function logLine(U, l){
+    const open = U.log.open===l.id;
+    return '<div class="lline '+(l.tone||'')+'"><time>'+esc(l.t)+'</time><span class="li">'+ic(l.i)+'</span><span class="msg">'+esc(l.m)+'</span>'+
+      '<button class="tech-btn" aria-expanded="'+open+'" aria-controls="tx-'+l.id+'" data-act="techToggle" data-arg="'+l.id+'">Ver línea técnica'+ic('chevDown')+'</button></div>'+
+      (open ? '<div class="ltech" id="tx-'+l.id+'"><span class="code">'+esc(l.x)+'</span><button class="btn btn-ghost btn-xs" data-act="copyTech" data-arg="'+l.id+'">'+ic('copy')+'Copiar</button></div>' : '');
+  }
+  function logRows(E, U, cam){
+    const lg = U.log, all = lg.lines[cam.id] || [];
+    const shown = lg.paused ? all.slice(0, lg.cut) : all;
+    const q = norm(lg.q);
+    const vis = shown.filter(l => lg.filters[l.k] && (!q || norm(l.m).includes(q)));
+    const fila = E.cams.find(c => c.id===cam.id);
+    const pin = fila && fila.pause ? '<div class="lline pin"><time></time><span class="li">'+ic('pause')+'</span><span class="msg">Cámara en pausa hasta las <span class="mono">'+esc(fila.pause)+'</span></span><span></span></div>' : '';
+    const lost = fila && fila.st.k==='off' ? '<div class="lline aviso pin"><time></time><span class="li">'+ic('videoOff')+'</span><span class="msg">Cámara desconectada: revisa el cable USB</span><span></span></div>' : '';
+    let body;
+    if(!all.length) body = '<div class="logempty">'+ic('terminal')+'<b>Aún no pasa nada en esta cámara</b><span class="t-meta">Las líneas aparecen aquí apenas el programa detecta algo.</span></div>';
+    else if(!vis.length && q) body = '<div class="logempty">'+ic('search')+'<b>No hay líneas con «'+esc(lg.q)+'»</b></div>';
+    else if(!vis.length) body = '<div class="logempty">'+ic('list')+'<b>No hay líneas de ese tipo</b><span class="t-meta">Activa otro filtro para ver más.</span></div>';
+    else body = vis.map(l => logLine(U, l)).join('');
+    return pin + lost + body;
+  }
+  function logView(E, U, cam){
+    const lg = U.log, all = lg.lines[cam.id] || [], nNew = lg.paused ? all.length - lg.cut : 0;
+    const cnt = {}; LOG_K.forEach(k => cnt[k[0]] = 0); (lg.paused ? all.slice(0, lg.cut) : all).forEach(l => { if(cnt[l.k]!=null) cnt[l.k]++; });
+    return '<div class="logbar" role="toolbar" aria-label="Filtros del registro">'+LOG_K.map(k => '<button class="fchip" aria-pressed="'+lg.filters[k[0]]+'" data-act="logFilter" data-arg="'+k[0]+'">'+ic(k[1])+'<span class="lbl">'+k[2]+'</span><span class="cnt" id="cnt-'+k[0]+'">'+cnt[k[0]]+'</span></button>').join('')+
+      '<label class="logsearch"><span class="sr">Buscar en el registro</span>'+ic('search')+'<input class="input" id="log-q" type="search" placeholder="Buscar" value="'+esc(lg.q)+'" autocomplete="off"></label>'+
+      '<button class="btn btn-secondary btn-xs" data-act="logPause" aria-pressed="'+lg.paused+'">'+ic(lg.paused?'play':'pause')+(lg.paused?'Seguir':'Pausar')+'</button></div>'+
+      (lg.paused ? '<div class="logband" id="log-band" role="status">'+ic('pause')+'<span class="grow">En pausa · <span id="log-new">'+nNew+' '+(nNew===1?'línea nueva':'líneas nuevas')+'</span></span><button class="btn btn-ghost btn-xs" data-act="logPause">'+ic('play')+'Seguir</button></div>' : '')+
+      '<div class="logbox" id="logbox" role="log" aria-label="Registro en vivo de '+esc(cam.room)+'" aria-live="off" tabindex="0">'+logRows(E, U, cam)+'</div>'+
+      '<span class="sr" role="status" id="log-ann"></span>';
+  }
+  const PHASES = [['De pie',''], ['Posible caída','inestable'], ['En el suelo','caida'], ['Caída confirmada','caida']];
+  const SEG = [['h','sL'],['h','sR'],['sL','eL'],['eL','wL'],['sR','eR'],['eR','wR'],['sL','hL'],['sR','hR'],['hL','hR'],['hL','kL'],['kL','aL'],['hR','kR'],['kR','aR']];
+  function skelReal(esq){
+    const ks = Object.keys(esq||{}); if(!ks.length) return '';
+    const xs = ks.map(k => esq[k][0]*4/3), ys = ks.map(k => esq[k][1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const esc_ = Math.min(200/Math.max(.05, x1-x0), 120/Math.max(.05, y1-y0));
+    const P = k => [(120 + (esq[k][0]*4/3 - (x0+x1)/2)*esc_).toFixed(1), (132 - (y1 - esq[k][1])*esc_).toFixed(1)];
+    let s = '<g class="skel">';
+    SEG.forEach(([a,b]) => { if(esq[a] && esq[b]){ const A = P(a), B = P(b); s += '<line x1="'+A[0]+'" y1="'+A[1]+'" x2="'+B[0]+'" y2="'+B[1]+'" stroke="#2B1D4E" stroke-width="3" stroke-linecap="round"/>'; } });
+    ks.forEach(k => { const a = P(k); s += '<circle cx="'+a[0]+'" cy="'+a[1]+'" r="'+(k==='h'?7.5:3.2)+'" fill="#fff" stroke="#2B1D4E" stroke-width="'+(k==='h'?2.8:1.9)+'"/>'; });
+    return '<svg viewBox="0 0 240 150" preserveAspectRatio="xMidYMax meet" aria-hidden="true"><path d="M0 134H240" stroke="#D9D1E0" stroke-width="2"/>'+s+'</g></svg>';
+  }
+  function meterReason(E, M){
+    if(!M) return {t:'Sin persona en la imagen', s:'Los medidores vuelven solos cuando la cámara vea a alguien.', i:'person', c:'pausa'};
+    if(M.motivo==='desconectada') return {t:'Cámara desconectada', s:'Revisa el cable USB. Los medidores vuelven solos al conectarla.', i:'videoOff', c:'aviso dash'};
+    if(M.motivo==='pausa') return {t:'En pausa hasta las '+M.pausa, s:'La familia la pausó desde la app. Los medidores vuelven solos al terminar la pausa.', i:'pause', c:'pausa'};
+    if(M.motivo==='consentimiento') return {t:'Cámara detenida', s:'Falta el consentimiento de '+E.home.first+'.', i:'doc', c:'aviso'};
+    if(M.motivo==='sin_persona') return {t:'Sin persona en la imagen', s:'Los medidores vuelven solos cuando la cámara vea a alguien.', i:'person', c:'pausa'};
+    return null;
+  }
+  function metersInner(E, M){
+    const off = meterReason(E, M), D = v => off ? '—' : v, m = M || {};
+    const meas = (title, val, unit, thr, si, pct, tp) => '<div class="mcard"><h3>'+title+'</h3><div class="mrow"><span class="mval">'+D(val)+(off?'':'<small>'+unit+'</small>')+'</span>'+
+      (off ? '' : '<span class="yn'+(si?' si':'')+'">'+(si?ic('check')+'Sí':'No')+'</span>')+'</div>'+
+      '<div class="mthr'+(si&&!off?' si':'')+'"><i style="width:'+(off?0:Math.max(0, Math.min(100, pct)))+'%"></i><b style="left:'+tp+'%"></b></div><p class="msub">'+thr+'</p></div>';
+    const ph = off ? -1 : m.fase;
+    const row1 = off
+      ? '<div class="mcard mnote" role="status"><span class="ci '+off.c+'">'+ic(off.i)+'</span><div><b>'+esc(off.t)+'</b><span>'+esc(off.s)+'</span></div></div>'
+      : '<div class="mcard"><h3>'+ic('gauge')+'Rendimiento</h3><span class="mval">'+num(m.fps, 1)+'<small>fps</small></span><p class="msub">Objetivo: 8 fps</p>'+
+          '<div class="mkv"><div><span>Uso del procesador</span><b>'+Math.round(m.cpu||0)+' %</b></div><div><span>Demora del análisis</span><b>'+num(m.demora||0, 2)+' s</b></div></div></div>'+
+        '<div class="mcard"><h3>'+ic('person')+'Persona</h3><p class="mperson"><span class="ci calma">'+ic('check')+'</span>Sí, se ve a una persona</p><p class="msub mt8">Una sola persona en la imagen</p></div>'+
+        '<div class="mcard"><h3>'+ic('clock')+'Temporizadores</h3>'+
+          '<p class="timer">Ventana de caída <b>'+num(m.ventana, 2)+' s</b></p><div class="tbar"><i style="transform:scaleX('+(m.ventana/m.ventanaTotal).toFixed(3)+')"></i></div>'+
+          '<p class="timer mt8">En el suelo <b>'+Math.round(m.suelo)+' de '+Math.round(m.confirmacion)+' s</b></p><div class="tbar"><i style="transform:scaleX('+Math.min(1, m.suelo/m.confirmacion).toFixed(3)+')"></i></div></div>';
+    const vis = m.visibilidad || {Nariz:0, Hombros:0, Caderas:0, Tobillos:0};
+    const bars = ['Nariz','Hombros','Caderas','Tobillos'].map(k => { const v = vis[k]||0, low = v < (m.umbralVisibilidad||.5);
+      return '<div class="pbar'+(low&&!off?' low':'')+'"><span>'+k+'</span><span class="ptrack"><i style="width:'+(off?0:v*100)+'%"></i></span><b>'+(off?'—':(low?ic('warn'):'')+num(v, 2))+'</b></div>'; }).join('');
+    const v = m.m1==null ? 0 : m.m1, th = m.m2==null ? 90 : m.m2, P = m.m3==null ? 0 : m.m3;
+    const uv = m.umbralV || .01, ua = m.umbralAngulo || 45, ur = m.umbralRazon || 1;
+    return row1+
+      meas('Descenso de la cadera (M1)', m.m1==null ? '—' : num(v, 3), 'cuerpos/s', 'Avisa desde '+num(uv, 2).replace(/0+$/, '').replace(/,$/, ''), v >= uv, v/(uv*2)*100, 50)+
+      meas('Inclinación del tronco (M2)', m.m2==null ? '—' : Math.round(th)+'°', '', 'Avisa por debajo de '+Math.round(ua)+'°', th < ua || !!m.cabezaBajoPies, (90-th)/90*100, 50)+
+      meas('Forma del cuerpo, ancho/alto (M3)', m.m3==null ? '—' : num(P, 2), '', 'Avisa desde '+num(ur, 0), P >= ur || !!m.cabezaBajoPies, P/(ur*2)*100, 50)+
+      '<div class="mcard mphase"><h3>'+ic('pulse')+'Fase</h3><div class="phs">'+PHASES.map((p, i) => (i?ic('chevR'):'')+'<span class="ph'+(i===ph?' cur '+p[1]:'')+'"'+(i===ph?' aria-current="step"':'')+'>'+(i===ph?ic('check'):'')+p[0]+'</span>').join('')+'</div>'+
+        '<p class="msub mt8">Avisa si queda en el suelo después de la ventana de 1,48 s; la caída se confirma a los 30 s.</p></div>'+
+      '<div class="mside"><div class="mcard"><h3>'+ic('person')+'Puntos del cuerpo</h3><div class="pbars">'+bars+'</div><p class="plow">Visibilidad de 0 a 1 · mínimo 0,5 (la raya)</p></div>'+
+        '<div class="mcard" style="flex:1;display:flex;flex-direction:column"><h3>'+ic('eye')+'Esqueleto</h3><div class="mskel">'+
+          (off ? '' : skelReal(m.esqueleto))+'<span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></div></div></div>';
+  }
+  function metersView(E, U, cam){ const M = U.meters[cam.id]; return '<div class="mgrid'+(meterReason(E, M)?' off':'')+'" id="meters" aria-label="Medidores de '+esc(cam.room)+'">'+metersInner(E, M)+'</div>'; }
+  function actView(E, U){
+    const rows = (U.acts || []);
+    const days = [...new Set(rows.map(a => a.d))];
+    const seg = '<div class="seg2 sm" role="radiogroup" aria-label="Qué actividad ver"><button role="radio" aria-checked="'+(U.actScope==='pc')+'" data-act="actScope" data-arg="pc">'+ic('monitor')+'Esta PC</button><button role="radio" aria-checked="'+(U.actScope==='casa')+'" data-act="actScope" data-arg="casa">'+ic('home')+'Toda la casa</button></div>';
+    const av = w => w==='pc' ? '<span class="av pc">'+ic('monitor')+'</span>' : w==='app' ? '<span class="av pc">'+ic('mobile')+'</span>' : '<span class="av">'+esc(w)+'</span>';
+    const body = rows.length ? days.map(d => '<h3 class="actday">'+esc(d)+'</h3>'+rows.filter(a => a.d===d).map(a =>
+        '<div class="arow">'+av(a.who)+'<span>'+esc(a.m)+'</span><span class="when">'+(a.pend?'<span class="ptag">'+ic('clock')+'Pendiente de enviar</span>':'')+'<span class="mono">'+esc(a.t)+'</span></span></div>').join('')).join('')
+      : '<div class="actempty">'+ic('list')+'<b>Aún no hay actividad registrada</b><span class="t-meta">Aquí verás quién vinculó la PC, cambió una cámara o cómo se guardan los datos.</span></div>';
+    return '<div class="advhead">'+seg+'</div><div class="actlist" id="actlist">'+body+'</div><p class="actfoot">'+ic('lock')+'Nadie puede editar ni borrar esta lista. Lo que se hace en esta PC se anota como «Desde esta PC».</p>';
+  }
+  function advSubs(E){ return (E.advanced ? [['registro','terminal','Registro en vivo'], ['medidores','gauge','Medidores']] : []).concat([['actividad','list','Actividad']]); }
+  function advSub(E, U){ const subs = advSubs(E); return subs.some(x => x[0]===U.adv.sub) ? U.adv.sub : (E.advanced ? 'registro' : 'actividad'); }
+  function panelAvanzado(E, U){
+    const sub = advSub(E, U), on = !!E.advanced, cam = advCam(E, U), camSel = on && (sub==='registro' || sub==='medidores');
+    const seg = '<div class="seg2" role="tablist" aria-label="Avanzado">'+advSubs(E).map(x => '<button role="tab" id="sub-'+x[0]+'" aria-selected="'+(x[0]===sub)+'" tabindex="'+(x[0]===sub?0:-1)+'" data-act="advSub" data-arg="'+x[0]+'">'+(on?'':ic(x[1]))+x[2]+'</button>').join('')+'</div>';
+    const btns = '<div class="advbtns">'+(on ? '<button class="btn btn-secondary btn-sm" data-act="diagOpen">'+ic('download')+'Exportar diagnóstico</button>' : '')+'</div>';
+    const cams = advCams(E);
+    const mode = on
+      ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">Modo avanzado</b> · Nada de esto sale de esta PC.</span>'+
+          (camSel && cams.length ? '<span class="cam-l" id="cam-l">Cámara</span><div class="seg2 sm" role="radiogroup" aria-labelledby="cam-l">'+cams.map(c => '<button role="radio" aria-checked="'+(cam && c.id===cam.id)+'" data-act="advCam" data-arg="'+esc(c.id)+'">'+esc(c.room)+'</button>').join('')+'</div>' : '')+'</div>'
+      : '<div class="card advcard"><span class="ci lg">'+ic('sliders')+'</span><div class="grow"><b id="adv-l">Modo avanzado</b><span>Muestra, cámara por cámara, lo que detecta el programa y por qué avisa o no avisa. Sirve para revisar la instalación. Nada de esto sale de esta PC.</span></div>'+sw(false, 'advToggle', 'adv-l')+'</div>';
+    const sinCamara = '<div class="logempty">'+ic('cam')+'<b>Aún no pasa nada en esta cámara</b><span class="t-meta">Las líneas aparecen aquí apenas el programa detecta algo.</span></div>';
+    const body = sub==='registro' ? (cam ? logView(E, U, cam) : sinCamara) : sub==='medidores' ? (cam ? metersView(E, U, cam) : sinCamara) : actView(E, U);
+    return '<h1 class="sr" id="scr-h" tabindex="-1">Avanzado</h1><div class="advhead">'+seg+btns+'</div>'+mode+'<div class="advbody" role="tabpanel" aria-labelledby="sub-'+sub+'">'+body+'</div>';
+  }
+
   /* =================== diálogos =================== */
   function dlgBox(id, icon, title, text, body, actions){
     return '<div class="dlg-back"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="'+id+'-t"'+(text?' aria-describedby="'+id+'-d"':'')+' id="'+id+'"><div class="dlg-h">'+icon+'<div><h2 id="'+id+'-t">'+title+'</h2>'+(text?'<p id="'+id+'-d">'+text+'</p>':'')+'</div></div>'+body+'<div class="dlg-actions">'+actions+'</div></div></div>';
@@ -368,6 +485,19 @@
         (rooms.length ? 'Se dejan de detectar caídas en '+esc(listY(rooms))+'. ' : '')+'La familia recibirá un aviso.',
         '<label class="checkrow"><input type="checkbox" id="unlink-wipe"'+(U.unlinkWipe?' checked':'')+'><span>Borrar también los datos de esta PC ('+num1(gb)+' GB)<span>Movimientos, video y clips.</span></span></label>',
         '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-danger" data-act="unlinkDo"'+(U.busy?' disabled':'')+'>'+ic('unlink')+'Desvincular</button>');
+    }
+    if(U.dlg==='diag'){
+      const d = U.diag, nombre = d.nombre || '';
+      const file = '<div class="filebox">'+ic('doc')+'<span class="code">'+esc(d.step==='done' ? d.ruta : nombre)+'</span>'+(d.step==='done' ? '<small>'+esc(d.tamano)+'</small>' : '')+'</div>';
+      if(d.step==='busy') return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Crea un archivo para enviarlo al equipo de soporte.',
+        file+'<div class="prog" role="status"><div class="tbar"><i></i></div><p>Preparando el diagnóstico…</p></div>', '');
+      if(d.step==='done') return dlgBox('dlg-diag', '<span class="ci lg calma">'+ic('check')+'</span>', 'Diagnóstico guardado · '+esc(d.tamano), 'Envíalo al equipo de soporte cuando te lo pidan.',
+        file, '<button class="btn btn-secondary" data-act="diagShow">'+ic('folder')+'Mostrar en la carpeta</button><button class="btn btn-primary" data-act="dlgClose">Listo</button>');
+      const lists = '<div class="inc"><div class="yes"><h3>Incluye</h3><ul>'+['Registros del programa', 'Versión y sistema operativo', 'Cámaras y habitaciones', 'Umbrales de detección'].map(x => '<li>'+ic('check')+x+'</li>').join('')+'</ul></div>'+
+        '<div class="no"><h3>No incluye</h3><ul>'+['Contraseñas ni accesos', 'Imágenes ni video', 'Puntos del cuerpo'].map(x => '<li>'+ic('x')+x+'</li>').join('')+'</ul></div></div>';
+      return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Crea un archivo para enviarlo al equipo de soporte.',
+        (d.step==='err' ? '<div class="notice err" role="alert">'+ic('warn')+'<div><b>No pudimos guardar el archivo en esa carpeta. Elige otra.</b><span>No se guardó ningún archivo.</span></div></div>' : lists)+file,
+        '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-primary" data-act="diagSave">'+ic('folder')+(d.step==='err'?'Elegir otra carpeta':'Elegir dónde guardar')+'</button>');
     }
     return '';
   }
@@ -425,14 +555,15 @@
     return JSON.stringify(o);
   }
 
-  const api = { ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
+  const api = { panelAvanzado, metersInner, actView, ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
 
   /* ---------- DOM: render with focus, folded sections and scroll preserved ---------- */
   if(typeof document === 'undefined'){ if(typeof module !== 'undefined') module.exports = api; return; }
 
   const $ = id => document.getElementById(id);
   let E = null, first = true, toastTimer = null, preview = null, previewSrc = null;
-  const U = {tab:'estado', sel:null, open:{}, toast:null, dlg:null, unlinkWipe:false, busy:false, here:false, rooms:null, pick:{room:null, otherOn:false, other:'', err:null}};
+  const U = {tab:'estado', sel:null, open:{}, toast:null, dlg:null, unlinkWipe:false, busy:false, here:false, rooms:null, pick:{room:null, otherOn:false, other:'', err:null},
+    adv:{sub:'actividad', cam:null}, log:{filters:{persona:true, evento:true, descarte:true, conexion:true, programa:true}, q:'', paused:false, cut:0, open:null, lines:{}, ultimo:0}, meters:{}, acts:null, actScope:'pc', diag:{step:'intro'}};
   let opener = null;
   const bridge = () => (global.pywebview && global.pywebview.api) || null;
 
@@ -477,6 +608,7 @@
     const devs = E.devices || [];
     if(!devs.some(d => d.id===U.sel)) U.sel = devs.length ? devs[0].id : null;
     if(E.screen!=='main') U.dlg = null;
+    if(prev && prev.advanced && !E.advanced){ U.log.lines = {}; U.log.ultimo = 0; U.meters = {}; }
     const t = transition(prev, E);
     if(first || prev.screen!==E.screen){ first = false; if(E.pair) E.pair.fresh = false; render('enter'); }
     else if(t) toast(t.kind, t.icon, t.text);
@@ -519,9 +651,40 @@
   const ACT = {
     minimize(){ call('minimizar'); },
     close(){ call('cerrar'); },
-    tab(el){ U.tab = el.dataset.arg; render(); const t = $('tab-'+U.tab); if(t) t.focus({preventScroll:true}); },
+    tab(el){ U.tab = el.dataset.arg; render(); const t = $('tab-'+U.tab); if(t) t.focus({preventScroll:true}); if(U.tab==='avanzado') loadActs(); },
     toCams(){ U.tab = 'camaras'; render(); const t = $('tab-camaras'); if(t) t.focus({preventScroll:true}); },
     selCam(el){ U.sel = el.dataset.arg; previewSrc = null; U.pick = {room:null, otherOn:false, other:'', err:null}; render(); },
+    advToggle(){
+      const activar = !E.advanced;
+      call('modoAvanzado', activar).then(r => {
+        E.advanced = !!(r && r.on); U.adv.sub = E.advanced ? 'registro' : 'actividad'; U.acts = null;
+        toast('ok', 'sliders', E.advanced ? 'Activamos el modo avanzado. Queda anotado en la actividad.' : 'Desactivamos el modo avanzado.');
+        loadActs();
+      });
+    },
+    advSub(el){ U.adv.sub = el.dataset.arg; render(); if(U.adv.sub==='actividad') loadActs(); pollAdv(); },
+    advCam(el){ U.adv.cam = el.dataset.arg; U.log.open = null; render(); pollAdv(); },
+    logFilter(el){ const k = el.dataset.arg; U.log.filters[k] = !U.log.filters[k]; render(); },
+    logPause(){ const lg = U.log, cam = advCam(E, U); lg.paused = !lg.paused; lg.cut = cam ? (lg.lines[cam.id] || []).length : 0; render(); },
+    techToggle(el){ const id = Number(el.dataset.arg); U.log.open = U.log.open===id ? null : id; render(); },
+    copyTech(el){
+      const id = Number(el.dataset.arg), cam = advCam(E, U), l = cam && (U.log.lines[cam.id] || []).find(x => x.id===id);
+      if(!l) return;
+      const hecho = () => toast('ok', 'copy', 'Línea copiada');
+      try{ navigator.clipboard.writeText(l.x).then(hecho, () => { copiarTexto(l.x); hecho(); }); }catch(e){ copiarTexto(l.x); hecho(); }
+    },
+    actScope(el){ U.actScope = el.dataset.arg; render(); },
+    diagOpen(el){ opener = el; U.dlg = 'diag'; U.diag = {step:'intro', nombre:''}; render(); call('nombreDiagnostico').then(n => { U.diag.nombre = n || ''; render(); }); },
+    diagSave(){
+      U.diag.step = 'busy'; render();
+      call('exportarDiagnostico').then(r => {
+        if(r && r.ok){ U.diag = {step:'done', nombre:r.nombre, ruta:r.ruta, tamano:tamano(r.tamano)}; }
+        else if(r && r.cancelado){ U.diag.step = 'intro'; }
+        else { U.diag.step = 'err'; }
+        render();
+      });
+    },
+    diagShow(){ call('mostrarEnCarpeta', U.diag.ruta || ''); closeDlg(); },
     hereOn(){ U.here = true; U.pick = {room:null, otherOn:false, other:'', err:null}; render(); call('ambientes').then(r => { U.rooms = r || []; render(); }); },
     hereOff(){ U.here = false; render(); },
     pickRoom(el){ U.pick = {room:el.dataset.arg, otherOn:false, other:'', err:null}; render(); },
@@ -575,15 +738,47 @@
     const t = e.target.closest('[data-act]');
     if(t && ACT[t.dataset.act] && !t.disabled && t.getAttribute('aria-disabled') !== 'true'){ e.preventDefault(); ACT[t.dataset.act](t); }
   });
+  function tamano(b){ b = Number(b) || 0; return b >= 1e6 ? num(b/1e6, 1)+' MB' : Math.max(1, Math.round(b/1e3))+' KB'; }
+  function copiarTexto(texto){ const t = document.createElement('textarea'); t.value = texto; document.body.appendChild(t); t.select(); try{ document.execCommand('copy'); }catch(e){} t.remove(); }
+  function loadActs(){ call('actividad').then(r => { U.acts = r || []; if(U.tab==='avanzado') render(); }); }
+  /* the advanced mode: new log lines and the meters twice per second, only while shown */
+  function pollAdv(){
+    if(!E || E.screen!=='main' || U.tab!=='avanzado' || !E.advanced || document.hidden) return;
+    const cam = advCam(E, U); if(!cam) return;
+    const sub = advSub(E, U);
+    if(sub==='registro'){
+      const lg = U.log, mias = lg.lines[cam.id] || [], ultimo = mias.length ? mias[mias.length-1].id : 0;
+      call('registro', [cam.id, ultimo]).then(nuevas => {
+        if(!nuevas || !nuevas.length) return;
+        lg.lines[cam.id] = mias.concat(nuevas).slice(-2000);
+        const box = $('logbox'), abajo = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+        renderAdv();
+        const b = $('logbox'); if(b && abajo && !lg.paused) b.scrollTop = b.scrollHeight;
+        const ev = nuevas.filter(l => l.k==='evento').pop();
+        if(ev && !lg.paused){ const a = $('log-ann'); if(a) a.textContent = ev.m; }
+      });
+    } else if(sub==='medidores'){
+      call('medidores', cam.id).then(m => { U.meters[cam.id] = m; const g = $('meters'); if(g){ g.outerHTML = metersView(E, U, cam); } });
+    }
+  }
+  function renderAdv(){
+    const cam = advCam(E, U), box = $('logbox');
+    if(!cam || !box){ render(); return; }
+    if(U.log.paused){ const n = $('log-new'), all = U.log.lines[cam.id] || [], k = all.length - U.log.cut; if(n) n.textContent = k+' '+(k===1?'línea nueva':'líneas nuevas'); return; }
+    const top = box.scrollTop; box.innerHTML = logRows(E, U, cam); box.scrollTop = top;
+    LOG_K.forEach(k => { const c = $('cnt-'+k[0]); if(c) c.textContent = (U.log.lines[cam.id] || []).filter(l => l.k===k[0]).length; });
+  }
+  setInterval(pollAdv, 500);
   function closeDlg(){ U.dlg = null; render(); if(opener && document.body.contains(opener)) opener.focus({preventScroll:true}); else restore({act:'unlinkAsk'}); opener = null; }
   document.addEventListener('change', e => { if(e.target && e.target.id==='unlink-wipe') U.unlinkWipe = e.target.checked; });
-  document.addEventListener('input', e => { if(e.target && e.target.id==='room-other'){ U.pick.other = e.target.value; if(U.pick.err){ U.pick.err = null; } const b = document.querySelector('#app [data-act="useCam"]'); if(b) b.disabled = !e.target.value.trim(); } });
+  document.addEventListener('input', e => {
+    if(e.target && e.target.id==='log-q'){ U.log.q = e.target.value; renderAdv(); return; } if(e.target && e.target.id==='room-other'){ U.pick.other = e.target.value; if(U.pick.err){ U.pick.err = null; } const b = document.querySelector('#app [data-act="useCam"]'); if(b) b.disabled = !e.target.value.trim(); } });
   document.addEventListener('toggle', e => { const d = e.target; if(d && d.matches && d.matches('details[data-k]')) U.open[d.dataset.k] = d.open; }, true);
   document.addEventListener('keydown', e => {
     const t = e.target, role = t.getAttribute && t.getAttribute('role');
     if(e.key==='Enter' && t.id==='room-other'){ e.preventDefault(); ACT.useCam(); return; }
     if(U.dlg){
-      if(e.key==='Escape'){ e.preventDefault(); closeDlg(); return; }
+      if(e.key==='Escape'){ e.preventDefault(); if(!(U.dlg==='diag' && U.diag.step==='busy')) closeDlg(); return; }
       if(e.key==='Tab'){
         const d = document.querySelector('#app .dlg'); if(!d) return;
         const f = [...d.querySelectorAll('button:not([disabled]),input,select,[tabindex="0"]')];
