@@ -239,8 +239,9 @@
   }
   function scrMain(E, U, enter){
     const tab = tabs(E).some(x => x[0]===U.tab) ? U.tab : 'estado';
-    const panel = tab==='camaras' ? panelCamaras(E, U) : tab==='avanzado' ? panelAvanzado(E, U) : panelEstado(E, U);
-    return sec('main', enter, tabbar(E, Object.assign({}, U, {tab:tab}))+'<div class="panel '+tab+'" id="panel" role="tabpanel" aria-labelledby="tab-'+tab+'">'+panel+'</div>');
+    const replay = tab==='avanzado' && U.rp && U.rp.open;
+    const panel = tab==='camaras' ? panelCamaras(E, U) : tab==='avanzado' ? (replay ? panelReplay(E, U) : panelAvanzado(E, U)) : panelEstado(E, U);
+    return sec('main', enter, tabbar(E, Object.assign({}, U, {tab:tab}))+'<div class="panel '+tab+(replay?' replay':'')+'" id="panel" role="tabpanel" aria-labelledby="tab-'+tab+'">'+panel+'</div>');
   }
 
   /* ---------- Estado: el resumen y una fila por cámara ---------- */
@@ -359,7 +360,8 @@
 
   /* =================== Avanzado: registro en vivo, medidores y actividad =================== */
   function num(n, d){ return Number(n).toFixed(d).replace('.', ','); }
-  function sw(on, act, lb, dis){
+  function sw(on, act, lb, dis, compact){
+    if(compact) return '<button class="switch" role="switch" aria-checked="'+(!!on && !dis)+'"'+(lb?' aria-labelledby="'+lb+'"':'')+(dis?' aria-disabled="true"':'')+' data-act="'+act+'"><i></i></button>';
     return '<span class="sw-l'+(on&&!dis?' on':'')+'"><button class="switch" role="switch" aria-checked="'+(!!on && !dis)+'"'+(lb?' aria-labelledby="'+lb+'"':'')+(dis?' aria-disabled="true"':'')+' data-act="'+act+'"><i></i></button>'+(on&&!dis?'Sí':'No')+'</span>';
   }
   const LOG_K = [['persona','person','Personas'], ['evento','warn','Eventos'], ['descarte','eyeOff','Descartadas'], ['conexion','wifi','Conexión'], ['programa','monitor','Programa']];
@@ -502,7 +504,7 @@
   function panelAvanzado(E, U){
     const sub = advSub(E, U), on = !!E.advanced, cam = advCam(E, U), camSel = on && (sub==='registro' || sub==='medidores');
     const seg = '<div class="seg2" role="tablist" aria-label="Avanzado">'+advSubs(E).map(x => '<button role="tab" id="sub-'+x[0]+'" aria-selected="'+(x[0]===sub)+'" tabindex="'+(x[0]===sub?0:-1)+'" data-act="advSub" data-arg="'+x[0]+'">'+(on?'':ic(x[1]))+x[2]+'</button>').join('')+'</div>';
-    const btns = '<div class="advbtns">'+(on ? '<button class="btn btn-secondary btn-sm" data-act="diagOpen">'+ic('download')+'Exportar diagnóstico</button>' : '')+'</div>';
+    const btns = '<div class="advbtns"><button class="btn btn-secondary btn-sm" data-act="replayOpen">'+ic('replay')+'Ver qué pasó</button>'+(on ? '<button class="btn btn-secondary btn-sm" data-act="diagOpen">'+ic('download')+'Exportar diagnóstico</button>' : '')+'</div>';
     const cams = advCams(E);
     const mode = on
       ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">Modo avanzado</b> · Nada sale de esta PC.</span>'+
@@ -511,6 +513,110 @@
     const sinCamara = '<div class="logempty">'+ic('cam')+'<b>Aún no pasa nada en esta cámara</b></div>';
     const body = sub==='registro' ? (cam ? logView(E, U, cam) : sinCamara) : sub==='medidores' ? (cam ? metersView(E, U, cam) : sinCamara) : sub==='almacenamiento' ? storageView(E, U) : actView(E, U);
     return '<h1 class="sr" id="scr-h" tabindex="-1">Avanzado</h1><div class="advhead">'+seg+btns+'</div>'+mode+'<div class="advbody" role="tabpanel" aria-labelledby="sub-'+sub+'">'+body+'</div>';
+  }
+
+  /* =================== Ver qué pasó: repetición del movimiento (US-39) =================== */
+  const SPEEDS = [.5, 1, 2, 4];
+  const RP_FASES = [['De pie','','person'], ['Movimiento inestable','inestable','warn'], ['Posible caída','caida','warn'], ['En el suelo','caida','warn'], ['En el suelo · caída confirmada','caida','warn'], ['Se levantó','calma','arrowUp']];
+  const RP_SEG = [['h','sL'],['h','sR'],['sL','eL'],['eL','wL'],['sR','eR'],['eR','wR'],['sL','hL'],['sR','hR'],['hL','hR'],['hL','kL'],['kL','aL'],['hR','kR'],['kR','aR']];
+  function spTxt(v){ return String(v).replace('.', ',')+'×'; }
+  function hmsMs(ms){ const d = new Date(ms); return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); }
+  function hmMs(ms){ return hmsMs(ms).slice(0, 5); }
+  function rpSpan(rp){ return (rp.zoom==='60' ? 3600 : 600) * 1000; }
+  function rpCamInfo(rp){ const cs = (rp.info && rp.info.camaras) || []; return cs.find(c => c.id===rp.cam) || cs[0] || null; }
+  function rpGap(rp, t){ const w = rp.win; return w ? (w.huecos || []).find(g => t >= g.a && t < g.b) || null : null; }
+  /* the row shown at t: the newest one at or before t, within half a second */
+  function rpRow(rp, t){
+    const p = rp.poses; if(!p || !p.t.length || t < p.desde || t > p.hasta) return null;
+    let lo = 0, hi = p.t.length - 1, k = -1;
+    while(lo <= hi){ const m = (lo+hi) >> 1; if(p.t[m] <= t){ k = m; lo = m+1; } else hi = m-1; }
+    return k >= 0 && t - p.t[k] <= 500 ? k : null;
+  }
+  function rpPhase(rp, t){
+    const g = rpGap(rp, t); if(g) return {label:g.motivo, tone:'gap', i:'person', p:null};
+    const k = rpRow(rp, t), p = rp.poses;
+    if(k==null) return {label:'Cargando…', tone:'gap', i:'clock', p:null};
+    const f = RP_FASES[p.f[k]] || RP_FASES[0], pts = p.p[k];
+    if(!pts) return {label:'Sin persona en la imagen', tone:'gap', i:'person', p:null};
+    const pose = {}; p.claves.forEach((c, j) => pose[c] = [pts[2*j], pts[2*j+1]]);
+    return {label:f[0], tone:f[1], i:f[2], p:pose};
+  }
+  /* the skeleton where it was in the image (4:3, the same box as the video under it) */
+  function rpFig(rp, t){
+    const r = rpPhase(rp, t), col = rp.video ? '#FFFFFF' : '#2B1D4E', fill = rp.video ? '#2B1D4E' : '#fff';
+    let s = '';
+    if(r.p){
+      const P = k => [(r.p[k][0]*400).toFixed(1), (r.p[k][1]*300).toFixed(1)];
+      RP_SEG.forEach(([a,b]) => { const A = P(a), B = P(b); s += '<line x1="'+A[0]+'" y1="'+A[1]+'" x2="'+B[0]+'" y2="'+B[1]+'" stroke="'+col+'" stroke-width="3.4" stroke-linecap="round"/>'; });
+      Object.keys(r.p).forEach(k => { const a = P(k); s += '<circle cx="'+a[0]+'" cy="'+a[1]+'" r="'+(k==='h'?8:3.6)+'" fill="'+fill+'" stroke="'+col+'" stroke-width="'+(k==='h'?3:2)+'"/>'; });
+    }
+    return '<svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><g class="skel">'+s+'</g></svg>';
+  }
+  function rpValText(rp, t){
+    const e = ((rp.win && rp.win.eventos) || []).find(x => Math.abs(x.t-t) < 1500), g = rpGap(rp, t);
+    return hmsMs(t)+(e ? ', '+e.l.toLowerCase() : g ? ', sin datos: '+g.corto.toLowerCase() : '');
+  }
+  function markSVG(k){
+    const sh = k==='caida' ? '<path d="M10 2 18.6 17.2H1.4Z" style="fill:var(--caida)" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>'
+      : k==='inestable' ? '<path d="M10 1.4 18.6 10 10 18.6 1.4 10Z" style="fill:var(--inestable-deep)" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>'
+      : '<circle cx="10" cy="10" r="7.6" style="fill:var(--calma)" stroke="#fff" stroke-width="1.6"/>';
+    return '<svg viewBox="0 0 20 20" aria-hidden="true">'+sh+'</svg>';
+  }
+  function timeline(rp){
+    const a = rp.w0, b = rp.w0 + rpSpan(rp), span = b-a, P = t => ((t-a)/span*100).toFixed(2), t = rp.t, w = rp.win || {eventos:[], huecos:[]};
+    const evs = w.eventos.filter(e => e.t >= a && e.t <= b), big = rp.zoom==='60';
+    const gaps = w.huecos.filter(g => g.b > a && g.a < b).map(g => ({a:Math.max(a, g.a), b:Math.min(b, g.b), s:g.corto}));
+    const step = (big ? 600 : 120)*1000, ticks = [];
+    for(let x = Math.ceil(a/step)*step; x <= b; x += step) ticks.push(x);
+    return '<div class="tl"><div class="tl-track" id="tl-track" role="slider" tabindex="0" aria-label="Línea de tiempo" aria-valuemin="'+Math.round(a/1000)+'" aria-valuemax="'+Math.round(b/1000)+'" aria-valuenow="'+Math.round(t/1000)+'" aria-valuetext="'+esc(rpValText(rp, t))+'">'+
+      '<span class="tl-gaps" aria-hidden="true">'+gaps.map(g => '<i class="tl-gap" style="left:'+P(g.a)+'%;width:'+((g.b-g.a)/span*100).toFixed(2)+'%"></i>').join('')+'</span>'+
+      evs.map(e => '<button class="tl-m" style="left:'+P(e.t)+'%" data-act="rpSeek" data-arg="'+e.t+'" aria-label="'+e.l+', '+hmsMs(e.t)+'" title="'+e.l+' · '+hmsMs(e.t)+'">'+markSVG(e.k)+'</button>').join('')+
+      '<i class="tl-head" id="tl-head" style="left:'+P(Math.min(b, Math.max(a, t)))+'%"></i></div>'+
+      '<div class="tl-labels" aria-hidden="true">'+ticks.map(x => '<span style="left:'+P(x)+'%">'+hmMs(x)+'</span>').join('')+
+        (big ? '' : evs.map(e => '<span class="ev '+e.k+'" style="left:'+P(e.t)+'%">'+e.l+'</span>').join(''))+
+        gaps.map(g => '<span class="ev gap" style="left:'+P((g.a+g.b)/2)+'%">'+esc(g.s)+'</span>').join('')+'</div></div>';
+  }
+  function rpForm(E, rp){
+    const info = rp.info || {permitida:false, camaras:[]}, cam = rpCamInfo(rp), dis = !info.permitida, vOk = !!(rp.win && rp.win.video);
+    const hoy = new Date(), iso = hoy.getFullYear()+'-'+pad2(hoy.getMonth()+1)+'-'+pad2(hoy.getDate());
+    const dias = cam && cam.dias.length ? cam.dias : [{valor:iso, texto:'Hoy, '+pad2(hoy.getDate())+'/'+pad2(hoy.getMonth()+1)+'/'+hoy.getFullYear(), corto:''}];
+    return '<div class="card rp-form'+(dis?' disabled':'')+'"><span class="label" id="rp-cl">Cámara</span><div class="seg2 sm" role="radiogroup" aria-labelledby="rp-cl">'+
+        info.camaras.map(c => '<button role="radio" aria-checked="'+(cam && c.id===cam.id)+'" data-act="rpCam" data-arg="'+esc(c.id)+'"'+(dis?' disabled':'')+'>'+esc(c.room)+'</button>').join('')+'</div>'+
+      '<label class="label" for="rp-day">Fecha</label><select class="input" id="rp-day"'+(dis?' disabled':'')+'>'+dias.map(d => '<option value="'+esc(d.valor)+'"'+(d.valor===rp.day?' selected':'')+'>'+esc(d.texto)+'</option>').join('')+'</select>'+
+      '<label class="label" for="rp-hour">Hora</label><input class="input mono" id="rp-hour" value="'+esc(rp.hour)+'" inputmode="numeric" maxlength="5" autocomplete="off"'+(dis?' disabled':'')+'>'+
+      '<div class="qchips">'+[['Hace 15 min','m15'], ['Hace 1 hora','h1'], ['Hoy 07:00','h7']].map(q => '<button data-act="rpQuick" data-arg="'+q[1]+'"'+(dis?' disabled':'')+'>'+q[0]+'</button>').join('')+'</div>'+
+      '<button class="btn btn-primary btn-sm" data-act="rpGo"'+(dis?' disabled':'')+'>'+ic('replay')+'Ver</button>'+
+      '<p class="t-meta">'+(dis || !cam || !cam.desde ? 'No hay movimientos guardados.' : 'Datos desde el '+esc(cam.desde)+'.')+'</p>'+
+      '<div class="vtoggle mt12"><span><b id="rp-vl">Sobre el video guardado</b><span>'+(vOk ? 'Nunca sale de esta PC.' : 'No hay video de ese momento.')+'</span></span>'+sw(rp.video && vOk, 'rpVideo', 'rp-vl', !vOk || dis, true)+'</div></div>';
+  }
+  function panelReplay(E, U){
+    const rp = U.rp, info = rp.info || {permitida:false, camaras:[]}, cam = rpCamInfo(rp);
+    const dia = cam && (cam.dias.find(d => d.valor===rp.day) || {}).corto;
+    const head = '<div class="rp-head"><button class="back" data-act="replayClose">'+ic('back')+'Volver</button><h1 class="t-title" id="scr-h" tabindex="-1">Ver qué pasó</h1>'+
+      '<span class="t-meta" id="rp-title">'+(cam ? esc(cam.room)+(dia ? ' · '+esc(dia) : '') : '')+'</span></div>';
+    let main;
+    if(!rp.info) main = '<div class="rp-main"><div class="card rp-block" role="status"><span class="spin"></span></div></div>';
+    else if(!info.permitida) main = '<div class="rp-main"><div class="card rp-block"><div class="notice warn">'+ic('lock')+'<div><b>Falta el permiso de '+esc(E.home.first)+' para guardar movimientos</b><span>Se registra en la app: Privacidad › Guardar movimientos.</span></div></div></div></div>';
+    else if(!cam || !cam.desde) main = '<div class="rp-main"><div class="card rp-block"><div class="notice info">'+ic('clock')+'<div><b>No hay movimientos guardados.</b></div></div></div></div>';
+    else if(rp.state==='old') main = '<div class="rp-main"><div class="card rp-block"><div class="notice info">'+ic('clock')+'<div><b>Ya no hay movimientos de ese momento.</b><span>Hay datos desde el '+esc(cam.desde)+'. Elige otra fecha.</span></div></div></div></div>';
+    else {
+      const p = rpPhase(rp, rp.t), w = rp.win || {eventos:[]}, a = rp.w0, b = a + rpSpan(rp), evs = w.eventos.filter(e => e.t >= a && e.t <= b);
+      const conVideo = rp.video && w.video;
+      const strip = conVideo ? '<p class="rp-strip video">'+ic('lock')+'Video guardado solo en esta PC<span>· Queda en el registro de accesos</span></p>'
+        : '<p class="rp-strip">'+ic('eye')+'Solo puntos del cuerpo, nunca video<span>· Queda en el registro de accesos</span></p>';
+      main = '<div class="rp-main">'+strip+
+        '<div class="rp-canvas" id="rp-canvas">'+(conVideo ? '<div class="rp-vid"><img id="rp-img" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain" hidden></div>' : '')+
+          '<div class="rp-fig" id="rp-fig">'+rpFig(rp, rp.t)+'</div><span class="rp-phase '+p.tone+'" id="rp-phase" aria-live="polite">'+ic(p.i)+esc(p.label)+'</span><span class="rp-clock" id="rp-clock">'+hmsMs(rp.t)+'</span></div>'+
+        timeline(rp)+
+        '<div class="rp-ctrl"><button class="ibtn" data-act="rpPrev" aria-label="Evento anterior" title="Evento anterior">'+ic('prev')+'</button>'+
+          '<button class="ibtn play" data-act="rpPlay" aria-label="'+(rp.playing?'Pausar':'Reproducir')+'" title="'+(rp.playing?'Pausar':'Reproducir')+'">'+ic(rp.playing?'pauseF':'play')+'</button>'+
+          '<button class="ibtn" data-act="rpNext" aria-label="Evento siguiente" title="Evento siguiente">'+ic('next')+'</button>'+
+          '<span class="rp-time mono" id="rp-time">'+hmsMs(rp.t)+'</span>'+
+          '<button class="ibtn speed" data-act="rpSpeed" aria-label="Velocidad: '+spTxt(rp.speed)+'" title="Cambiar la velocidad">'+spTxt(rp.speed)+'</button>'+
+          '<div class="seg2 sm" role="radiogroup" aria-label="Rango de la línea de tiempo"><button role="radio" aria-checked="'+(rp.zoom==='10')+'" data-act="rpZoom" data-arg="10">10 min</button><button role="radio" aria-checked="'+(rp.zoom==='60')+'" data-act="rpZoom" data-arg="60">1 h</button></div></div>'+
+        det(U, 'rpev', 'rp-ev', 'Eventos ('+evs.length+')', evs.length ? evs.map(e => '<button class="evrow" data-act="rpSeek" data-arg="'+e.t+'"><time class="mono">'+hmsMs(e.t)+'</time>'+markSVG(e.k)+'<span>'+e.l+' · '+esc(cam.room)+'</span></button>').join('') : '<p class="t-meta" style="padding:4px 0 8px">Sin eventos.</p>')+'</div>';
+    }
+    return head+'<div class="rp-grid">'+rpForm(E, rp)+main+'</div>';
   }
 
   /* =================== diálogos =================== */
@@ -606,7 +712,7 @@
     return JSON.stringify(o);
   }
 
-  const api = { storageView, panelAvanzado, metersInner, actView, ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
+  const api = { panelReplay, rpPhase, timeline, storageView, panelAvanzado, metersInner, actView, ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
 
   /* ---------- DOM: render with focus, folded sections and scroll preserved ---------- */
   if(typeof document === 'undefined'){ if(typeof module !== 'undefined') module.exports = api; return; }
@@ -614,7 +720,7 @@
   const $ = id => document.getElementById(id);
   let E = null, first = true, toastTimer = null, preview = null, previewSrc = null;
   const U = {tab:'estado', sel:null, open:{}, toast:null, dlg:null, unlinkWipe:false, busy:false, here:false, rooms:null, pick:{room:null, otherOn:false, other:'', err:null},
-    adv:{sub:'actividad', cam:null}, log:{filters:{persona:true, evento:true, descarte:true, conexion:true, programa:true}, q:'', paused:false, cut:0, open:null, lines:{}, ultimo:0}, meters:{}, acts:null, actScope:'pc', diag:{step:'intro'}};
+    rp:{open:false}, adv:{sub:'actividad', cam:null}, log:{filters:{persona:true, evento:true, descarte:true, conexion:true, programa:true}, q:'', paused:false, cut:0, open:null, lines:{}, ultimo:0}, meters:{}, acts:null, actScope:'pc', diag:{step:'intro'}};
   let opener = null;
   const bridge = () => (global.pywebview && global.pywebview.api) || null;
 
@@ -636,6 +742,7 @@
     $('app').innerHTML = win(E, U, enter);
     const rows2 = document.querySelector('.clist-rows'); if(rows2) rows2.scrollTop = top;
     showPreview();
+    const rpImg = $('rp-img'); if(rpImg && rpFrame){ rpImg.src = rpFrame; rpImg.hidden = false; }
     const d = document.querySelector('#app .dlg');
     if(d && !d.contains(document.activeElement)){ const b = d.querySelector('.dlg-actions .btn:not([disabled])'); if(b) b.focus({preventScroll:true}); }
     else if(enter){ const t = $('scr-h'); if(t) t.focus({preventScroll:true}); } else restore(f);
@@ -702,7 +809,7 @@
   const ACT = {
     minimize(){ call('minimizar'); },
     close(){ call('cerrar'); },
-    tab(el){ U.tab = el.dataset.arg; render(); const t = $('tab-'+U.tab); if(t) t.focus({preventScroll:true}); if(U.tab==='avanzado') loadActs(); },
+    tab(el){ if(U.rp.open && el.dataset.arg!=='avanzado') ACT.replayClose(); U.tab = el.dataset.arg; render(); const t = $('tab-'+U.tab); if(t) t.focus({preventScroll:true}); if(U.tab==='avanzado') loadActs(); },
     toCams(){ U.tab = 'camaras'; render(); const t = $('tab-camaras'); if(t) t.focus({preventScroll:true}); },
     selCam(el){ U.sel = el.dataset.arg; previewSrc = null; U.pick = {room:null, otherOn:false, other:'', err:null}; render(); },
     advToggle(){
@@ -866,6 +973,162 @@
       const items = [...group.querySelectorAll('[role="tab"],[role="radio"]')].filter(x => !x.disabled && x.getAttribute('aria-disabled')!=='true');
       const i = items.indexOf(t), d = /Right|Down/.test(e.key) ? 1 : -1, n = items[(i+d+items.length) % items.length];
       if(n){ e.preventDefault(); n.click(); const again = n.id ? $(n.id) : document.querySelector('#app [data-act="'+n.dataset.act+'"][data-arg="'+CSS.escape(n.dataset.arg||'')+'"]'); if(again) again.focus(); }
+    }
+  });
+
+  /* ---------- Ver qué pasó: datos, reproducción y búsqueda (proto.js) ---------- */
+  const REDUCED = global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let rpTimer = 0, rpLast = 0, rpGapShown = null, rpPidiendo = false, rpVideoPidiendo = false, rpVideoT = null, rpDrag = false, rpFrame = null;
+  function isoHoy(){ const d = new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+  function rpEn(dia, hora){ const [y, m, d] = dia.split('-').map(Number), [h, mi] = hora.split(':').map(Number); return new Date(y, m-1, d, h, mi, 0).getTime(); }
+  function rpFit(t){
+    const rp = U.rp, span = rpSpan(rp), ahora = Date.now();
+    if(rp.w0==null || t < rp.w0 || t > rp.w0 + span){ rp.w0 = Math.min(Math.floor((t - span*.6)/60000)*60000, Math.ceil(ahora/60000)*60000 - span); return true; }
+    return false;
+  }
+  function rpCargarVentana(){
+    const rp = U.rp, cam = rpCamInfo(rp); if(!cam) return Promise.resolve();
+    const desde = rp.w0, hasta = rp.w0 + rpSpan(rp);
+    return call('repeticionVentana', [cam.id, desde, hasta]).then(w => { if(w && rp.w0===desde){ rp.win = w; } });
+  }
+  function rpCargarPoses(t){
+    const rp = U.rp, cam = rpCamInfo(rp), p = rp.poses;
+    if(!cam || rpPidiendo || (p && p.cam===cam.id && t >= p.desde && t <= p.hasta - 15000)) return;
+    rpPidiendo = true;
+    const desde = t - 10000, hasta = t + 110000;
+    call('repeticionPoses', [cam.id, desde, hasta]).then(r => {
+      rpPidiendo = false;
+      if(r && r.t){ rp.poses = Object.assign(r, {cam:cam.id, desde:desde, hasta:hasta}); rpPintar(); }
+    }, () => { rpPidiendo = false; });
+  }
+  function rpVideo(t){
+    const rp = U.rp, cam = rpCamInfo(rp), img = $('rp-img');
+    if(!img || !cam || rpVideoPidiendo || (rpVideoT!=null && Math.abs(rpVideoT - t) < 100)) return;
+    rpVideoPidiendo = true;
+    call('repeticionVideo', [cam.id, Math.round(t)]).then(r => {
+      rpVideoPidiendo = false; rpVideoT = t;
+      const i = $('rp-img'); if(!i) return;
+      rpFrame = r && r.jpeg ? 'data:image/jpeg;base64,'+r.jpeg : null;
+      if(rpFrame){ i.src = rpFrame; i.hidden = false; } else i.hidden = true;
+    }, () => { rpVideoPidiendo = false; });
+  }
+  function rpPintar(){
+    const rp = U.rp, fig = $('rp-fig'); if(!fig) return;
+    const t = REDUCED ? Math.floor(rp.t/1000)*1000 : rp.t, p = rpPhase(rp, t), a = rp.w0, b = a + rpSpan(rp);
+    fig.innerHTML = rpFig(rp, t);
+    const ph = $('rp-phase'); if(ph && ph.dataset.l!==p.label){ ph.className = 'rp-phase '+p.tone; ph.innerHTML = ic(p.i)+esc(p.label); ph.dataset.l = p.label; }
+    $('rp-clock').textContent = hmsMs(t); $('rp-time').textContent = hmsMs(t);
+    $('tl-head').style.left = Math.max(0, Math.min(100, (t-a)/(b-a)*100))+'%';
+    const tr = $('tl-track'); tr.setAttribute('aria-valuenow', Math.round(t/1000)); tr.setAttribute('aria-valuetext', rpValText(rp, t));
+    rpCargarPoses(t);
+    if(rp.video && rp.win && rp.win.video) rpVideo(t);
+  }
+  function rpStop(){ U.rp.playing = false; clearInterval(rpTimer); rpTimer = 0; rpLast = 0; }
+  function rpStart(){
+    const rp = U.rp, fin = rp.w0 + rpSpan(rp); if(rp.t >= fin - 500) rp.t = rp.w0;
+    rp.playing = true; rp.visto = true; rpLast = performance.now(); rpGapShown = null; clearInterval(rpTimer); rpTimer = setInterval(rpPaso, REDUCED ? 250 : 40);
+  }
+  /* the replay clock follows real time (not the frames painted); stretches without data are skipped (CA-39.5) */
+  function rpPaso(){
+    const rp = U.rp; if(!rp.playing || !rp.open) return rpStop();
+    const ahora = performance.now(), dt = (ahora - rpLast)*rp.speed; rpLast = ahora;
+    let t = rp.t + dt;
+    const g = rpGap(rp, t);
+    if(g){ t = g.b; if(rpGapShown!==g){ rpGapShown = g; rp.t = t; toast('warn', 'clock', 'Sin datos de '+hmMs(g.a)+' a '+hmMs(g.b)+' · '+g.motivo); } }
+    const fin = rp.w0 + rpSpan(rp);
+    if(t >= fin){ rp.t = fin; rpStop(); render(); return; }
+    rp.t = t; rpPintar();
+  }
+  /* CA-39.3: playing or moving along the timeline is what the access log records */
+  function rpBuscar(t){ const rp = U.rp, a = rp.w0, b = a + rpSpan(rp); rp.visto = true; rp.t = Math.max(a, Math.min(b, t)); rpPintar(); }
+  function rpIr(t){
+    const rp = U.rp; rp.visto = true;
+    if(rpFit(t)){ rp.t = t; rp.win = null; render(); rpCargarVentana().then(() => { render(); rpPintar(); }); }
+    else { rp.t = t; render(); rpPintar(); }
+  }
+  /* the previous or next event, also outside the window (up to an hour away) */
+  function rpEvento(dir){
+    const rp = U.rp, cam = rpCamInfo(rp), t = rp.t;
+    const elegir = evs => dir < 0 ? evs.filter(x => x.t < t - 600).pop() : evs.find(x => x.t > t + 600);
+    const e = elegir((rp.win && rp.win.eventos) || []);
+    if(e){ rpIr(e.t); return; }
+    const vacio = () => toast('ok', 'info', dir < 0 ? 'No hay eventos antes.' : 'No hay más eventos.');
+    if(!cam){ vacio(); return; }
+    call('repeticionVentana', dir < 0 ? [cam.id, t - 3600000, t] : [cam.id, t, t + 3600000]).then(w => {
+      const otro = w && elegir(w.eventos || []); if(otro) rpIr(otro.t); else vacio();
+    });
+  }
+  function rpAbrirMomento(){
+    const rp = U.rp, cam = rpCamInfo(rp);
+    if(!cam){ render(); return; }
+    let t = rpEn(rp.day, rp.hour); t = Math.min(t, Date.now());
+    rpStop(); rp.state = cam.desdeMs!=null && t < cam.desdeMs - 60000 ? 'old' : null;  // CA-39.4
+    if(cam.desdeMs!=null) t = Math.max(t, cam.desdeMs);
+    rp.w0 = null; rp.win = null; rp.poses = null; rpVideoT = null; rpFrame = null;
+    if(rp.state){ render(); return; }
+    rpFit(t); rp.t = t; render();
+    rpCargarVentana().then(() => { render(); rpPintar(); });
+  }
+  Object.assign(ACT, {
+    replayOpen(){
+      const ahora = new Date(Date.now() - 15*60000);
+      U.rp = {open:true, info:null, cam:null, day:isoHoy(), hour:pad2(ahora.getHours())+':'+pad2(ahora.getMinutes()), zoom:'10', w0:null, t:Date.now(), playing:false, speed:1, video:false, state:null, win:null, poses:null, abierta:Date.now(), visto:false};
+      render(true);
+      call('repeticion').then(info => {
+        const rp = U.rp; rp.info = info || {permitida:false, camaras:[]};
+        const cs = rp.info.camaras, con = cs.find(c => c.desde) || cs[0];
+        rp.cam = con ? con.id : null;
+        if(con && con.dias.length && !con.dias.some(d => d.valor===rp.day)){ rp.day = con.dias[0].valor; rp.hour = '12:00'; }
+        if(con && con.hastaMs!=null && rpEn(rp.day, rp.hour) > con.hastaMs){ const d = new Date(con.hastaMs - 5*60000); rp.day = d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); rp.hour = pad2(d.getHours())+':'+pad2(d.getMinutes()); }
+        if(con && con.desdeMs!=null && rpEn(rp.day, rp.hour) < con.desdeMs){ const d = new Date(con.desdeMs); rp.day = d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); rp.hour = pad2(d.getHours())+':'+pad2(d.getMinutes()); }
+        if(rp.info.permitida) rpAbrirMomento(); else render();
+      });
+    },
+    replayClose(){
+      const rp = U.rp, cam = rpCamInfo(rp); rpStop();
+      U.rp = Object.assign({}, rp, {open:false});
+      render();
+      if(rp.visto && cam){
+        call('cerrarRepeticion', [cam.id, rp.w0, rp.w0 + rpSpan(rp), (Date.now() - rp.abierta)/1000]).then(() => toast('ok', 'eye', 'Acceso registrado'));
+      }
+      const b = document.querySelector('#app [data-act="replayOpen"]'); if(b) b.focus({preventScroll:true});
+    },
+    rpPlay(){ if(U.rp.playing){ rpStop(); render(); } else { rpStart(); render(); } },
+    rpPrev(){ rpEvento(-1); },
+    rpNext(){ rpEvento(1); },
+    rpSpeed(){ const rp = U.rp; rp.speed = SPEEDS[(SPEEDS.indexOf(rp.speed)+1) % SPEEDS.length]; render(); },
+    rpZoom(el){ const rp = U.rp, z = el.dataset.arg; if(rp.zoom===z) return; rp.zoom = z; rp.w0 = null; rpFit(rp.t); rp.win = null; render(); rpCargarVentana().then(() => { render(); rpPintar(); }); },
+    rpSeek(el){ rpIr(Number(el.dataset.arg)); },
+    rpCam(el){ const rp = U.rp; rp.cam = el.dataset.arg; const c = rpCamInfo(rp); if(c && c.dias.length && !c.dias.some(d => d.valor===rp.day)) rp.day = c.dias[0].valor; rpAbrirMomento(); },
+    rpQuick(el){
+      const rp = U.rp, k = el.dataset.arg, d = new Date(Date.now() - (k==='m15' ? 15 : k==='h1' ? 60 : 0)*60000);
+      rp.day = isoHoy(); rp.hour = k==='h7' ? '07:00' : pad2(d.getHours())+':'+pad2(d.getMinutes()); rpAbrirMomento();
+    },
+    rpGo(){
+      const i = $('rp-hour'), v = i ? i.value : U.rp.hour, m = /^(\d{1,2}):(\d{2})$/.exec(String(v).trim());
+      if(!m || +m[1] > 23 || +m[2] > 59){ toast('warn', 'clock', 'Escribe la hora así: 10:40.'); return; }
+      U.rp.hour = pad2(+m[1])+':'+m[2]; rpAbrirMomento();
+    },
+    rpVideo(){ const rp = U.rp; rp.video = !rp.video; rpVideoT = null; render(); rpPintar(); }
+  });
+  document.addEventListener('change', e => { if(e.target && e.target.id==='rp-day' && U.rp){ U.rp.day = e.target.value; rpAbrirMomento(); } });
+  function rpX(tr, x){ const r = tr.getBoundingClientRect(), a = U.rp.w0; rpBuscar(a + Math.max(0, Math.min(1, (x-r.left)/r.width))*rpSpan(U.rp)); }
+  document.addEventListener('pointerdown', e => {
+    const tr = e.target.closest && e.target.closest('#tl-track'); if(!tr || e.target.closest('.tl-m')) return;
+    rpDrag = true; try{ tr.setPointerCapture(e.pointerId); }catch(err){} rpX(tr, e.clientX);
+  });
+  document.addEventListener('pointermove', e => { if(rpDrag){ const tr = $('tl-track'); if(tr) rpX(tr, e.clientX); } });
+  document.addEventListener('pointerup', () => { rpDrag = false; });
+  document.addEventListener('keydown', e => {
+    const t = e.target; if(!U.rp || !U.rp.open) return;
+    if(e.key==='Enter' && t.id==='rp-hour'){ e.preventDefault(); ACT.rpGo(); return; }
+    if(t.id==='tl-track'){
+      const rp = U.rp, big = e.shiftKey ? 10 : 1;
+      const k = {ArrowRight:big, ArrowUp:big, ArrowLeft:-big, ArrowDown:-big, PageUp:60, PageDown:-60}[e.key];
+      if(k!=null){ e.preventDefault(); rpBuscar(rp.t + k*1000); return; }
+      if(e.key==='Home'){ e.preventDefault(); rpBuscar(rp.w0); return; }
+      if(e.key==='End'){ e.preventDefault(); rpBuscar(rp.w0 + rpSpan(rp)); return; }
+      if(e.key===' '){ e.preventDefault(); ACT.rpPlay(); }
     }
   });
 

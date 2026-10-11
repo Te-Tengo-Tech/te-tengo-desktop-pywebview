@@ -791,7 +791,7 @@ class _SegmentoVideo:
             flujo.width, flujo.height = ancho // 2 * 2, alto // 2 * 2
             flujo.pix_fmt = "yuv420p"
             flujo.time_base = Fraction(1, 1000)
-            flujo.options = {"preset": "veryfast", "crf": "28", "g": str(FPS_VIDEO * 2)}
+            flujo.options = {"preset": "veryfast", "crf": "28", "g": str(FPS_VIDEO * 2), "bf": "0"}
             self._flujo = flujo
         cuadro = av.VideoFrame.from_ndarray(
             imagen[: self._flujo.height, : self._flujo.width], format="bgr24"

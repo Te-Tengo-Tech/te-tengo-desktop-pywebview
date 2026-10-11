@@ -33,7 +33,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, tzinfo
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -50,13 +50,14 @@ from te_tengo_captura.agente_pc import (
 )
 from te_tengo_captura.almacen.gestor import AjustesAlmacen, AlmacenLocal
 from te_tengo_captura.almacen.indice import TipoArchivo
+from te_tengo_captura.almacen.repeticion import Repeticion
 from te_tengo_captura.backend.errores import ErrorBackendError
 from te_tengo_captura.backend.modelos import EstadoMovimientos
 from te_tengo_captura.backend.pc import ClientePc
 from te_tengo_captura.captura.dispositivos import Dispositivo, listar_dispositivos
 from te_tengo_captura.diagnostico import exportar, nombre_archivo
 from te_tengo_captura.diario import Diario
-from te_tengo_captura.estado import EstadoAgente, EstadoBandeja, Hogar, hora_local
+from te_tengo_captura.estado import EstadoAgente, EstadoBandeja, Hogar, habitacion_arte, hora_local
 from te_tengo_captura.sistema import nombre_pc, sistema_operativo
 from te_tengo_captura.vinculacion.credenciales import (
     AlmacenCredenciales,
@@ -164,6 +165,8 @@ class Coordinador:
         self._pantalla: Pantalla | None = None  # VINCULADA or QUITADA over the current mode
         self._quitada: dict[str, str] = {}
         self._re90 = False
+        self._repetidor: Repeticion | None = None
+        self._repetidor_de: AlmacenLocal | None = None
         self._desvinculando = False
         self._tamano: tuple[float, int] | None = None
         self._avanzado = bool((self._leer_json(ARCHIVO_VENTANA) or {}).get("modoAvanzado", False))
@@ -609,6 +612,66 @@ class Coordinador:
         self.almacen.conservar()
         return {"ok": True}
 
+    # ------------------------------------------------------------------ «Ver qué pasó» (US-39)
+
+    def _repeticion(self) -> Repeticion:
+        with self._candado_bandera:
+            if self._repetidor is None or self._repetidor_de is not self.almacen:
+                self._repetidor = Repeticion(self.almacen, self._zona)
+                self._repetidor_de = self.almacen
+            return self._repetidor
+
+    def repeticion(self) -> dict[str, Any]:
+        """What can be replayed: the cameras with their days with data (CA-39.2, CA-39.4)."""
+        r = self._repeticion()
+        hoy = datetime.now(self._zona).date()
+        camaras = []
+        for clave, agente in self._agentes().items():
+            dias = r.dias(clave)
+            desde = r.datos_desde(clave)
+            camaras.append(
+                {
+                    "id": clave,
+                    "room": agente.nombre_habitacion,
+                    "dias": [_dia(d, hoy) for d in dias],
+                    "desde": (
+                        datetime.fromtimestamp(desde / 1000, UTC)
+                        .astimezone(self._zona)
+                        .strftime("%d/%m/%Y")
+                        if desde is not None
+                        else None
+                    ),
+                    "desdeMs": desde,
+                    "hastaMs": r.datos_hasta(clave),
+                }
+            )
+        return {"permitida": r.permitida, "camaras": camaras}
+
+    def repeticion_ventana(self, camara: str, desde_ms: int, hasta_ms: int) -> dict[str, Any]:
+        return self._repeticion().abrir(camara, int(desde_ms), int(hasta_ms))
+
+    def repeticion_poses(self, camara: str, desde_ms: int, hasta_ms: int) -> dict[str, Any]:
+        return self._repeticion().poses(camara, int(desde_ms), int(hasta_ms))
+
+    def repeticion_video(self, camara: str, t_ms: int) -> bytes | None:
+        return self._repeticion().fotograma_video(camara, int(t_ms))
+
+    def cerrar_repeticion(
+        self, camara: str, desde_ms: int, hasta_ms: int, segundos: float
+    ) -> dict[str, Any]:
+        """«Volver»: the replay is written in the activity log (CA-39.3) and memory is freed."""
+        self._repeticion().cerrar()
+        agente = self._agentes().get(camara)
+        habitacion = agente.nombre_habitacion if agente is not None else camara
+        inicio = datetime.fromtimestamp(int(desde_ms) / 1000, UTC).astimezone(self._zona)
+        fin = datetime.fromtimestamp(int(hasta_ms) / 1000, UTC).astimezone(self._zona)
+        minutos = max(1, round(float(segundos) / 60))
+        self.actividad.anotar(
+            f"Desde esta PC: se vio qué pasó en {habitacion_arte(habitacion)} "
+            f"({inicio:%d/%m %H:%M}–{fin:%H:%M}, {minutos} min)"
+        )
+        return {"ok": True}
+
     # ------------------------------------------------------------------ moves
 
     def _al_desvincular(self, motivo: str) -> None:
@@ -841,3 +904,18 @@ class MedidorProceso:
             self.uso = max(0.0, min(100.0, usado / pared / nucleos * 100))
             self._anterior = (ahora, cpu)
         return self.uso
+
+
+DIAS_SEMANA = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+
+
+def _dia(dia: date, hoy: date) -> dict[str, str]:
+    """A day of «Fecha» in «Ver qué pasó»: «Hoy, 23/09/2026», «Ayer, …», «Lunes 21/09/2026»."""
+    nombre = DIAS_SEMANA[dia.weekday()]
+    if dia == hoy:
+        texto = f"Hoy, {dia:%d/%m/%Y}"
+    elif dia == hoy - timedelta(days=1):
+        texto = f"Ayer, {dia:%d/%m/%Y}"
+    else:
+        texto = f"{nombre.capitalize()} {dia:%d/%m/%Y}"
+    return {"valor": dia.isoformat(), "texto": texto, "corto": f"{nombre} {dia:%d/%m}"}

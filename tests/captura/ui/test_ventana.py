@@ -151,6 +151,21 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         def conservar_movimientos(self) -> dict[str, object]:
             return {"ok": True}
 
+        def repeticion(self) -> dict[str, object]:
+            return {"permitida": False, "camaras": []}
+
+        def repeticion_ventana(self, c: str, d: int, h: int) -> dict[str, object]:
+            return {}
+
+        def repeticion_poses(self, c: str, d: int, h: int) -> dict[str, object]:
+            return {}
+
+        def repeticion_video(self, c: str, t: int) -> bytes | None:
+            return None
+
+        def cerrar_repeticion(self, c: str, d: int, h: int, s: float) -> dict[str, object]:
+            return {"ok": True}
+
     agente = AgenteFalso()
     pasos = [arranque.Paso(22, 0, lambda: True), arranque.Paso(100, 2, lambda: True)]
     monkeypatch.setattr(arranque, "pasos", lambda _: pasos)

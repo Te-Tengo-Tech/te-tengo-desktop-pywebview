@@ -37,6 +37,14 @@ class Acciones:
     cambiar_carpeta: Callable[[], dict[str, Any]] = lambda: {"ok": False}
     borrar_movimientos: Callable[[], dict[str, Any]] = lambda: {"ok": False}
     conservar_movimientos: Callable[[], dict[str, Any]] = lambda: {"ok": False}
+    # «Ver qué pasó» (US-39).
+    repeticion: Callable[[], dict[str, Any]] = lambda: {"permitida": False, "camaras": []}
+    repeticion_ventana: Callable[[str, int, int], dict[str, Any]] = lambda _c, _d, _h: {}
+    repeticion_poses: Callable[[str, int, int], dict[str, Any]] = lambda _c, _d, _h: {}
+    repeticion_video: Callable[[str, int], bytes | None] = lambda _c, _t: None
+    cerrar_repeticion: Callable[[str, int, int, float], dict[str, Any]] = lambda _c, _d, _h, _s: {
+        "ok": False
+    }
 
 
 class Puente:
@@ -141,6 +149,31 @@ class Puente:
     def mostrarEnCarpeta(self, ruta: str) -> None:  # noqa: N802 (JavaScript name)
         """«Mostrar en la carpeta»."""
         self._acciones.mostrar_en_carpeta(str(ruta))
+
+    def repeticion(self) -> dict[str, Any]:
+        """«Ver qué pasó»: the cameras and their days with movements (US-39)."""
+        return self._acciones.repeticion()
+
+    def repeticionVentana(self, camara: str, desde: int, hasta: int) -> dict[str, Any]:  # noqa: N802
+        """A window's events, stretches without data and whether there is video."""
+        return self._acciones.repeticion_ventana(str(camara), int(desde), int(hasta))
+
+    def repeticionPoses(self, camara: str, desde: int, hasta: int) -> dict[str, Any]:  # noqa: N802
+        """The skeleton of each row of a stretch, with its phase."""
+        return self._acciones.repeticion_poses(str(camara), int(desde), int(hasta))
+
+    def repeticionVideo(self, camara: str, t: int) -> dict[str, str | None]:  # noqa: N802
+        """«Sobre el video guardado»: the frame at ``t`` as base64 JPEG, only on this PC."""
+        jpeg = self._acciones.repeticion_video(str(camara), int(t))
+        return {"jpeg": base64.b64encode(jpeg).decode("ascii") if jpeg else None}
+
+    def cerrarRepeticion(  # noqa: N802 (JavaScript name)
+        self, camara: str, desde: int, hasta: int, segundos: float
+    ) -> dict[str, Any]:
+        """«Volver»: the replay goes to the activity log (CA-39.3)."""
+        return self._acciones.cerrar_repeticion(
+            str(camara), int(desde), int(hasta), float(segundos)
+        )
 
     def cambiarAlmacenamiento(self, cambios: dict[str, Any]) -> dict[str, Any]:  # noqa: N802
         """A switch, a period or the space limit of «Almacenamiento» (CA-38.1)."""

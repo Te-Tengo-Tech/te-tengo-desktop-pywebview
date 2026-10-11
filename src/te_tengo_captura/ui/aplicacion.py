@@ -91,6 +91,11 @@ class Aplicacion:
                 cambiar_carpeta=self._cambiar_carpeta,
                 borrar_movimientos=agente.borrar_movimientos,
                 conservar_movimientos=agente.conservar_movimientos,
+                repeticion=agente.repeticion,
+                repeticion_ventana=agente.repeticion_ventana,
+                repeticion_poses=agente.repeticion_poses,
+                repeticion_video=agente.repeticion_video,
+                cerrar_repeticion=agente.cerrar_repeticion,
             ),
         )
         self._inicio = arranque.VentanaArranque(agente.version)

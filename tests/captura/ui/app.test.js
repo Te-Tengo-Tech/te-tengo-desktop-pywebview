@@ -256,4 +256,28 @@ assert.match(ui.win(conStore({revocado:true}), ST(), ''), /¿Borrar los movimien
 assert.match(ui.win(conStore(), ST({dlg:'video'}), ''), /Se queda en esta PC, nunca se sube\. 480p a 8 fps, en partes de 10 min\. Ocupa mucho espacio\./);
 const movida = ui.transition(conStore({estado:'moviendo'}), conStore({carpeta:'D:\\TeTengo\\Datos'}));
 assert.equal(movida.text, 'Datos movidos a la carpeta nueva.');
+// «Ver qué pasó» (US-39): skeleton from the PC's movements, events on the timeline, stretches without data.
+const T0 = new Date(2026, 8, 23, 10, 40, 0).getTime();
+const poseDePie = [0.5,0.2, 0.47,0.3, 0.53,0.3, 0.46,0.4, 0.54,0.4, 0.45,0.5, 0.55,0.5, 0.48,0.55, 0.52,0.55, 0.48,0.7, 0.52,0.7, 0.48,0.85, 0.52,0.85];
+const rpBase = {open:true, cam:'c1', day:'2026-09-23', hour:'10:40', zoom:'10', w0:T0 - 360000, t:T0, playing:false, speed:1, video:false, state:null,
+  info:{permitida:true, camaras:[{id:'c1', room:'Sala', dias:[{valor:'2026-09-23', texto:'Hoy, 23/09/2026', corto:'miércoles 23/09'}], desde:'24/08/2026', desdeMs:T0 - 30*86400000, hastaMs:T0 + 60000}]},
+  win:{desde:T0 - 360000, hasta:T0 + 240000, hayDatos:true, video:false, eventos:[{t:T0 + 72000, k:'caida', l:'Caída'}],
+    huecos:[{a:T0 - 300000, b:T0 - 120000, motivo:'Sin persona en la imagen', corto:'Sin persona'}]},
+  poses:{desde:T0 - 10000, hasta:T0 + 110000, t:[T0], p:[poseDePie], f:[0], claves:['h','sL','sR','eL','eR','wL','wR','hL','hR','kL','kR','aL','aR']}};
+const RP = o => ADV({rp:Object.assign({}, rpBase, o||{})});
+const rep = ui.win(E.avanzado, RP(), '');
+assert.match(rep, /Ver qué pasó<\/h1>/);
+assert.match(rep, /Sala · miércoles 23\/09/);
+assert.match(rep, /Solo puntos del cuerpo, nunca video<span>· Queda en el registro de accesos/);
+assert.match(rep, /class="rp-phase " id="rp-phase" aria-live="polite">.*De pie/);
+assert.match(rep, /<g class="skel"><line /);
+assert.match(rep, /aria-label="Caída, 10:41:12"/);
+assert.match(rep, /<span class="ev gap"[^>]*>Sin persona<\/span>/);
+assert.match(rep, /Datos desde el 24\/08\/2026\./);
+assert.match(rep, /Eventos \(1\)/);
+assert.match(rep, /data-act="rpSpeed" aria-label="Velocidad: 1×"/);
+assert.match(ui.win(E.avanzado, RP({t:T0 - 200000}), ''), /class="rp-phase gap"[^>]*>.*Sin persona en la imagen/);
+assert.match(ui.win(E.avanzado, RP({state:'old'}), ''), /Ya no hay movimientos de ese momento\.<\/b><span>Hay datos desde el 24\/08\/2026\. Elige otra fecha\./);
+assert.match(ui.win(E.avanzado, RP({info:{permitida:false, camaras:[]}}), ''), /Falta el permiso de Rosa para guardar movimientos<\/b><span>Se registra en la app: Privacidad › Guardar movimientos\./);
+assert.match(ui.win(E.avanzado, ADV(), ''), /data-act="replayOpen">.*Ver qué pasó/);
 console.log('ok');

@@ -311,3 +311,28 @@ def test_almacenamiento_desde_la_ventana(e: Escenario) -> None:
             <= {a["tipo"] for a in e.falso.actividad.values()}
         )
     )
+
+
+def test_ver_que_paso_desde_el_coordinador(e: Escenario) -> None:
+    from te_tengo_captura.almacen.gestor import GrabadorCamara
+    from te_tengo_captura.almacen.puntos import FilaMovimiento
+
+    c = e.vincular()
+    c.ir_a_estado()
+    esperar(lambda: c.almacen.puede_movimientos)
+    assert c.repeticion() == {"permitida": True, "camaras": []}  # no camera in use yet
+    ahora = int(time.time() * 1000)
+    grabador = GrabadorCamara(c.almacen, "c1")
+    for i in range(80):
+        grabador._cola.put(
+            ("fila", FilaMovimiento(ahora - 60_000 + i * 125, [(0.5, 0.5, 0.0, 0.9)] * 33))
+        )
+    grabador.cerrar()
+    ventana = c.repeticion_ventana("c1", ahora - 120_000, ahora)
+    assert ventana["hayDatos"] is True
+    assert len(c.repeticion_poses("c1", ahora - 60_000, ahora)["t"]) == 80
+    assert c.repeticion_video("c1", ahora) is None
+    assert c.cerrar_repeticion("c1", ahora - 120_000, ahora, 95) == {"ok": True}
+    entrada = c.lista_actividad()[0]["m"]
+    assert entrada.startswith("Desde esta PC: se vio qué pasó en «c1» (")  # CA-39.3, on this PC
+    assert entrada.endswith(", 2 min)")
