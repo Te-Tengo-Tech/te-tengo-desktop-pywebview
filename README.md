@@ -56,7 +56,7 @@ make modelo                            # downloads pose_landmarker_lite.task int
 uv run te-tengo-captura --backend-falso --config config.ejemplo.toml
 ```
 
-`--backend-falso` runs the agent against an in-memory backend that implements the whole contract, so the window shows «Enviando» without the API. Other options:
+`--backend-falso` runs the agent against an in-memory backend that implements the whole contract, so the window shows «Te Tengo está cuidando la sala» without the API. Other options:
 
 | Option | Purpose |
 |---|---|

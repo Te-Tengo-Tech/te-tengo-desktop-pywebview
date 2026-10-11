@@ -59,14 +59,18 @@ def test_estado_inicial_antes_del_primer_latido(e: Escenario) -> None:
     estado = e.agente.estado()
     assert estado.situacion is Situacion.SIN_CONSENTIMIENTO  # CA-05.2: nothing known yet
     assert estado.a_json()["listo"] is False
-    assert estado.entradas.nombre_habitacion == "Sala"
+    assert estado.entradas.camaras[0].nombre_habitacion == "Sala"
+    assert estado.entradas.camaras[0].clave == "instalacion"  # not registered yet
+    assert estado.pc.instalada_el == "22/09/2026"
+    assert estado.pc.programa == "Te Tengo Captura 1.0.0"
 
 
 def test_reintentar_ahora_conecta_y_permite_capturar(e: Escenario) -> None:
     assert e.agente.reintentar_ahora()
-    assert e.agente.estado().situacion is Situacion.ENVIANDO
-    e.ahora += timedelta(seconds=7)
-    assert e.agente.estado().entradas.segundos_desde_envio == 7
+    estado = e.agente.estado()
+    assert estado.situacion is Situacion.CUIDANDO
+    assert estado.entradas.camaras[0].clave == "camara-1"
+    assert estado.entradas.webcams[0].nombre == "Webcam USB HD (1080p)"
 
 
 def test_sin_internet(e: Escenario) -> None:
@@ -83,7 +87,7 @@ def test_pausa_y_nombre_desde_el_backend(e: Escenario) -> None:
     e.agente.reintentar_ahora()
     estado = e.agente.estado()
     assert estado.situacion is Situacion.EN_PAUSA
-    assert estado.entradas.nombre_habitacion == "Dormitorio"
+    assert estado.entradas.camaras[0].nombre_habitacion == "Dormitorio"
 
 
 def test_webcam_desconectada(e: Escenario) -> None:
@@ -94,7 +98,7 @@ def test_webcam_desconectada(e: Escenario) -> None:
     assert not e.agente.buscar_webcam(espera_s=0)
     e.fuente.conectada = True
     e.agente.bucle.paso()
-    assert e.agente.estado().situacion is Situacion.ENVIANDO
+    assert e.agente.estado().situacion is Situacion.CUIDANDO
 
 
 def test_hilos_publican_el_estado_y_se_detienen(e: Escenario) -> None:
@@ -103,7 +107,7 @@ def test_hilos_publican_el_estado_y_se_detienen(e: Escenario) -> None:
 
     def oyente(estado: EstadoAgente) -> None:
         recibidos.append(estado)
-        if estado.situacion is Situacion.ENVIANDO:
+        if estado.situacion is Situacion.CUIDANDO:
             listo.set()
 
     def roto(estado: EstadoAgente) -> None:
@@ -147,6 +151,9 @@ def test_vista_en_vivo_con_la_captura_y_su_pausa(e: Escenario) -> None:
     e.agente.bucle.paso()
     e.agente.en_vivo.procesar_siguiente(0)
     assert len(publicadores[0].instantes) == 1
+    vivo = e.agente.estado()  # the window says someone watches (no viewer name in the contract)
+    assert vivo.situacion is Situacion.EN_VIVO
+    assert vivo.bandeja.k == "live"
 
     e.backend.pausar(AHORA + timedelta(hours=1))
     e.agente.reintentar_ahora()
@@ -182,3 +189,14 @@ def test_el_clip_se_codifica_en_el_directorio_de_la_bandeja(
     assert isinstance(codificar, partial)
     assert codificar.func is codificar_mp4
     assert codificar.keywords == {"directorio": tmp_path / "clips"}
+
+
+def test_vista_previa_local_solo_de_la_camara_y_cuando_se_pide(e: Escenario) -> None:
+    e.agente.reintentar_ahora()
+    clave = e.agente.clave_camara
+    assert e.agente.vista_previa_jpeg(clave) is None  # nothing kept until the window asks
+    e.agente.bucle.paso()
+    jpeg = e.agente.vista_previa_jpeg(clave)
+    assert jpeg is not None
+    assert jpeg.startswith(b"\xff\xd8")
+    assert e.agente.vista_previa_jpeg("otra") is None

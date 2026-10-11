@@ -116,7 +116,7 @@ To check the framing, run `make camara` from the repository on that PC. It shows
 
 ## 6. First start
 
-Start `te-tengo-captura.exe`. The splash shows «Iniciando…», «Abriendo la webcam configurada…» and «Conectando con Te Tengo…», then the status window appears. It should show «Enviando video · conectado», or «Esperando consentimiento» if the family has not registered consent yet. Any other state is explained in section 8.
+Start `te-tengo-captura.exe`. The splash shows «Iniciando…», «Abriendo las cámaras…» and «Conectando con Te Tengo…», then the window appears on its «Estado» tab. It should say «Te Tengo está cuidando la sala · Todo funciona bien.», or «Falta el consentimiento de Rosa» if the family has not registered consent yet. Any other state is explained in section 8. The «Cámaras» tab shows the webcam with a preview that is only seen on this PC, to check the framing (section 5).
 
 Close the window: it stays in the tray, next to the clock, with a status dot (green sending, grey paused, amber problem). The first time, Windows shows «Te Tengo Captura sigue funcionando en segundo plano».
 
@@ -149,20 +149,21 @@ Check these, in order:
 
 ## 8. Troubleshooting by window state
 
-The window shows one state at a time, with this priority: webcam disconnected › no internet › waiting for consent › paused › sending. The order and copy come from `camState`, `health` and `trayState` in the prototype (`docs/references/desktop-prototype/src/core.js`), ported in `src/te_tengo_captura/estado.py`. The meanings below are the prototype's screen descriptions (`core.js`, list of screens).
+The «Estado» tab says the state once, in a summary band, with one row per camera below it. The summary's priority is: a camera does not answer › no internet › no consent › a camera paused › someone watching live › all good. The order and copy come from `health`, `camStatus` and `trayState` in the prototype (`docs/references/desktop-prototype/src/core.js`), ported in `src/te_tengo_captura/estado.py`.
 
 | Screen | The window shows | Meaning (prototype) | What to check | Log |
 |---|---|---|---|---|
-| 01 | «Enviando video · conectado» (green) | Everything works | Nothing | `Evento … enviado` when an event goes out |
-| 02 | «En pausa hasta las …» (grey stripes) | The family paused the camera from the app; nothing is processed until that hour, then it resumes on its own | Nothing. If nobody paused it, ask the family; pauses are only made and ended in the app (US-22) | `Estado de captura: permitida=False motivo=EN_PAUSA hasta=…` |
-| 03 | «Esperando consentimiento» (amber) | Without the consent registered in the app, the webcam sends nothing | The family must complete the consent in the app (only the owner can register it); capture starts on its own (CA-05.1, CA-05.2) | `… motivo=SIN_CONSENTIMIENTO` |
-| 04 | «Sin internet · reintentando en … s» (dark) | The webcam is still connected; sending resumes on its own when the connection returns | The PC's internet, then `api_url`. «Reintentar ahora» retries at once; otherwise retries wait 2 s, doubling up to 30 s (`latido.py`). Events made offline are kept in the outbox and sent later | `Sin conexión con Te Tengo: …`, later `Conexión con Te Tengo restablecida` |
-| 05 | «Webcam desconectada: revisa el cable USB» (amber) | The USB webcam stopped answering; the app warns the family | The cable and the USB port; «Buscar de nuevo» reopens it. If the cable is fine, check `[webcam] indice` (`make camara ARGS="--listar-camaras"`) | `Webcam desconectada`, later `Webcam conectada` |
+| 01 | «Te Tengo está cuidando la sala · Todo funciona bien.» (green, check) | Everything works | Nothing | `Evento … enviado` when an event goes out |
+| 02 | «La sala está en pausa hasta las …» (grey) | The family paused the camera from the app; nothing is processed until that hour, then it resumes on its own | Nothing. If nobody paused it, ask the family; pauses are only made and ended in the app (US-22) | `Estado de captura: permitida=False motivo=EN_PAUSA hasta=…` |
+| 03 | «Falta el consentimiento de Rosa» (amber) | Without the consent registered in the app, the cameras are not used | The family must complete the consent in the app (only the owner can register it); capture starts on its own (CA-05.1, CA-05.2) | `… motivo=SIN_CONSENTIMIENTO` |
+| 04 | «Sin internet» with «Volvemos a intentar en … s» (amber) | The cameras keep detecting on the PC and the notices wait; they go out on their own when the connection returns | The PC's internet, then `api_url`. «Reintentar ahora» retries at once; otherwise retries wait 2 s, doubling up to 30 s (`latido.py`). Events made offline are kept in the outbox and sent later | `Sin conexión con Te Tengo: …`, later `Conexión con Te Tengo restablecida` |
+| 05 | «La cámara de la sala no responde» (dashed amber) | The USB webcam stopped answering; the app warns the family | The cable and the USB port; «Buscar de nuevo» reopens it. If the cable is fine, check `[webcam] indice` (`make camara ARGS="--listar-camaras"`) | `Webcam desconectada`, later `Webcam conectada` |
+| 08 | «Un familiar está viendo la sala en vivo» (violet) | A family member opened the live view in the app; it is not recorded and the access is logged | Nothing. The tray dot turns violet; with the window closed a system notice says so | `Vista en vivo solicitada`, `Vista en vivo: publicando a 15 fps` |
 
 Cases the prototype has no screen for. Each is shown with an existing state (`docs/BLOCKERS.md`):
 
 - **Rejected credential** (`401 CREDENCIAL_INVALIDA`): the window shows **04 «Sin internet»** and keeps retrying. The log says `Sin conexión con Te Tengo: POST /api/agente/camaras/registro → 401 CREDENCIAL_INVALIDA …`. Check that `credencial_instalacion` was copied exactly and that `api_url` points to the database where it was issued. If not, issue a new one (section 2).
-- **Internal error in the capture loop:** the window shows **05 «Webcam desconectada»** while the loop restarts. The log says `Error en la captura; se reinicia en N s` with the traceback.
+- **Internal error in the capture loop:** the window shows **05 «La cámara de la sala no responde»** while the loop restarts. The log says `Error en la captura; se reinicia en N s` with the traceback.
 - **The agent does not start at all:** read the log. A configuration error names the field (section 4).
 - **A second launch only shows a window:** this is expected; one agent at a time (section 11).
 
@@ -304,7 +305,7 @@ Add `--sin-interfaz` to run it with no window nor tray (for example over SSH, or
 
 The video plays in a loop, in real time, instead of the webcam (`[webcam] indice` is ignored). Expected results:
 
-- The window shows «Enviando video · conectado». The seed registered the consent, so capture is allowed.
+- The window shows «Te Tengo está cuidando la sala». The seed registered the consent, so capture is allowed.
 - The log (macOS: `~/Library/Logs/TeTengoCaptura/te-tengo-captura.log`) shows:
   - `Cámara registrada`;
   - `Evento detectado: caida …`;

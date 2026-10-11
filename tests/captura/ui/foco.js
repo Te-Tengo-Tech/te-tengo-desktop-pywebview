@@ -9,7 +9,7 @@ const E = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
   await page.evaluate(e => window.ttg.actualizar(e), E);
   await page.focus('[data-act="retryNow"]');
   for (const n of [7, 6, 5]) {
-    const e = {...E, retry: n, health: {...E.health, titulo_html: E.health.titulo_html.replace(/>\d+</, '>' + n + '<')}};
+    const e = {...E, retry: n, health: {...E.health, detalle_html: E.health.detalle_html.replace(/>\d+</, '>' + n + '<')}};
     await page.evaluate(e => window.ttg.actualizar(e), e);
   }
   const r = await page.evaluate(() => ({act: document.activeElement.dataset.act, retry: document.getElementById('retry').textContent, status: document.querySelector('.health').getAttribute('role')}));

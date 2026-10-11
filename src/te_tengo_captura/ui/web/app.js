@@ -1,48 +1,105 @@
-/* ================= Te Tengo Captura · ventana de estado =================
-   Port of the prototype (docs/references/desktop-prototype/src/core.js and proto.js): icons, brand,
-   room illustration, title bar and the status screen. The state and its Spanish copy come from
-   Python (te_tengo_captura/estado.py) through ttg.actualizar(); this file only renders it.
-   The bridge is window.pywebview.api: estado(), minimizar(), cerrar(), buscarWebcam(),
-   reintentarAhora(). */
+/* ================= Te Tengo Captura · ventana =================
+   Port of the desktop prototype (docs/references/desktop-prototype/src/core.js and proto.js):
+   icons, brand kit (two figures hugging), room illustrations, title bar, the tab bar
+   (Estado · Cámaras) and their panels, in-window notices and the splash.
+   Every state-dependent text comes from Python (te_tengo_captura/estado.py) through
+   ttg.actualizar(); this file renders it, keeps what only the window knows (the open tab, the
+   selected camera, the folded sections) and calls the bridge window.pywebview.api:
+   estado(), minimizar(), cerrar(), buscarWebcam(), reintentarAhora(), vistaPrevia(clave). */
 (function(global){
   'use strict';
 
   /* ---------- íconos (core.js) ---------- */
   const P = {
     home:'<path d="M3.5 11 12 4l8.5 7"/><path d="M6 9.5V20h12V9.5"/>',
+    cam:'<rect x="4" y="3" width="16" height="12.5" rx="6.25"/><circle cx="12" cy="9.25" r="2.8"/><path d="M8.5 21h7M12 15.5V21"/>',
     pause:'<path d="M8.5 5v14M15.5 5v14" stroke-width="3"/>',
     wifiOff:'<path d="M3 3l18 18"/><path d="M8.6 16.3a4.9 4.9 0 0 1 6.3-.5"/><path d="M5 12.8a10 10 0 0 1 4.3-2.4M19 12.8a10 10 0 0 0-2.7-1.9"/><path d="M2 9.2a14.7 14.7 0 0 1 4.2-2.7M22 9.2A14.8 14.8 0 0 0 10.8 5"/><circle cx="12" cy="19.6" r="1.1" fill="currentColor" stroke="none"/>',
+    wifi:'<path d="M2.5 9.2a14.5 14.5 0 0 1 19 0M5.5 12.6a10 10 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><circle cx="12" cy="19.4" r="1.1" fill="currentColor" stroke="none"/>',
     check:'<path d="M4.5 12.5l5 5L20 7"/>',
+    x:'<path d="M6 6l12 12M18 6 6 18"/>',
+    chevR:'<path d="M9 5l7 7-7 7"/>',
+    chevUp:'<path d="M5 15l7-7 7 7"/>',
+    chevDown:'<path d="M6 9l6 6 6-6"/>',
+    back:'<path d="M20 12H5M11 5l-7 7 7 7"/>',
     lock:'<rect x="5" y="10.5" width="14" height="10" rx="3"/><path d="M8.2 10.5V7.6a3.8 3.8 0 0 1 7.6 0v2.9"/>',
+    eye:'<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/>',
+    eyeOff:'<path d="M3 3l18 18"/><path d="M10.6 6A9.5 9.5 0 0 1 21.5 12a15 15 0 0 1-2.7 3.4M6.4 7.6A14.5 14.5 0 0 0 2.5 12S6 18.5 12 18.5a9 9 0 0 0 4-1"/><path d="M9.9 10a3 3 0 0 0 4.1 4.1"/>',
+    plus:'<path d="M12 5v14M5 12h14"/>',
+    clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
     info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r="1.1" fill="currentColor" stroke="none"/>',
+    warn:'<path d="M12 3.5 21.5 20h-19L12 3.5Z"/><path d="M12 9.5v5"/><circle cx="12" cy="17.3" r="1.1" fill="currentColor" stroke="none"/>',
+    key:'<circle cx="8" cy="15" r="4.5"/><path d="M11.2 11.8 20 3M16.5 6.5l2.5 2.5M14 9l2 2"/>',
     doc:'<path d="M6.5 3h8l4 4v14h-12V3Z"/><path d="M14.5 3v4h4M9.5 12h6M9.5 16h6"/>',
     refresh:'<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4.5h-4.5"/>',
+    battery:'<rect x="2.5" y="7" width="17" height="10" rx="3"/><rect x="4.5" y="9" width="11" height="6" rx="1.5" fill="currentColor" stroke="none"/><path d="M21.5 10.5v3"/>',
+    signal:'<path d="M4 18v-2M9 18v-5M14 18v-8M19 18V7" stroke-width="2.6"/>',
     usb:'<rect x="8.5" y="2.5" width="7" height="6" rx="1"/><path d="M10.8 5h0M13.2 5h0" stroke-width="2.2"/><path d="M6.5 8.5h11V13a5.5 5.5 0 0 1-11 0Z"/><path d="M12 18.5v3"/>',
+    sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>',
+    monitor:'<rect x="2.5" y="4" width="19" height="12.5" rx="2.5"/><path d="M8.5 20.5h7M12 16.5v4"/>',
     mobile:'<rect x="6.5" y="2.5" width="11" height="19" rx="3"/><path d="M10.5 18.5h3"/>',
     upload:'<path d="M12 15.5V4.5M7.5 9l4.5-4.5L16.5 9"/><path d="M4.5 14.5v3.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3.5"/>',
+    cloud:'<path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.7 4.7 0 0 0 7 18.5Z"/>',
     videoOff:'<path d="M3 3l18 18"/><path d="M16 16v.5a2.5 2.5 0 0 1-2.5 2.5H5a2.5 2.5 0 0 1-2.5-2.5v-7A2.5 2.5 0 0 1 5 7h1"/><path d="M10 7h3.5A2.5 2.5 0 0 1 16 9.5v2l5.5-3v9"/>',
-    power:'<path d="M12 3v8"/><path d="M6.6 6.6a7.5 7.5 0 1 0 10.8 0"/>'
+    link:'<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2"/>',
+    unlink:'<path d="M14.8 6.3l1.4-1.4a4.5 4.5 0 0 1 6.4 6.4l-1.4 1.4" transform="translate(-1.6 0)"/><path d="M9.2 17.7l-1.4 1.4a4.5 4.5 0 0 1-6.4-6.4l1.4-1.4" transform="translate(1.6 0)"/><path d="M8.5 3v3M3 8.5h3M15.5 21v-3M21 15.5h-3"/>',
+    power:'<path d="M12 3v8"/><path d="M6.6 6.6a7.5 7.5 0 1 0 10.8 0"/>',
+    volume:'<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4Z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18.2 6.5a8 8 0 0 1 0 11"/>',
+    folder:'<path d="M3 6.5a2 2 0 0 1 2-2h4.2l2 2.3H19a2 2 0 0 1 2 2v8.7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+    pulse:'<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>',
+    sliders:'<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/>',
+    search:'<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+    copy:'<rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/>',
+    play:'<path d="M8 5.5v13l10.5-6.5Z" fill="currentColor"/>',
+    pauseF:'<rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="currentColor" stroke="none"/><rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="currentColor" stroke="none"/>',
+    prev:'<path d="M6 5v14"/><path d="M18 6v12l-8.5-6Z" fill="currentColor"/>',
+    next:'<path d="M18 5v14"/><path d="M6 6v12l8.5-6Z" fill="currentColor"/>',
+    replay:'<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3 4v4.5h4.5"/><path d="M12 8v4.5l3 1.8"/>',
+    download:'<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/>',
+    person:'<circle cx="12" cy="5.8" r="2.6"/><path d="M12 9.5v6M7.5 12.2 12 10l4.5 2.2M9.2 21l2.8-5.5 2.8 5.5"/>',
+    arrowDown:'<path d="M12 4.5v15M6 13.5l6 6 6-6"/>',
+    arrowUp:'<path d="M12 19.5v-15M6 10.5l6-6 6 6"/>',
+    list:'<path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.5" cy="6.5" r="1.1" fill="currentColor"/><circle cx="4.5" cy="12" r="1.1" fill="currentColor"/><circle cx="4.5" cy="17.5" r="1.1" fill="currentColor"/>',
+    terminal:'<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M7 9.5l3 2.5-3 2.5M12.5 15h4.5"/>',
+    gauge:'<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/><circle cx="12" cy="17" r="1.4" fill="currentColor"/>',
+    drive:'<rect x="3" y="13" width="18" height="7" rx="2"/><path d="M5 13l2.5-8h9L19 13"/><circle cx="17" cy="16.5" r="1" fill="currentColor"/>',
+    trash:'<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/>',
+    qr:'<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2.5v2.5H14zM17.5 17.5H20V20h-2.5zM14 19.5h1.5M19.5 14v1.5"/>',
+    cpu:'<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9.5 9.5h5v5h-5zM9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/>',
+    layers:'<path d="M12 3.5 21 8.5l-9 5-9-5Z"/><path d="M3 12.5l9 5 9-5M3 16.5l9 5 9-5"/>',
+    cube:'<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9Z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
+    users:'<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.2A5 5 0 0 1 21.5 19"/>'
   };
-  function ic(n){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+P[n]+'</svg>'; }
+  function ic(n, extra){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"'+(extra?' '+extra:'')+'>'+P[n]+'</svg>'; }
   const WG = {min:'<path d="M0 5.5h10"/>', max:'<rect x=".5" y=".5" width="9" height="9" rx="1.4"/>', close:'<path d="M.6.6l8.8 8.8M9.4.6.6 9.4"/>'};
   function wg(n){ return '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">'+WG[n]+'</svg>'; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-  /* ---------- marca: «La T que sostiene» (core.js) ---------- */
-  const BRAND = {morado:'#4A2A85', coral:'#E8765A', durazno:'#FFB59C',
-    te:'M138.16 80L138.16 46.85L124.52 46.85L124.52 37.25L162.67 37.25L162.67 46.85L149.04 46.85L149.04 80L138.16 80ZM178.09 80.77Q172.91 80.77 168.91 78.78Q164.91 76.8 162.64 73.02Q160.36 69.25 160.36 63.87Q160.36 58.82 162.73 55.1Q165.1 51.39 169.04 49.34Q172.97 47.3 177.64 47.3Q181.61 47.3 184.78 48.7Q187.95 50.11 190.16 52.7Q192.36 55.3 193.42 58.88Q194.48 62.46 194.16 66.88L170.6 66.88Q170.99 68.35 171.66 69.44Q172.33 70.53 173.26 71.26Q174.19 72 175.34 72.35Q176.49 72.7 177.77 72.7Q179.95 72.7 181.55 72.1Q183.15 71.49 183.98 70.46L192.24 73.54Q189.61 77.31 185.74 79.04Q181.87 80.77 178.09 80.77ZM170.54 60.74L184.56 60.74Q184.36 58.75 183.47 57.5Q182.57 56.26 181.13 55.65Q179.69 55.04 177.96 55.04Q176.24 55.04 174.7 55.62Q173.16 56.19 172.08 57.44Q170.99 58.69 170.54 60.74Z',
-    tengo:'M229.93 80L229.93 46.85L216.3 46.85L216.3 37.25L254.44 37.25L254.44 46.85L240.81 46.85L240.81 80L229.93 80ZM269.87 80.77Q264.68 80.77 260.68 78.78Q256.68 76.8 254.41 73.02Q252.14 69.25 252.14 63.87Q252.14 58.82 254.51 55.1Q256.88 51.39 260.81 49.34Q264.75 47.3 269.42 47.3Q273.39 47.3 276.56 48.7Q279.72 50.11 281.93 52.7Q284.14 55.3 285.2 58.88Q286.25 62.46 285.93 66.88L262.38 66.88Q262.76 68.35 263.44 69.44Q264.11 70.53 265.04 71.26Q265.96 72 267.12 72.35Q268.27 72.7 269.55 72.7Q271.72 72.7 273.32 72.1Q274.92 71.49 275.76 70.46L284.01 73.54Q281.39 77.31 277.52 79.04Q273.64 80.77 269.87 80.77ZM262.32 60.74L276.33 60.74Q276.14 58.75 275.24 57.5Q274.35 56.26 272.91 55.65Q271.47 55.04 269.74 55.04Q268.01 55.04 266.48 55.62Q264.94 56.19 263.85 57.44Q262.76 58.69 262.32 60.74ZM290.48 80L290.48 48.26L299.88 48.26L301.04 52.35Q301.74 51.26 303.12 50.08Q304.49 48.9 306.48 48.1Q308.46 47.3 310.83 47.3Q314.73 47.3 317.1 48.7Q319.47 50.11 320.56 52.9Q321.64 55.68 321.64 59.71L321.64 80L311.08 80L311.08 61.89Q311.08 59.65 310.6 58.21Q310.12 56.77 309.13 56.06Q308.14 55.36 306.54 55.36Q303.6 55.36 302.32 57.54Q301.04 59.71 301.04 63.87L301.04 80L290.48 80ZM344.04 93.12Q341.42 93.12 338.67 92.48Q335.92 91.84 333.55 90.27Q331.18 88.7 329.58 85.95L337.84 82.18Q338.73 83.52 340.24 84.38Q341.74 85.25 344.24 85.25Q345.64 85.25 347.02 84.74Q348.4 84.22 349.29 82.94Q350.19 81.66 350.19 79.42L350.19 73.86Q348.01 76.42 345.32 77.57Q342.64 78.72 340.14 78.72Q336.75 78.72 333.58 76.86Q330.41 75.01 328.43 71.58Q326.44 68.16 326.44 63.36Q326.44 57.73 328.43 54.18Q330.41 50.62 333.48 48.93Q336.56 47.23 339.76 47.23Q342.64 47.23 345.48 48.54Q348.33 49.86 350.19 52.48L351.47 48.26L360.68 48.26L360.68 77.31Q360.68 83.01 358.6 86.5Q356.52 89.98 352.78 91.55Q349.04 93.12 344.04 93.12ZM343.98 70.59Q345.77 70.59 347.28 69.92Q348.78 69.25 349.71 67.62Q350.64 65.98 350.64 63.1Q350.64 60.16 349.71 58.46Q348.78 56.77 347.28 56.06Q345.77 55.36 343.98 55.36Q341.36 55.36 339.34 57.09Q337.32 58.82 337.32 62.78Q337.32 66.75 339.34 68.67Q341.36 70.59 343.98 70.59ZM382.57 80.77Q379.24 80.77 376.17 79.74Q373.1 78.72 370.67 76.64Q368.24 74.56 366.86 71.39Q365.48 68.22 365.48 63.94Q365.48 59.65 366.86 56.51Q368.24 53.38 370.67 51.33Q373.1 49.28 376.17 48.29Q379.24 47.3 382.57 47.3Q385.96 47.3 389 48.29Q392.04 49.28 394.48 51.33Q396.91 53.38 398.28 56.51Q399.66 59.65 399.66 63.94Q399.66 68.22 398.28 71.39Q396.91 74.56 394.48 76.64Q392.04 78.72 389 79.74Q385.96 80.77 382.57 80.77ZM382.57 72.7Q384.49 72.7 385.9 71.71Q387.31 70.72 388.11 68.77Q388.91 66.82 388.91 63.94Q388.91 60.99 388.08 59.1Q387.24 57.22 385.84 56.29Q384.43 55.36 382.57 55.36Q380.78 55.36 379.34 56.29Q377.9 57.22 377.07 59.1Q376.24 60.99 376.24 63.94Q376.24 66.82 377.04 68.77Q377.84 70.72 379.28 71.71Q380.72 72.7 382.57 72.7Z',
-    captura:'M445.42 80.77Q438.95 80.77 434.38 78.02Q429.8 75.26 427.34 70.27Q424.87 65.28 424.87 58.62Q424.87 51.84 427.43 46.88Q429.99 41.92 434.7 39.2Q439.4 36.48 445.74 36.48Q451.56 36.48 455.98 39.07Q460.39 41.66 462.7 46.27L455.34 48.96Q453.93 46.21 451.34 44.8Q448.75 43.39 445.42 43.39Q442.15 43.39 439.43 45.15Q436.71 46.91 435.15 50.3Q433.58 53.7 433.58 58.62Q433.58 63.49 435.11 66.88Q436.65 70.27 439.4 72.06Q442.15 73.86 445.61 73.86Q447.72 73.86 449.64 73.28Q451.56 72.7 453.13 71.46Q454.7 70.21 455.66 68.29L462.95 70.98Q460.52 75.65 455.91 78.21Q451.31 80.77 445.42 80.77ZM477.1 80.77Q474.09 80.77 471.59 79.65Q469.1 78.53 467.59 76.48Q466.09 74.43 466.09 71.55Q466.09 67.78 468.75 65.47Q471.4 63.17 476.27 61.92Q481.13 60.67 487.72 60.1L487.72 59.26Q487.72 56.32 486.12 54.72Q484.52 53.12 481.32 53.12Q478.95 53.12 477.29 54.21Q475.63 55.3 475.11 57.41L468.2 55.04Q469.67 51.65 473.16 49.6Q476.65 47.55 481.51 47.55Q488.3 47.55 491.72 50.62Q495.15 53.7 495.15 60.61L495.15 67.78Q495.15 70.08 495.31 72.35Q495.47 74.62 495.72 76.58Q495.98 78.53 496.3 80L489.07 80L487.85 75.97Q486.25 78.4 483.56 79.58Q480.87 80.77 477.1 80.77ZM479.72 75.14Q481.96 75.14 483.75 74.4Q485.55 73.66 486.63 71.87Q487.72 70.08 487.72 66.94L487.72 65.22Q481.39 65.73 477.9 67.04Q474.41 68.35 474.41 71.1Q474.41 72.9 475.85 74.02Q477.29 75.14 479.72 75.14ZM503.15 90.37L503.15 48.26L509.61 48.26L511.02 52.86Q511.98 51.14 513.55 49.95Q515.11 48.77 517 48.16Q518.89 47.55 520.94 47.55Q524.84 47.55 527.98 49.54Q531.11 51.52 532.94 55.23Q534.76 58.94 534.76 64.19Q534.76 69.38 532.94 73.09Q531.11 76.8 527.98 78.78Q524.84 80.77 520.94 80.77Q518.89 80.77 517 80.13Q515.11 79.49 513.55 78.27Q511.98 77.06 511.02 75.33L511.02 90.37L503.15 90.37ZM518.57 74.5Q521.96 74.5 524.2 71.84Q526.44 69.18 526.44 64.19Q526.44 59.26 524.2 56.54Q521.96 53.82 518.57 53.82Q515.18 53.82 512.94 56.32Q510.7 58.82 510.7 64.06Q510.7 69.25 512.94 71.87Q515.18 74.5 518.57 74.5ZM551.85 80Q548.33 80 546.31 79.36Q544.3 78.72 543.47 76.86Q542.63 75.01 542.63 71.49L542.63 54.34L537.32 54.34L537.32 48.26L542.63 48.26L542.63 40.32L550.51 40.32L550.51 48.26L557.23 48.26L557.23 54.34L550.51 54.34L550.51 69.63Q550.51 72.06 551.24 72.77Q551.98 73.47 554.22 73.47L557.23 73.47L557.23 80L551.85 80ZM573.93 80.77Q569.9 80.77 567.56 79.2Q565.23 77.63 564.23 74.72Q563.24 71.81 563.24 67.84L563.24 48.26L571.11 48.26L571.11 65.79Q571.11 68.1 571.43 70.08Q571.75 72.06 572.94 73.25Q574.12 74.43 576.75 74.43Q580.14 74.43 581.77 72.19Q583.4 69.95 583.4 65.28L583.4 48.26L591.27 48.26L591.27 80L584.75 80L583.4 75.46Q582.06 77.82 579.88 79.3Q577.71 80.77 573.93 80.77ZM599.15 80L599.15 48.26L605.23 48.26L606.95 54.08Q607.98 51.84 609.51 50.37Q611.05 48.9 613.1 48.16Q615.15 47.42 617.64 47.55L617.64 55.42Q613.93 55.17 611.56 56.16Q609.19 57.15 608.11 59.36Q607.02 61.57 607.02 65.02L607.02 80L599.15 80ZM630.76 80.77Q627.75 80.77 625.26 79.65Q622.76 78.53 621.26 76.48Q619.75 74.43 619.75 71.55Q619.75 67.78 622.41 65.47Q625.07 63.17 629.93 61.92Q634.79 60.67 641.39 60.1L641.39 59.26Q641.39 56.32 639.79 54.72Q638.19 53.12 634.99 53.12Q632.62 53.12 630.95 54.21Q629.29 55.3 628.78 57.41L621.87 55.04Q623.34 51.65 626.83 49.6Q630.31 47.55 635.18 47.55Q641.96 47.55 645.39 50.62Q648.81 53.7 648.81 60.61L648.81 67.78Q648.81 70.08 648.97 72.35Q649.13 74.62 649.39 76.58Q649.64 78.53 649.96 80L642.73 80L641.51 75.97Q639.91 78.4 637.23 79.58Q634.54 80.77 630.76 80.77ZM633.39 75.14Q635.63 75.14 637.42 74.4Q639.21 73.66 640.3 71.87Q641.39 70.08 641.39 66.94L641.39 65.22Q635.05 65.73 631.56 67.04Q628.07 68.35 628.07 71.1Q628.07 72.9 629.51 74.02Q630.95 75.14 633.39 75.14Z'};
-  function symbolParts(stroke, dot){ return '<g fill="none" stroke="'+stroke+'" stroke-width="13" stroke-linecap="round"><path d="M60 60 V96"/><path d="M22 38 Q60 80 98 38"/></g><circle cx="60" cy="38" r="11" fill="'+dot+'"/>'; }
-  const LOGO = '<svg viewBox="0 0 120 120" aria-hidden="true"><rect width="120" height="120" rx="28" fill="'+BRAND.morado+'"/>'+symbolParts('#FFFFFF', BRAND.durazno)+'</svg>';
-  function appIcon(cls){ return '<span class="appicon'+(cls?' '+cls:'')+'">'+LOGO+'</span>'; }
+  /* ---------- marca Te Tengo: dos figuras abrazadas (core.js, kit de marca) ---------- */
+  const BRAND={morado:'#4B2E83', coral:'#FF8F7E', durazno:'#FF8F7E', crema:'#FFF7F1'};
+  /* Calcado del kit de marca (05-prototipos/marca/): cabeza y cuerpo de quien abraza (violeta) y de quien es abrazado (coral) */
+  const MARK_VH=[47.7, 24.4, 17.6], MARK_CH=[80.9, 39.8, 15.4];
+  const MARK_ARM='M20.4 35.9 C21.9 35.6 23.0 35.8 24.4 36.2 C25.8 36.6 25.5 35.8 28.6 38.2 C31.6 40.7 38.3 47.6 42.5 51.0 C46.7 54.3 50.3 56.5 53.8 58.2 C57.3 59.9 59.6 60.6 63.3 61.1 C67.0 61.6 73.8 61.1 75.9 61.1 C75.3 61.9 74.1 64.4 72.4 65.9 C70.7 67.4 68.1 69.0 65.5 70.2 C62.9 71.4 59.5 72.4 56.7 72.9 C54.0 73.4 51.4 73.5 49.0 73.3 C46.7 73.2 44.6 72.8 42.6 72.1 C40.5 71.4 38.5 70.5 36.7 69.2 C35.0 67.9 33.4 66.3 32.0 64.3 C30.6 62.3 29.1 58.4 28.2 57.0 C27.4 55.7 27.4 56.3 26.9 56.3 C26.5 56.2 26.2 56.1 25.7 56.6 C25.2 57.2 24.5 58.2 24.2 59.5 C23.8 60.9 23.4 62.0 23.7 64.5 C24.0 67.1 24.6 71.8 25.9 75.0 C27.2 78.2 29.3 81.2 31.6 83.8 C34.0 86.5 37.5 89.2 40.0 91.0 C42.5 92.8 44.1 93.5 46.5 94.5 C48.8 95.6 51.6 96.6 54.0 97.2 C56.5 97.9 58.3 98.4 61.0 98.7 C63.7 99.0 68.7 98.8 70.5 99.1 C72.3 99.3 71.7 99.9 72.0 100.0 C71.7 100.9 71.3 103.2 70.1 105.0 C68.9 106.9 66.5 109.5 64.8 111.2 C63.0 112.8 60.9 114.1 59.3 114.9 C57.7 115.6 57.2 115.8 55.1 115.5 C53.1 115.1 49.9 114.3 46.9 112.9 C43.8 111.6 39.7 109.4 36.7 107.5 C33.7 105.5 31.3 103.8 28.7 101.4 C26.1 99.0 23.2 95.9 20.9 93.1 C18.5 90.3 16.5 87.0 14.9 84.4 C13.3 81.8 12.5 80.1 11.4 77.5 C10.4 74.8 9.3 71.8 8.7 68.7 C8.0 65.6 7.5 61.9 7.5 58.9 C7.4 56.0 7.7 53.6 8.3 51.0 C8.9 48.4 9.8 45.2 11.0 43.1 C12.2 40.9 13.7 39.1 15.2 37.9 C16.8 36.7 18.8 36.1 20.4 35.9Z';
+  const MARK_BODY='M96.0 52.7 C97.5 52.7 99.5 52.9 101.0 53.4 C102.5 53.8 103.6 54.4 104.9 55.4 C106.1 56.4 107.5 57.9 108.4 59.3 C109.3 60.7 109.9 62.2 110.3 63.7 C110.8 65.2 111.1 66.5 111.2 68.3 C111.3 70.2 111.2 72.9 110.9 74.8 C110.6 76.7 110.4 77.7 109.6 79.8 C108.8 81.9 107.7 84.8 106.1 87.6 C104.4 90.4 101.9 93.8 99.5 96.5 C97.1 99.2 94.6 101.5 91.9 103.7 C89.1 105.8 86.6 107.7 83.1 109.5 C79.6 111.4 73.1 113.9 70.9 114.7 C68.7 115.6 70.1 114.7 69.9 114.7 C69.9 114.6 69.1 115.0 70.0 114.0 C71.0 112.9 74.1 110.1 75.5 108.4 C77.0 106.7 77.9 105.4 78.8 103.7 C79.6 102.0 80.4 99.5 80.6 98.2 C80.9 96.9 80.5 96.4 80.1 95.7 C79.7 94.9 79.7 94.2 78.3 93.9 C76.9 93.6 75.2 93.8 71.9 93.7 C68.5 93.6 62.3 93.8 58.2 93.1 C54.1 92.4 50.5 91.1 47.2 89.4 C43.9 87.7 40.5 84.9 38.2 82.9 C36.0 81.0 34.8 79.0 33.9 77.6 C33.0 76.1 33.0 74.8 32.9 74.3 C33.1 74.2 32.8 73.6 34.2 74.1 C35.5 74.6 38.6 76.5 41.0 77.2 C43.4 78.0 46.1 78.5 48.7 78.7 C51.3 78.9 54.0 78.9 56.7 78.6 C59.5 78.2 62.6 77.4 65.0 76.6 C67.5 75.9 69.3 75.0 71.4 73.8 C73.4 72.7 74.5 72.7 77.2 69.7 C80.0 66.7 85.6 58.5 88.1 55.8 C90.6 53.1 90.8 54.0 92.1 53.5 C93.4 53.0 94.5 52.7 96.0 52.7Z';
+  /* a = quien abraza (violeta o blanco), b = quien es abrazado (coral) */
+  function symbolParts(a, b){ return '<circle class="mk-vh" cx="'+MARK_VH[0]+'" cy="'+MARK_VH[1]+'" r="'+MARK_VH[2]+'" fill="'+a+'"/><path class="mk-vb" d="'+MARK_ARM+'" fill="'+a+'"/><g class="mk-c"><circle cx="'+MARK_CH[0]+'" cy="'+MARK_CH[1]+'" r="'+MARK_CH[2]+'" fill="'+b+'"/><path d="'+MARK_BODY+'" fill="'+b+'"/></g>'; }
+  function symbolSVG(dark, attrs){ return '<svg viewBox="0 0 122 122" aria-hidden="true"'+(attrs?' '+attrs:'')+'>'+symbolParts(dark?'#FFFFFF':BRAND.morado, BRAND.coral)+'</svg>'; }
+  const LOGO = '<svg viewBox="0 0 122 122" aria-hidden="true"><rect width="122" height="122" rx="28" fill="'+BRAND.morado+'"/><g transform="translate(18 18) scale(.705)">'+symbolParts('#FFFFFF', BRAND.coral)+'</g></svg>';
+  const WM_FONT='font-family="Poppins,system-ui,sans-serif" font-weight="700"';
+  /* logotipo horizontal: símbolo + «Te Tengo» (+ «Captura» en el agente de escritorio) */
+  function logotipo(dark, withCaptura, cls){
+    const w = withCaptura ? 720 : 470;
+    return '<svg class="logotipo'+(cls?' '+cls:'')+'" viewBox="0 0 '+w+' 122" role="img" aria-label="Te Tengo'+(withCaptura?' Captura':'')+'">'+
+      symbolParts(dark?'#FFFFFF':BRAND.morado, BRAND.coral)+
+      '<text x="138" y="84" '+WM_FONT+' font-size="66" letter-spacing="-1.5" fill="'+(dark?'#FFFFFF':BRAND.morado)+'">Te Tengo'+(withCaptura?'<tspan font-weight="500" fill="'+(dark?'rgba(255,255,255,.8)':'#5A4F70')+'"> Captura</tspan>':'')+'</text></svg>';
+  }
   /* solo las letras, para el arranque */
   function wordmark(dark, withCaptura, cls){
-    const w = withCaptura ? 529.91 : 278.45;
-    return '<svg class="wordmark'+(cls?' '+cls:'')+'" viewBox="124.5 37 '+w+' 57" role="img" aria-label="Te Tengo'+(withCaptura?' Captura':'')+'">'+
-      '<path fill="'+(dark?'#FFFFFF':BRAND.morado)+'" d="'+BRAND.te+'"/><path fill="'+(dark?BRAND.durazno:BRAND.coral)+'" d="'+BRAND.tengo+'"/>'+
-      (withCaptura?'<path fill="'+(dark?'rgba(255,255,255,.8)':'#4F4766')+'" d="'+BRAND.captura+'"/>':'')+'</svg>';
+    const w = withCaptura ? 584 : 320;
+    return '<svg class="wordmark'+(cls?' '+cls:'')+'" viewBox="0 0 '+w+' 80" role="img" aria-label="Te Tengo'+(withCaptura?' Captura':'')+'">'+
+      '<text x="2" y="62" '+WM_FONT+' font-size="66" letter-spacing="-1.5" fill="'+(dark?'#FFFFFF':BRAND.morado)+'">Te Tengo'+(withCaptura?'<tspan font-weight="500" fill="'+(dark?'rgba(255,255,255,.8)':'#5A4F70')+'"> Captura</tspan>':'')+'</text></svg>';
   }
+  function appIcon(cls){ return '<span class="appicon'+(cls?' '+cls:'')+'">'+LOGO+'</span>'; }
 
   /* ---------- ilustración de habitación, sin personas (core.js) ---------- */
   function roomSVG(room){
@@ -65,6 +122,13 @@
       s+='<rect x="0" y="94" width="160" height="44" fill="'+furn2+'"/><rect x="0" y="90" width="164" height="8" rx="2" fill="'+wood+'"/><path d="M54 100v34M108 100v34" stroke="'+furn+'" stroke-width="2"/>';
       s+='<rect x="176" y="30" width="52" height="44" rx="4" fill="'+win+'"/><path d="M202 30v44" stroke="#fff" stroke-width="3"/>';
       s+='<rect x="252" y="38" width="54" height="100" rx="8" fill="#EEEAF4" stroke="'+furn+'" stroke-width="2"/><path d="M252 78h54M260 52v14M260 86v20" stroke="'+furn+'" stroke-width="3"/>';
+    } else if(room==='Comedor'){
+      s+='<rect x="40" y="26" width="70" height="56" rx="4" fill="'+win+'"/><path d="M75 26v56" stroke="#fff" stroke-width="3"/>';
+      s+='<path d="M200 22v20" stroke="'+furn2+'" stroke-width="2"/><path d="M184 54h32l-6-12h-20Z" fill="'+wood+'"/>';
+      s+='<rect x="128" y="98" width="144" height="10" rx="4" fill="'+wood+'"/><path d="M138 108v30M262 108v30" stroke="'+wood+'" stroke-width="4"/>';
+      s+='<rect x="104" y="84" width="10" height="54" rx="3" fill="'+furn2+'"/><rect x="104" y="108" width="28" height="7" rx="2" fill="'+furn2+'"/>';
+      s+='<rect x="286" y="84" width="10" height="54" rx="3" fill="'+furn2+'"/><rect x="268" y="108" width="28" height="7" rx="2" fill="'+furn2+'"/>';
+      s+='<ellipse cx="200" cy="160" rx="100" ry="11" fill="'+f2+'"/>';
     } else {
       s+='<rect x="30" y="34" width="54" height="104" rx="3" fill="'+wood+'"/><circle cx="74" cy="90" r="3" fill="'+furn2+'"/>';
       s+='<rect x="236" y="34" width="54" height="104" rx="3" fill="'+wood+'"/><circle cx="246" cy="90" r="3" fill="'+furn2+'"/>';
@@ -74,58 +138,114 @@
     return s+'</svg>';
   }
 
-  /* ---------- ventana (core.js) ---------- */
+  /* ---------- textos de la casa (core.js / proto.js) ---------- */
+  const ROOM_ART = r => ({sala:'la Sala', dormitorio:'el Dormitorio', cocina:'la Cocina', comedor:'el Comedor', pasillo:'el Pasillo'})[String(r).trim().toLowerCase()] || '«'+r+'»';
+  function listY(a){ return a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' y ' + a[a.length-1]; }
+
+  /* ---------- ventana ---------- */
   function titlebar(){
     return '<div class="tb pywebview-drag-region"><div class="tb-app">'+appIcon('xs')+'<span>Te Tengo Captura</span></div><div class="tb-btns">'+
       '<button class="tb-btn" data-act="minimize" aria-label="Minimizar" title="Minimizar">'+wg('min')+'</button>'+
       '<button class="tb-btn" aria-disabled="true" tabindex="-1" aria-label="Maximizar (no disponible)" title="Maximizar">'+wg('max')+'</button>'+
       '<button class="tb-btn close" data-act="close" aria-label="Cerrar" title="Cerrar">'+wg('close')+'</button></div></div>';
   }
-  /* health(S): the banner. Its texts come from estado.py; titulo_html is already escaped. */
-  function health(E){
-    const h = E.health, a = h.accion;
-    const btn = a ? '<button class="btn '+a.clase+' btn-sm" data-act="'+a.act+'">'+ic('refresh')+esc(a.texto)+'</button>' : '';
-    return '<div class="health '+h.clase+'" role="status"><span class="st '+h.k+'">'+ic(h.icono)+'</span>'+
-      '<div class="grow"><b data-r="ht">'+h.titulo_html+'</b><span data-r="hs">'+esc(h.detalle)+'</span></div>'+btn+'</div>';
-  }
-  function scrEstado(E, enter){
-    const st = E.cam, home = E.home, conf = E.conf;
-    return '<section class="scr estado'+(enter?' '+enter:'')+'" aria-labelledby="scr-h">'+
-      '<header class="cam-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Vivienda de '+esc(home.who)+'</h1><p class="t-meta mt4">'+ic('home')+esc(home.addr)+'</p></div></header>'+
-      health(E)+
-      '<div class="est-grid">'+
-        '<section class="card est-cam" aria-labelledby="cam-h"><span class="thumb art'+(st.k!=='send'?' dim':'')+'">'+roomSVG(E.room)+'</span>'+
-          '<div class="est-cam-b"><p class="grp-l">Cámara de esta casa</p><h2 class="t-h2" id="cam-h">'+esc(E.room)+'</h2>'+
-          '<p class="cam-dev">'+ic('usb')+esc(conf.webcam)+'</p>'+
-          '<div class="cam-st"><span class="st '+st.k+'">'+ic(st.icono)+'</span><span class="grow"><b class="stx '+st.k+'">'+esc(st.titulo)+'</b><span class="t-meta" data-r="cs">'+st.detalle_html+'</span></span></div></div></section>'+
-        '<section class="card est-conf" aria-labelledby="conf-h"><h2 class="conf-h" id="conf-h">'+ic('lock')+'Configurada por el equipo del proyecto</h2>'+
-          '<dl class="conf-kv">'+
-          '<div><dt>Vivienda</dt><dd>'+esc(home.who)+'</dd></div>'+
-          '<div><dt>Webcam</dt><dd>'+esc(conf.webcam)+'<span>'+esc(conf.spec)+'</span></dd></div>'+
-          '<div><dt>Habitación</dt><dd>'+esc(E.room)+'<span>El nombre se cambia en la app Te Tengo</span></dd></div>'+
-          '<div><dt>Instalación</dt><dd>'+esc(conf.installed)+'</dd></div>'+
-          '</dl><p class="conf-note">'+ic('info')+'<span>Solo lectura. Esta PC usa una configuración fija; si algo no funciona, avisa al equipo del proyecto.</span></p></section>'+
-      '</div>'+
-      '<p class="scr-foot">'+ic('mobile')+'Las pausas, el consentimiento, el nombre de la habitación y las alertas se gestionan en la app Te Tengo.<span class="sep"></span>'+ic('power')+'Se inicia con Windows</p></section>';
-  }
-  function win(E, enter, toast){
-    const t = toast ? '<div class="wtoast '+toast.kind+'" role="status">'+ic(toast.icon)+'<span>'+esc(toast.text)+'</span></div>' : '';
-    return titlebar()+'<div class="wb">'+scrEstado(E, enter)+t+'</div>';
+  function sec(cls, enter, inner){ return '<section class="scr'+(cls?' '+cls:'')+(enter?' '+enter:'')+'" aria-labelledby="scr-h">'+inner+'</section>'; }
+  function det(U, k, cls, summary, body){
+    return '<details class="inst'+(cls?' '+cls:'')+'" data-k="'+k+'"'+(U.open[k]?' open':'')+'><summary>'+summary+ic('chevDown')+'</summary>'+body+'</details>';
   }
 
-  /* ---------- arranque: ventana de inicio centrada (core.js) ---------- */
-  const BOOT_STEPS = ['Iniciando…', 'Abriendo la webcam configurada…', 'Conectando con Te Tengo…'];
-  /* El símbolo por partes: los brazos se abren, el punto cae y lo reciben; luego se dibuja el fuste. */
-  function bootMark(){
-    return '<svg class="sp-mark" viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#FFFFFF" stroke-width="13" stroke-linecap="round">'+
-      '<path class="sp-stem" pathLength="1" d="M60 60 V96"/>'+
-      '<g class="sp-catch"><path class="sp-arm" pathLength="1" d="M60 59 Q41 59 22 38"/><path class="sp-arm" pathLength="1" d="M60 59 Q79 59 98 38"/>'+
-      '<circle class="sp-dot" cx="60" cy="38" r="11" fill="'+BRAND.durazno+'" stroke="none"/></g></g></svg>';
+  /* ---------- barra de pestañas ---------- */
+  function tabs(E){ return [['estado','pulse','Estado'], ['camaras','cam','Cámaras']]; }
+  function tabbar(E, U){
+    const t = x => '<button class="tab'+(U.tab===x[0]?' sel':'')+'" role="tab" id="tab-'+x[0]+'" aria-selected="'+(U.tab===x[0])+'" aria-controls="panel" tabindex="'+(U.tab===x[0]?0:-1)+'" data-act="tab" data-arg="'+x[0]+'">'+ic(x[1])+'<span>'+x[2]+'</span></button>';
+    return '<nav class="tabbar" aria-label="Te Tengo Captura"><div class="tabs" role="tablist" aria-label="Secciones">'+tabs(E).map(t).join('')+'</div>'+
+      '<span class="tb-pc">'+ic('monitor')+'<span>Esta PC: <b>'+esc(E.pc.nombre)+'</b></span></span></nav>';
   }
+  function scrMain(E, U, enter){
+    const tab = tabs(E).some(x => x[0]===U.tab) ? U.tab : 'estado';
+    const panel = tab==='camaras' ? panelCamaras(E, U) : panelEstado(E, U);
+    return sec('main', enter, tabbar(E, Object.assign({}, U, {tab:tab}))+'<div class="panel '+tab+'" id="panel" role="tabpanel" aria-labelledby="tab-'+tab+'">'+panel+'</div>');
+  }
+
+  /* ---------- Estado: el resumen y una fila por cámara ---------- */
+  function health(E){
+    const h = E.health, a = h.accion;
+    const btn = a ? '<button class="btn btn-secondary btn-sm" data-act="'+a.act+'">'+ic(a.icono)+esc(a.texto)+'</button>' : '';
+    return '<div class="health '+h.clase+'" role="status"><span class="st '+h.k+'">'+ic(h.icono)+'</span><div class="grow"><b>'+h.titulo_html+'</b><span data-r="hd">'+h.detalle_html+'</span></div>'+btn+'</div>';
+  }
+  function camRow(c){
+    const st = c.st;
+    return '<li class="crow'+(st.k==='off'?' lost':'')+'"><span class="thumb art'+(st.k!=='send'&&st.k!=='live'?' dim':'')+'">'+roomSVG(c.room)+'</span>'+
+      '<span class="crow-id"><b>'+esc(c.room)+'</b><span>'+ic('usb')+esc(c.device)+'</span></span>'+
+      '<span class="cam-st"><span class="st '+st.k+'">'+ic(st.icono)+'</span><span class="grow"><b class="stx '+st.k+'">'+esc(st.titulo)+'</b><span class="t-meta">'+st.detalle_html+'</span></span></span></li>';
+  }
+  function instData(E){
+    const pc = E.pc;
+    const origen = pc.vinculada_por
+      ? '<div><dt>Vinculada</dt><dd>Por '+esc(pc.vinculada_por)+' el '+esc(pc.vinculada_el)+'</dd></div>'
+      : '<div><dt>Instalación</dt><dd>'+esc(pc.instalada_el || '')+'</dd></div>';
+    return '<dl class="conf-kv"><div><dt>Esta PC</dt><dd>'+esc(pc.nombre)+'</dd></div><div><dt>Sistema</dt><dd>'+esc(pc.sistema)+'</dd></div>'+
+      origen+'<div><dt>Programa</dt><dd>'+esc(pc.programa)+'</dd></div></dl>';
+  }
+  function panelEstado(E, U){
+    const list = E.cams.length ? '<ul class="crows" aria-label="Cámaras de esta PC">'+E.cams.map(camRow).join('')+'</ul>' : '';
+    return '<header class="cam-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Vivienda de '+esc(E.home.who)+'</h1><p class="t-meta mt4">'+ic('home')+esc(E.home.addr)+'</p></div></header>'+
+      health(E)+list+
+      '<div class="card instcard">'+det(U, 'inst', '', ic('lock')+'Datos de la instalación', instData(E))+'</div>'+
+      '<p class="scr-foot">'+ic('mobile')+'<span class="ft">Las cámaras, las pausas, el consentimiento y las alertas se gestionan en la app Te Tengo.</span><span class="sep"></span>'+ic('power')+'<span>Se inicia con Windows</span></p>';
+  }
+
+  /* ---------- Cámaras: las webcams de esta PC y su vista previa local ---------- */
+  function devTag(d){
+    if(!d.connected) return '<span class="ctag off">'+ic('videoOff')+'Desconectada'+(d.room?' · '+esc(d.room):'')+'</span>';
+    if(d.busy) return '<span class="ctag busy">'+ic('warn')+'La usa otro programa</span>';
+    if(d.room) return '<span class="ctag use">'+ic('check')+'En uso · '+esc(d.room)+'</span>';
+    if(d.new) return '<span class="ctag new">'+ic('plus')+'Nueva · Sin usar</span>';
+    return '<span class="ctag">Sin usar</span>';
+  }
+  function selDev(E, U){ return E.devices.find(d => d.id===U.sel) || E.devices[0] || null; }
+  function camInfo(E, U, d){
+    if(!d.connected) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('videoOff')+'<h2 class="t-h2">La cámara no responde: revisa el cable USB</h2>'+
+      '<p class="t-small">'+(d.room ? esc(d.room)+' sigue asignada a esta cámara y no pasa a otra. ' : '')+'Conéctala de nuevo y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
+    if(d.busy) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('warn')+'<h2 class="t-h2">Otro programa está usando esta cámara</h2>'+
+      '<p class="t-small">Ciérralo y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
+    const by = d.room ? (d.by==='pc' ? 'Elegida desde esta PC' : d.by==='app' ? 'La eligió la familia en la app' : 'El nombre se cambia en la app Te Tengo') : 'Falta elegir su habitación en la app';
+    return '<div class="cpane info"><figure class="pv2 art" id="pv" data-clave="'+esc(d.id)+'">'+roomSVG(d.room || '')+'<img class="pv-img" id="pv-img" alt="" hidden>'+
+      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'La vista previa solo se ve en esta PC</span></figure>'+
+      '<dl class="cinfo"><div><dt>Habitación</dt><dd><b>'+(d.room ? esc(d.room) : 'Sin usar')+'</b><span>'+by+'</span></dd></div>'+
+      '<div><dt>Conexión</dt><dd><b class="ok">'+ic('check')+'Conectada</b><span>'+(d.new ? 'Nueva · por USB' : 'Por USB')+'</span></dd></div></dl>'+
+      '<p class="help-l">'+ic('eye')+'Usa la vista previa para revisar que la cámara vea bien la habitación.</p>'+
+      '<p class="help-l">'+ic('mobile')+'La habitación de cada cámara se elige desde la app Te Tengo, en tu celular.</p>'+
+      (E.cams.length >= 3 ? '<p class="help-l">'+ic('info')+'Cada cámara usa más la PC. Si la detección se vuelve lenta, conecta algunas cámaras a otra PC.</p>' : '')+'</div>';
+  }
+  function panelCamaras(E, U){
+    const devs = E.devices, any = E.cams.length;
+    const meta = !devs.length ? 'Las habitaciones se eligen desde la app Te Tengo, en tu celular.'
+      : any ? 'Cada cámara con su habitación. Las habitaciones se eligen desde la app Te Tengo, en tu celular.'
+      : 'Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'. Elígelas desde la app Te Tengo, en tu celular.';
+    const head = '<header class="p-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Cámaras de esta PC</h1><p class="t-meta">'+meta+'</p></div></header>';
+    if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">No encontramos cámaras en esta PC</h2>'+
+      '<p class="t-small">Conecta una webcam por USB y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>';
+    const sel = selDev(E, U);
+    const rows = devs.map(d => '<button class="cpick'+(!d.connected?' lost':'')+'" role="radio" aria-checked="'+(d===sel)+'" tabindex="'+(d===sel?0:-1)+'" data-act="selCam" data-arg="'+esc(d.id)+'">'+
+      '<span class="thumb art'+(!d.connected||d.busy?' dim':'')+'">'+roomSVG(d.room || '')+'</span><span class="grow"><b>'+esc(d.name)+'</b>'+devTag(d)+'</span></button>').join('');
+    return head+'<div class="camgrid"><div class="clist"><p class="grp-l" id="g-cams">Cámaras conectadas a esta PC</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
+      '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>'+camInfo(E, U, sel)+'</div>';
+  }
+
+  /* ---------- la ventana completa ---------- */
+  function win(E, U, enter){
+    const t = U.toast ? '<div class="wtoast '+U.toast.kind+'" role="status">'+ic(U.toast.icon||'check')+'<span>'+esc(U.toast.text)+'</span></div>' : '';
+    return titlebar()+'<div class="wb">'+scrMain(E, U, enter)+t+'</div>';
+  }
+
+  /* ---------- arranque: ventana de inicio (core.js) ---------- */
+  const BOOT_STEPS = ['Iniciando…', 'Abriendo las cámaras…', 'Conectando con Te Tengo…'];
+  function bootMark(){ return symbolSVG(false, 'class="sp-mark"'); }
   function bootWin(o){
     o = o||{}; const pct = o.pct==null ? 34 : o.pct, step = o.step||0;
     return '<div class="boot'+(o.play?' play':'')+'" role="dialog" aria-label="Te Tengo Captura se está iniciando">'+
-      '<div class="boot-mark">'+bootMark()+'</div>'+wordmark(true, true, 'boot-wm')+
+      '<div class="boot-mark"><span class="sp-glow"></span>'+bootMark()+'</div>'+wordmark(false, true, 'boot-wm')+
       '<div class="boot-foot"><div class="boot-bar" role="progressbar" aria-label="Progreso del inicio" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'"><i style="transform:scaleX('+(pct/100)+')"></i></div>'+
       '<p class="boot-st"><span id="boot-st" aria-live="polite">'+BOOT_STEPS[step]+'</span><span class="boot-v">Versión '+esc(o.version||'')+'</span></p></div></div>';
   }
@@ -133,84 +253,127 @@
   /* ---------- avisos dentro de la ventana al cambiar el estado (proto.js) ---------- */
   function transition(prev, E){
     if(!prev || !prev.listo || !E.listo) return null;
-    const a = prev.situacion, b = E.situacion;
-    if(a === 'webcam_desconectada' && b !== a) return {kind:'ok', icon:'usb', text:'Se volvió a conectar la '+E.conf.webcam+'. El envío se reanudó.'};
-    if(a === 'sin_internet' && b !== a && b !== 'webcam_desconectada') return {kind:'ok', icon:'check', text:'Conexión restablecida. El envío se reanudó.'};
-    if(a === 'sin_consentimiento' && b === 'enviando') return {kind:'ok', icon:'check', text:'Consentimiento registrado en la app Te Tengo. Empezó el envío.'};
-    if(a === 'enviando' && b === 'en_pausa') return {kind:'ok', icon:'pause', text:'La familia pausó la cámara desde la app Te Tengo hasta las '+E.pause+'.'};
-    if(a === 'en_pausa' && b === 'enviando') return {kind:'ok', icon:'upload', text:'La pausa terminó: el envío se reanudó.'};
-    if(prev.room !== E.room) return {kind:'ok', icon:'check', text:'La familia cambió el nombre de la habitación en la app: «'+E.room+'».'};
+    const before = {}; prev.cams.forEach(c => before[c.id] = c);
+    for(const c of E.cams){
+      const p = before[c.id]; if(!p) continue;
+      if(p.st.k==='off' && c.st.k!=='off') return {kind:'ok', icon:'usb', text:'La '+c.device+' volvió a responder.'};
+      if(!p.pause && c.pause) return {kind:'ok', icon:'pause', text:'La familia pausó la cámara de '+ROOM_ART(c.room)+' desde la app hasta las '+c.pause+'.'};
+      if(p.pause && !c.pause && c.st.k!=='off') return {kind:'ok', icon:'check', text:'La pausa terminó. Te Tengo vuelve a cuidar '+ROOM_ART(c.room)+'.'};
+      if(p.room!==c.room) return {kind:'ok', icon:'check', text:'La familia cambió el nombre de la habitación en la app: «'+c.room+'».'};
+    }
+    if(!prev.online && E.online) return {kind:'ok', icon:'check', text:'Volvió internet. Se enviaron los avisos pendientes.'};
+    if(!prev.consent && E.consent) return {kind:'ok', icon:'check', text:'La familia registró el consentimiento en la app Te Tengo.'};
     return null;
   }
-  /* What forces a full render; anything else only patches the [data-r] regions in place. */
-  function structure(E){ return [E.situacion, E.room, E.home.who, E.home.addr, E.conf.webcam, E.conf.spec, E.conf.installed].join('\u0001'); }
+  /* What forces a full render; the countdown in the summary is only patched in place. */
+  function structure(E){ const h = Object.assign({}, E.health, {detalle_html:''}); return JSON.stringify(Object.assign({}, E, {retry:0, health:h})); }
 
-  const api = { ic, esc, roomSVG, titlebar, health, scrEstado, win, transition, structure, bootWin, BOOT_STEPS };
+  const api = { ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG };
 
-  /* ---------- DOM: render with focus preserved ---------- */
+  /* ---------- DOM: render with focus, folded sections and scroll preserved ---------- */
   if(typeof document === 'undefined'){ if(typeof module !== 'undefined') module.exports = api; return; }
 
   const $ = id => document.getElementById(id);
-  let E = null, toast = null, toastTimer = null, first = true;
+  let E = null, first = true, toastTimer = null, preview = null, previewSrc = null;
+  const U = {tab:'estado', sel:null, open:{}, toast:null};
   const bridge = () => (global.pywebview && global.pywebview.api) || null;
 
   function snap(){
     const a = document.activeElement;
     if(!a || a === document.body || !$('app').contains(a)) return null;
-    return {id:a.id, act:a.dataset && a.dataset.act};
+    return {id:a.id, act:a.dataset && a.dataset.act, arg:a.dataset && a.dataset.arg};
   }
   function restore(f){
     if(!f) return;
     let el = f.id ? $(f.id) : null;
-    if(!el && f.act) el = document.querySelector('#app [data-act="'+f.act+'"]');
+    if(!el && f.act) el = document.querySelector('#app [data-act="'+f.act+'"]'+(f.arg!=null ? '[data-arg="'+CSS.escape(f.arg)+'"]' : '')) || document.querySelector('#app [data-act="'+f.act+'"]');
     if(el && !el.disabled) el.focus({preventScroll:true});
   }
   function render(enter){
+    if(!E) return;
     const f = enter ? null : snap();
-    $('app').innerHTML = win(E, enter, toast);
+    const rows = document.querySelector('.clist-rows'), top = rows ? rows.scrollTop : 0;
+    $('app').innerHTML = win(E, U, enter);
+    const rows2 = document.querySelector('.clist-rows'); if(rows2) rows2.scrollTop = top;
+    showPreview();
     if(enter){ const t = $('scr-h'); if(t) t.focus({preventScroll:true}); } else restore(f);
   }
   function patch(){
     const tpl = document.createElement('template');
-    tpl.innerHTML = win(E, '', toast);
+    tpl.innerHTML = win(E, U, '');
     tpl.content.querySelectorAll('[data-r]').forEach(nuevo => {
       const actual = document.querySelector('#app [data-r="'+nuevo.dataset.r+'"]');
       if(actual && actual.innerHTML !== nuevo.innerHTML) actual.innerHTML = nuevo.innerHTML;
     });
   }
-  function showToast(t){
-    toast = t; render();
+  function toast(kind, icon, text){
+    U.toast = {kind:kind, icon:icon, text:text}; render();
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(()=>{ toast = null; render(); }, 3800);
+    toastTimer = setTimeout(() => { U.toast = null; render(); }, 3800);
   }
   function actualizar(nuevo){
     const prev = E; E = nuevo;
+    if(!E.devices.some(d => d.id===U.sel)) U.sel = E.devices.length ? E.devices[0].id : null;
     const t = transition(prev, E);
     if(first){ first = false; render('enter'); }
-    else if(t) showToast(t);
+    else if(t) toast(t.kind, t.icon, t.text);
     else if(structure(prev) !== structure(E)) render();
     else patch();
   }
 
+  /* ---------- vista previa local de la cámara elegida (solo en esta PC) ---------- */
+  function showPreview(){
+    const img = $('pv-img'), fig = $('pv');
+    if(!img || !fig) return;
+    const ok = previewSrc && previewSrc.clave === fig.dataset.clave;
+    if(ok){ img.src = previewSrc.src; img.hidden = false; fig.classList.add('live'); }
+  }
+  function pollPreview(){
+    const fig = $('pv');
+    if(!fig || U.tab !== 'camaras' || document.hidden){ previewSrc = null; return; }
+    const clave = fig.dataset.clave, b = bridge();
+    if(!b || !b.vistaPrevia) return;
+    Promise.resolve(b.vistaPrevia(clave)).then(r => {
+      const img = $('pv-img'), f = $('pv');
+      if(!img || !f || f.dataset.clave !== clave) return;
+      if(r && r.jpeg){ previewSrc = {clave:clave, src:'data:image/jpeg;base64,'+r.jpeg}; img.src = previewSrc.src; img.hidden = false; f.classList.add('live'); }
+      else { previewSrc = null; img.hidden = true; f.classList.remove('live'); }
+    }).catch(() => {});
+  }
+  preview = setInterval(pollPreview, 250);
+
   /* ---------- acciones ---------- */
-  function call(name){ const b = bridge(); return b && b[name] ? Promise.resolve(b[name]()) : Promise.resolve(null); }
+  function call(name, arg){ const b = bridge(); return b && b[name] ? Promise.resolve(arg===undefined ? b[name]() : b[name](arg)) : Promise.resolve(null); }
   const ACT = {
     minimize(){ call('minimizar'); },
     close(){ call('cerrar'); },
+    tab(el){ U.tab = el.dataset.arg; render(); const t = $('tab-'+U.tab); if(t) t.focus({preventScroll:true}); },
+    toCams(){ U.tab = 'camaras'; render(); const t = $('tab-camaras'); if(t) t.focus({preventScroll:true}); },
+    selCam(el){ U.sel = el.dataset.arg; previewSrc = null; render(); },
     retryNow(){
-      call('reintentarAhora').then(r => { if(r && !r.ok) showToast({kind:'warn', icon:'wifiOff', text:'Aún sin internet. Seguimos intentando.'}); });
+      call('reintentarAhora').then(r => { if(r && !r.ok) toast('warn', 'wifiOff', 'Aún sin internet. Seguimos intentando.'); });
     },
     rescan(el){
-      el.classList.add('loading'); el.innerHTML = '<span class="spin"></span>Buscando…';
+      el.classList.add('loading'); el.innerHTML = '<span class="spin"></span>Buscando cámaras conectadas…';
       call('buscarWebcam').then(r => {
-        if(r && !r.ok) showToast({kind:'warn', icon:'videoOff', text:'No encontramos la webcam. Revisa el cable USB y vuelve a intentarlo.'});
-        else render();
+        if(r && !r.ok){ const d = E.devices.find(x => !x.connected) || E.devices[0]; toast('warn', 'videoOff', d ? 'No encontramos la '+d.name+'. Revisa el cable USB.' : 'No encontramos cámaras en esta PC'); }
+        else { const n = E.devices.length; toast('ok', 'check', 'Encontramos '+n+(n===1?' cámara conectada.':' cámaras conectadas.')); }
       });
     }
   };
   document.addEventListener('click', e => {
     const t = e.target.closest('[data-act]');
     if(t && ACT[t.dataset.act] && !t.disabled && t.getAttribute('aria-disabled') !== 'true'){ e.preventDefault(); ACT[t.dataset.act](t); }
+  });
+  document.addEventListener('toggle', e => { const d = e.target; if(d && d.matches && d.matches('details[data-k]')) U.open[d.dataset.k] = d.open; }, true);
+  document.addEventListener('keydown', e => {
+    const t = e.target, role = t.getAttribute && t.getAttribute('role');
+    if((role==='tab' || role==='radio') && /^Arrow(Left|Right|Up|Down)$/.test(e.key)){
+      const group = t.closest('[role="tablist"],[role="radiogroup"]'); if(!group) return;
+      const items = [...group.querySelectorAll('[role="tab"],[role="radio"]')].filter(x => !x.disabled && x.getAttribute('aria-disabled')!=='true');
+      const i = items.indexOf(t), d = /Right|Down/.test(e.key) ? 1 : -1, n = items[(i+d+items.length) % items.length];
+      if(n){ e.preventDefault(); n.click(); const again = n.id ? $(n.id) : document.querySelector('#app [data-act="'+n.dataset.act+'"][data-arg="'+CSS.escape(n.dataset.arg||'')+'"]'); if(again) again.focus(); }
+    }
   });
 
   /* ---------- arranque: Python drives the progress with ttg.arranque(pct, paso) ---------- */

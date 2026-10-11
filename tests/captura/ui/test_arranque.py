@@ -102,7 +102,7 @@ def test_ventana_de_arranque(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (ventana.opciones["width"], ventana.opciones["height"]) == (480, 300)
     assert ventana.opciones["frameless"] is True
     assert ventana.opciones["resizable"] is False
-    assert ventana.opciones["background_color"] == "#4A2A85"
+    assert ventana.opciones["background_color"] == "#FFF7F1"
     assert "x" not in ventana.opciones  # pywebview centers it
     ventana.events.loaded.disparar()
     assert inicio.esperar_carga(0)

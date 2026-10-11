@@ -63,7 +63,7 @@ def test_corre_el_agente_sin_ventana_hasta_que_se_detiene(
     def detener_al_conectar() -> None:
         # The heartbeat registers the camera and the capture loop opens the source.
         esperar(lambda: backend.senales and agente.bucle.webcam_conectada)
-        esperar(lambda: "Estado del agente: enviando" in caplog.text)
+        esperar(lambda: "Estado del agente: cuidando" in caplog.text)
         detener.set()
 
     hilo = threading.Thread(target=detener_al_conectar)
@@ -73,7 +73,7 @@ def test_corre_el_agente_sin_ventana_hasta_que_se_detiene(
 
     assert backend.registros >= 1
     assert backend.senales
-    assert "Estado del agente: enviando" in caplog.text
+    assert "Estado del agente: cuidando" in caplog.text
     assert "Te Tengo Captura detenido" in caplog.text  # agente.detener() ran
 
 
@@ -89,7 +89,7 @@ def test_registra_solo_los_cambios_de_situacion(
     registro(agente.estado())
     assert [m for m in caplog.messages if m.startswith("Estado del agente")] == [
         "Estado del agente: sin_consentimiento",
-        "Estado del agente: enviando",
+        "Estado del agente: cuidando",
     ]
     agente.detener()
 

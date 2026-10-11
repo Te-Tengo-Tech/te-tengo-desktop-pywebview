@@ -18,18 +18,28 @@ from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.transmision import CanalTransmision
 from te_tengo_captura.captura.bucle import BucleCaptura, HiloCaptura
 from te_tengo_captura.captura.en_vivo import TransmisionEnVivo
-from te_tengo_captura.captura.fuentes import Captador, FuenteVideo
+from te_tengo_captura.captura.fuentes import Captador, FuenteVideo, Imagen
 from te_tengo_captura.captura.pose import Estimador
+from te_tengo_captura.captura.vista_previa import VistaPreviaLocal
 from te_tengo_captura.config import Configuracion
 from te_tengo_captura.envios.cola import ColaEnvios, EnviadorPendientes
-from te_tengo_captura.estado import Entradas, EstadoAgente, derivar
+from te_tengo_captura.estado import (
+    CamaraEntradas,
+    DatosPc,
+    Entradas,
+    EstadoAgente,
+    Hogar,
+    Webcam,
+    derivar,
+)
 from te_tengo_captura.latido import HiloLatido, Latido, Salud
+from te_tengo_captura.sistema import nombre_pc, sistema_operativo
 from te_tengo_captura.umbrales_remotos import ActualizadorUmbrales
 from te_tengo_deteccion.clips.codificar import codificar_mp4
 
 logger = logging.getLogger(__name__)
 
-INTERVALO_ESTADO_S = 1.0  # the window's countdown and «hace N s» move every second
+INTERVALO_ESTADO_S = 1.0  # the window's countdowns move every second
 
 
 class Agente:
@@ -68,7 +78,8 @@ class Agente:
             fps=config.vista_en_vivo.fps,
             marca_tiempo=config.vista_en_vivo.marca_tiempo,
         )
-        self.captador = Captador(fuente, al_leer=self.en_vivo.ofrecer)
+        self.vista_previa = VistaPreviaLocal()
+        self.captador = Captador(fuente, al_leer=self._al_leer)
         self.bucle = BucleCaptura(
             self.captador,
             estimador,
@@ -90,6 +101,13 @@ class Agente:
         self._hilo_captura = HiloCaptura(self.bucle)
         self._hilo_latido = HiloLatido(self.latido)
         self._oyentes: list[Callable[[EstadoAgente], None]] = []
+        self._hogar = Hogar(config.vivienda.nombre_adulto_mayor, config.vivienda.direccion)
+        self._pc = DatosPc(
+            nombre=nombre_pc(),
+            sistema=sistema_operativo(),
+            programa=f"Te Tengo Captura {version}",
+            instalada_el=config.instalada_el.strftime("%d/%m/%Y"),
+        )
         self._detenido = threading.Event()
         self._hilo_estado = threading.Thread(target=self._notificar, name="estado", daemon=True)
 
@@ -135,16 +153,36 @@ class Agente:
             if latido.estado is not None and latido.estado.nombre_habitacion
             else self.config.camara.nombre_habitacion
         )
-        entradas = Entradas(
+        clave = self.clave_camara
+        camara = CamaraEntradas(
+            clave=clave,
+            nombre_habitacion=nombre,
+            dispositivo=self.config.webcam.nombre,
             webcam_conectada=self.bucle.webcam_conectada,
+            pausada_hasta=latido.pausada_hasta(),
+            en_vivo_desde=self.en_vivo.solicitada_desde,
+        )
+        webcam = Webcam(
+            clave=clave,
+            nombre=self.config.webcam.nombre,
+            dispositivo_id=None,
+            nombre_habitacion=nombre,
+            conectada=self.bucle.webcam_conectada,
+        )
+        entradas = Entradas(
+            camaras=(camara,),
             en_linea=latido.en_linea,
             consentimiento=not latido.sin_consentimiento(),
-            pausada_hasta=latido.pausada_hasta(),
-            segundos_desde_envio=self._segundos_desde_envio(),
             segundos_para_reintento=latido.segundos_para_reintento(),
-            nombre_habitacion=nombre,
+            webcams=(webcam,),
         )
-        return derivar(entradas, self.config, self.version, self._zona)
+        return derivar(entradas, self._hogar, self._pc, self.version, self._zona)
+
+    @property
+    def clave_camara(self) -> str:
+        """The camera's id once registered (``instalacion`` before): the window's key for it."""
+        registro = self._cliente.registro
+        return registro.camara_id if registro is not None else "instalacion"
 
     # ------------------------------------------------------------------ bridge actions
 
@@ -158,6 +196,10 @@ class Agente:
                 return self._webcam_respondio()
         return True
 
+    def vista_previa_jpeg(self, clave: str) -> bytes | None:
+        """The newest frame of the camera for the «Cámaras» tab, only on this PC."""
+        return self.vista_previa.jpeg() if clave == self.clave_camara else None
+
     def reintentar_ahora(self) -> bool:
         """«Reintentar ahora»: a heartbeat right now, and the outbox right after."""
         self.latido.reintentar_ahora()
@@ -167,20 +209,15 @@ class Agente:
 
     # ------------------------------------------------------------------ internals
 
+    def _al_leer(self, instante: float, imagen: Imagen) -> None:
+        self.en_vivo.ofrecer(instante, imagen)
+        self.vista_previa.ofrecer(instante, imagen)
+
     def _webcam_respondio(self) -> bool:
         return self.captador.conectada is True
 
     def _salud(self) -> Salud:
         return Salud(self.bucle.webcam_conectada, self.bucle.deteccion_confiable)
-
-    def _segundos_desde_envio(self) -> int:
-        ultimos = [self.latido.ultimo_contacto]
-        if self.cola.ultimo_envio is not None:
-            ultimos.append(datetime.fromtimestamp(self.cola.ultimo_envio, UTC))
-        conocidos = [u for u in ultimos if u is not None]
-        if not conocidos:
-            return 0
-        return max(0, int((self._reloj_utc() - max(conocidos)).total_seconds()))
 
     def _al_latir(self) -> None:
         # A new capture state may open or close the gate: let the capture thread check it now.
