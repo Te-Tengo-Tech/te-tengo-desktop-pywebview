@@ -19,9 +19,12 @@ Every agent token is checked on every request: the tokens of a PC that left the 
 | `POST /api/agente/eventos/{eventoId}/clip` | Returns a pre-signed S3 PUT URL to upload the 6 s + 6 s clip | US-18 |
 | `GET /api/agente/configuracion` | Current classification thresholds and agent version, so agents can update themselves | — |
 | `POST /api/agente/eventos/{eventoId}/clip/puntos` | Pre-signed PUT URL for the body landmarks of the event's clip | US-36 |
+| `POST /api/agente/eventos/{eventoId}/clip/puntos/ligero` | Pre-signed PUT URL for the same landmarks in the light replay format | US-36 |
 | `GET /api/agente/movimientos/estado` | Whether movements may be stored, on the PC and in the cloud (camera or PC token) | US-35, US-37 |
 | `POST /api/agente/movimientos` | Pre-signed PUT URL for a 5-minute movement file of the camera | US-37 |
 | `POST /api/agente/movimientos/{archivoId}/confirmacion` | The file was uploaded: it enters the index | US-37 |
+| `POST /api/agente/movimientos/{archivoId}/ligero` | Pre-signed PUT URL for the light replay file next to that movement file | US-37, US-39 |
+| `POST /api/agente/movimientos/{archivoId}/ligero/confirmacion` | The light file was uploaded: the app can draw that file | US-37, US-39 |
 | `POST /api/agente/pc/actividad` | The PC's own changes for the activity log, also those made offline (PC token) | US-33 |
 | `POST /api/agente/vinculacion` | PC link: asks for a code (RFC 8628 device authorization; no token) | US-28 |
 | `POST /api/agente/token` | PC link: polls for the tokens, and renews them (RFC 6749 token endpoint; no token) | US-28 |
@@ -240,7 +243,47 @@ Body landmarks only, never images (ADR 0010). **Nothing is stored, on the PC or 
 - Errors of step 1: `409 SIN_CONSENTIMIENTO_DE_MOVIMIENTOS` or `409 MOVIMIENTOS_EN_LA_NUBE_DESACTIVADOS` (stop uploading and check the state), `422 MOVIMIENTOS_FUERA_DEL_PLAZO` (already older than the retention: drop it from the queue), `409 ARCHIVO_YA_SUBIDO {archivoId}` (it is already in the index: drop it), `400 VALIDACION` (`hasta` after `desde`, at most 10 minutes, `desde` not ahead of the server's clock by more than 1 minute, `tamanoBytes` up to 50 MB, `sha256` 64 hex characters). Asking again for a file still pending returns a new URL for the same `archivoId`.
 - If the consent is revoked between the upload and the confirmation, the confirmation answers `409 SIN_CONSENTIMIENTO_DE_MOVIMIENTOS` and the API deletes the object.
 
-**Landmarks of a clip** (US-36): after uploading the clip of an event, `POST /api/agente/eventos/{eventoId}/clip/puntos` (camera token, no body) → `201 {urlSubida, cabeceras, expiraEn}`; `PUT` the landmarks of the clip's 12 seconds as Parquet with those headers. The app draws them over the clip, synchronized by time. `409 SIN_CONSENTIMIENTO_DE_MOVIMIENTOS` without the consent (do not upload them); `404 EVENTO_NO_ENCONTRADO` like the clip. They are deleted with their clip (CA-36.3).
+**Light replay file** (US-39): after the Parquet file is in the index, the same frames in the light format below, so the app can draw them on every platform. Same lane, right after its Parquet file; written from the same rows, kept, encrypted and deleted on the PC together with it.
+4. `POST /api/agente/movimientos/{archivoId}/ligero` (camera token) `{"tamanoBytes": 256123, "sha256": "<64 hex>"}` → `201 {urlSubida, cabeceras, expiraEn}` (10 minutes); the object key is the Parquet file's with `.ttmov` (`…/mm.ttmov`). `archivoId` comes from step 1, or from the body of its `409 ARCHIVO_YA_SUBIDO` when the Parquet file was uploaded before.
+5. `PUT urlSubida` with exactly those headers (`Content-Type: application/gzip`) and the file.
+6. `POST /api/agente/movimientos/{archivoId}/ligero/confirmacion` → `200 {archivoId, tamanoBytes}`. `409 ARCHIVO_NO_SUBIDO`: the storage does not have it; upload it again.
+- Errors of step 4: `404 ARCHIVO_NO_ENCONTRADO` (not this camera's file, or deleted meanwhile: drop the light file), `409 ARCHIVO_YA_SUBIDO` (the light file is already in the index: drop it), `409 SIN_CONSENTIMIENTO_DE_MOVIMIENTOS` or `409 MOVIMIENTOS_EN_LA_NUBE_DESACTIVADOS` (like step 1), `400 VALIDACION` (`tamanoBytes` up to 50 MB, `sha256` 64 hex characters). A revocation before step 6 deletes the object like step 3. An older API without these paths answers `404` without `codigo`: upload the Parquet file only.
+- The light file is deleted with its Parquet file (retention, revocation, the day's cleanup of unconfirmed uploads).
+
+**Landmarks of a clip** (US-36): after uploading the clip of an event, `POST /api/agente/eventos/{eventoId}/clip/puntos` (camera token, no body) → `201 {urlSubida, cabeceras, expiraEn}`; `PUT` the landmarks of the clip's 12 seconds as Parquet with those headers. The app draws them over the clip, synchronized by time. `409 SIN_CONSENTIMIENTO_DE_MOVIMIENTOS` without the consent (do not upload them); `404 EVENTO_NO_ENCONTRADO` like the clip. They are deleted with their clip (CA-36.3). Then `POST /api/agente/eventos/{eventoId}/clip/puntos/ligero` (camera token, no body) → `201 {urlSubida, cabeceras, expiraEn}` (key `clips/<alerta>.landmarks.ttmov`, `Content-Type: application/gzip`); `PUT` the same rows in the light format below (`t0Ms` the clip's start, 6 s before the event, `duracionMs` 12000). Same errors; there is no confirmation: the app gets it when the storage has it. Deleted with the clip and its Parquet landmarks.
+
+### Light replay format (TTMOV v1)
+The app cannot read Parquet on every platform (ADR 0011 of the backend), so next to each Parquet file the PC uploads the same frames in this small format, made from the same rows. The Parquet file stays the source for analysis (US-40); the light file only serves to draw the skeleton (US-36, US-39). Same file for a 5-minute window and for a clip's 12 seconds.
+- **Container:** one gzip member (RFC 1952; deflate, RFC 1951) holding the payload below; header `MTIME` 0, no file name. Content type `application/gzip`. Readers decompress the whole file, then check the magic.
+- **Byte order:** little-endian. `u8`, `u16`, `u32`: unsigned; `i32`, `i64`: two's complement.
+- **Header** (24 bytes):
+
+| Offset | Type | Field | Value |
+|---|---|---|---|
+| 0 | 4 bytes | `magia` | ASCII `TTMV` (`54 54 4D 56`) |
+| 4 | u8 | `version` | `1`; a reader rejects any other |
+| 5 | u8 | `banderas` | bit 0 `Z`: each pose carries `z`; bits 1–7 are 0 (a reader rejects a file with any of them set) |
+| 6 | u8 | `fpsObjetivo` | the camera's analysis rate, `8` |
+| 7 | u8 | `puntos` | landmarks per pose, `33` (MediaPipe Pose order) |
+| 8 | i64 | `t0Ms` | start of the file, UTC epoch milliseconds (`desde`) |
+| 16 | u32 | `duracionMs` | `hasta − desde`: the file covers `[t0Ms, t0Ms + duracionMs)` |
+| 20 | u32 | `fotogramas` | number of frames that follow |
+
+- **Frames**, `fotogramas` times, in the Parquet file's row order:
+
+| Type | Field | Meaning |
+|---|---|---|
+| i32 | `dtMs` | the frame's time minus the previous frame's (the first: minus `t0Ms`); the frame is at `t0Ms + Σ dtMs`. Negative only if the PC's clock stepped back |
+| u8 | `estado` | bit 0: a person (pose) is in the frame; bits 1–2 `fase`: 0 `normal`, 1 `inicio_caida`, 2 `en_el_suelo`; bits 3–5 `evento` detected on this frame: 0 none, 1 `caida`, 2 `caida_confirmada`, 3 `movimiento_inestable`, 4 `recuperacion`, 5 `deteccion_no_confiable`; bits 6–7 are 0. A reader treats an unknown `fase` or `evento` value as `normal` / none |
+| `puntos` × u16 | `dx` | only with a pose: `x` of each landmark, as a delta |
+| `puntos` × u16 | `dy` | only with a pose: `y`, as a delta |
+| `puntos` × u8 | `dv` | only with a pose: visibility, as a delta |
+| `puntos` × u16 | `dz` | only with a pose and the `Z` flag: `z` (its int16 bit pattern), as a delta |
+
+- **Deltas:** each value is the difference with the same landmark's value in the **previous frame that had a pose in this file**, modulo 2¹⁶ (u16) or 2⁸ (u8); for the first pose of the file the previous values are 0. So `x = (xAnterior + dx) mod 65536`, and so on. Frames without a pose carry no landmarks and do not reset the reference.
+- **Quantization**, the same integers as the Parquet file (`q` stored, `c` MediaPipe's value): `x`, `y`: `c = q / 65535 × 2 − 0.5` (range −0.5 to 1.5, normalized to the image; 0 is the left or top edge); visibility: `c = q / 255`; `z` (int16): `c = q / 8192`. A landmark with visibility below 0.5 should not be drawn.
+- **Names:** the object key is the Parquet file's with `.ttmov` instead of `.parquet` (`movimientos/<hogar>/<camara>/YYYY/MM/DD/HH/mm.ttmov`; a clip's `clips/<alerta>.landmarks.ttmov`).
+- **Sizes** (measured, 5 minutes with a person in the image 86 % of the frames): Parquet 459 KB, light file 257 KB; about 132 MB and 74 MB per camera and day.
 
 ## Activity log (US-32, US-33)
 The API logs on its own every change it sees (the PC linked or unlinked, a camera's room, «Dejar de usar», pauses, consents, the cloud retention). The PC reports the changes only it knows about, which it also keeps in its local log (shown «Pendiente de enviar» until sent, CA-33.3):

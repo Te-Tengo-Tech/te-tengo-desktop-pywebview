@@ -369,9 +369,9 @@ class Agente:
             ocurrido_en = self._eventos.get(evento_id) or self._reloj_utc() - timedelta(seconds=6)
             grabador.clip(evento_id, ocurrido_en, mp4)
 
-    def _puntos_clip(self, evento_id: str, parquet: bytes) -> None:
-        """The landmarks of the clip's 12 s (US-36): uploaded after the clip."""
-        self.cola.agregar_puntos_clip(evento_id, parquet)
+    def _puntos_clip(self, evento_id: str, parquet: bytes, ligero: bytes) -> None:
+        """The landmarks of the clip's 12 s (US-36), Parquet and light: uploaded after the clip."""
+        self.cola.agregar_puntos_clip(evento_id, parquet, ligero)
         self._enviador.notificar()
 
     def _permitida(self) -> bool:

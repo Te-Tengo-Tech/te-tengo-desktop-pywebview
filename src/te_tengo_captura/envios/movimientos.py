@@ -13,6 +13,12 @@
   ``POST …/{archivoId}/confirmacion``. ``409 ARCHIVO_YA_SUBIDO`` and ``422
   MOVIMIENTOS_FUERA_DEL_PLAZO`` drop the file from the queue; ``409 ARCHIVO_NO_SUBIDO`` at the
   confirmation uploads it again; ``400`` drops it (logged: it would never be accepted).
+* **Light file** (US-39, contract steps 4–6): right after its Parquet file, the light replay
+  file the app draws: ``POST …/{archivoId}/ligero`` → ``PUT`` → ``POST …/ligero/confirmacion``.
+  A Parquet file already in the index (``409 ARCHIVO_YA_SUBIDO``) hands its ``archivoId`` so a
+  light file that failed before is uploaded on the next pass. ``409 ARCHIVO_YA_SUBIDO`` of the
+  light file, a ``404`` (an API without these paths, or a file deleted meanwhile) or a ``400``
+  drop only the light file; a temporary failure keeps both on disk for the next pass.
 * **Afterwards:** a file only written for the cloud (the local switch is off) is deleted; the
   others stay for their local period.
 """
@@ -32,7 +38,12 @@ from te_tengo_captura.backend.errores import (
     FueraDelPlazoError,
     SinPermisoDeMovimientosError,
 )
-from te_tengo_captura.backend.modelos import SolicitudMovimientos, SubidaMovimientos
+from te_tengo_captura.backend.modelos import (
+    SolicitudLigero,
+    SolicitudMovimientos,
+    SubidaClip,
+    SubidaMovimientos,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +60,12 @@ class RemitenteMovimientos(Protocol):
     ) -> None: ...
 
     def confirmar_movimientos(self, archivo_id: str) -> None: ...
+
+    def solicitar_subida_ligero(
+        self, archivo_id: str, solicitud: SolicitudLigero
+    ) -> SubidaClip: ...
+
+    def confirmar_ligero(self, archivo_id: str) -> None: ...
 
 
 class CarrilMovimientos:
@@ -87,7 +104,14 @@ class CarrilMovimientos:
         )
         try:
             subida = remitente.solicitar_subida_movimientos(solicitud)
-        except (ArchivoYaSubidoError, FueraDelPlazoError) as error:
+        except ArchivoYaSubidoError as error:
+            logger.info("Movimientos %s: ya estaban en la nube", archivo.ruta)
+            archivo_id = error.cuerpo.get("archivoId")
+            if isinstance(archivo_id, str):
+                self._subir_ligero(remitente, archivo, archivo_id)
+            self._almacen.terminar_subida(archivo)
+            return False
+        except FueraDelPlazoError as error:
             logger.info("Movimientos %s: no se suben (%s)", archivo.ruta, error.codigo)
             self._almacen.terminar_subida(archivo)
             return False
@@ -110,9 +134,49 @@ class CarrilMovimientos:
         except SinPermisoDeMovimientosError:
             self._sin_permiso()
             raise
+        self._subir_ligero(remitente, archivo, subida.archivo_id)
         self._almacen.terminar_subida(archivo)
         logger.info("Movimientos subidos: %s (%d bytes)", archivo.ruta, len(datos))
         return True
+
+    def _subir_ligero(
+        self, remitente: RemitenteMovimientos, archivo: Archivo, archivo_id: str
+    ) -> None:
+        """Steps 4-6. Raises a failure that may pass later (both files wait for the next pass)."""
+        datos = self._almacen.leer_ligero(archivo)
+        if datos is None:
+            return  # written by an older version, or damaged: the Parquet file goes alone
+        solicitud = SolicitudLigero(
+            tamano_bytes=len(datos), sha256=hashlib.sha256(datos).hexdigest()
+        )
+        try:
+            subida = remitente.solicitar_subida_ligero(archivo_id, solicitud)
+        except ArchivoYaSubidoError:
+            return
+        except SinPermisoDeMovimientosError:
+            self._sin_permiso()
+            raise
+        except ErrorBackendError as error:
+            if error.reintentable:
+                raise
+            logger.warning("Movimientos ligeros %s no se suben: %s", archivo.ruta, error)
+            return
+        remitente.subir_archivo(
+            subida.url_subida, subida.cabeceras, datos, "el archivo ligero de movimientos"
+        )
+        try:
+            remitente.confirmar_ligero(archivo_id)
+        except ArchivoNoSubidoError as error:
+            if error.estado == 404:  # deleted meanwhile
+                return
+            raise ErrorBackendError(f"El almacenamiento no tiene el ligero: {error}") from None
+        except SinPermisoDeMovimientosError:
+            self._sin_permiso()
+            raise
+        except ErrorBackendError as error:
+            if error.reintentable:
+                raise
+            logger.warning("Movimientos ligeros %s rechazados: %s", archivo.ruta, error)
 
     def _sin_permiso(self) -> None:
         logger.warning("La nube ya no acepta movimientos: se consulta el permiso")

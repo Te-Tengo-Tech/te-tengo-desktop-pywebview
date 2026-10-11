@@ -310,12 +310,14 @@ def a_ms(instante: datetime) -> int:
 
 
 class TramoCerrado(NamedTuple):
-    """A finished movement file of one camera, covering ``[desde, hasta)``."""
+    """A finished movement file of one camera, covering ``[desde, hasta)``: the Parquet file
+    (``datos``) and the same rows in the light replay format (``ligero``, ``ligero.py``)."""
 
     desde: datetime
     hasta: datetime
     datos: bytes
     n_filas: int
+    ligero: bytes = b""
 
     @property
     def desde_ms(self) -> int:
@@ -380,8 +382,11 @@ class TramoMovimientos:
             return []
         if hasta_ms is None:
             hasta_ms = max(fila.t_ms for fila in self._filas) + 1
+        from te_tengo_captura.almacen.ligero import escribir_ligero  # it imports this module
+
         desde, hasta = instante_ms(self._desde_ms), instante_ms(hasta_ms)
         datos = escribir_parquet(self._filas, self._camara_id, desde, hasta)
-        cerrado = TramoCerrado(desde, hasta, datos, len(self._filas))
+        ligero = escribir_ligero(self._filas, self._desde_ms, hasta_ms)
+        cerrado = TramoCerrado(desde, hasta, datos, len(self._filas), ligero)
         self._filas = []
         return [cerrado]

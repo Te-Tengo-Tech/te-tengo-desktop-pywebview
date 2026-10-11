@@ -32,6 +32,7 @@ from te_tengo_captura.backend.modelos import (
     Registro,
     Senal,
     SolicitudClip,
+    SolicitudLigero,
     SolicitudMovimientos,
     SolicitudRegistro,
     SubidaClip,
@@ -57,6 +58,9 @@ RUTA_ESTADO_MOVIMIENTOS = "/api/agente/movimientos/estado"
 RUTA_MOVIMIENTOS = "/api/agente/movimientos"
 RUTA_CONFIRMACION = "/api/agente/movimientos/{archivo_id}/confirmacion"
 RUTA_PUNTOS_CLIP = "/api/agente/eventos/{evento_id}/clip/puntos"
+RUTA_LIGERO = "/api/agente/movimientos/{archivo_id}/ligero"
+RUTA_CONFIRMACION_LIGERO = "/api/agente/movimientos/{archivo_id}/ligero/confirmacion"
+RUTA_PUNTOS_CLIP_LIGERO = "/api/agente/eventos/{evento_id}/clip/puntos/ligero"
 
 # Seconds; a clip upload carries about 1 MB, so it gets a longer write timeout.
 TIMEOUT = httpx.Timeout(10.0, connect=5.0)
@@ -197,6 +201,20 @@ class ClienteBackend:
     def solicitar_subida_puntos_clip(self, evento_id: str) -> SubidaClip:
         """The landmarks of an event's clip (US-36): a pre-signed URL next to the clip."""
         ruta = RUTA_PUNTOS_CLIP.format(evento_id=evento_id)
+        return leer_modelo(SubidaClip, self._autenticado("POST", ruta))
+
+    def solicitar_subida_ligero(self, archivo_id: str, solicitud: SolicitudLigero) -> SubidaClip:
+        """Step 4: the light replay file of an indexed movement file (US-39)."""
+        ruta = RUTA_LIGERO.format(archivo_id=archivo_id)
+        return leer_modelo(SubidaClip, self._autenticado("POST", ruta, json=solicitud.json_api()))
+
+    def confirmar_ligero(self, archivo_id: str) -> None:
+        """Step 6: the app can draw that movement file."""
+        self._autenticado("POST", RUTA_CONFIRMACION_LIGERO.format(archivo_id=archivo_id))
+
+    def solicitar_subida_puntos_clip_ligero(self, evento_id: str) -> SubidaClip:
+        """The clip's landmarks in the light replay format (US-36), after the Parquet file."""
+        ruta = RUTA_PUNTOS_CLIP_LIGERO.format(evento_id=evento_id)
         return leer_modelo(SubidaClip, self._autenticado("POST", ruta))
 
     def estado_movimientos(self) -> EstadoMovimientos:
