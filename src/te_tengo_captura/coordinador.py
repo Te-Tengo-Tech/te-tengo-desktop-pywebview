@@ -52,7 +52,7 @@ from te_tengo_captura.almacen.gestor import AjustesAlmacen, AlmacenLocal
 from te_tengo_captura.almacen.indice import TipoArchivo
 from te_tengo_captura.almacen.repeticion import Repeticion
 from te_tengo_captura.backend.errores import ErrorBackendError
-from te_tengo_captura.backend.modelos import EstadoMovimientos
+from te_tengo_captura.backend.modelos import EstadoMovimientos, iso_utc
 from te_tengo_captura.backend.pc import ClientePc
 from te_tengo_captura.captura.dispositivos import Dispositivo, listar_dispositivos
 from te_tengo_captura.diagnostico import exportar, nombre_archivo
@@ -659,16 +659,37 @@ class Coordinador:
     def cerrar_repeticion(
         self, camara: str, desde_ms: int, hasta_ms: int, segundos: float
     ) -> dict[str, Any]:
-        """«Volver»: the replay is written in the activity log (CA-39.3) and memory is freed."""
+        """«Volver» after the replay was played or scrubbed (the window decides, CA-39.3): it is
+        written in the activity log and, on a linked PC, sent to the family's log as
+        ``REPETICION_VISTA`` with the camera, the moment and how long it was watched. Memory is
+        freed."""
         self._repeticion().cerrar()
         agente = self._agentes().get(camara)
         habitacion = agente.nombre_habitacion if agente is not None else camara
-        inicio = datetime.fromtimestamp(int(desde_ms) / 1000, UTC).astimezone(self._zona)
-        fin = datetime.fromtimestamp(int(hasta_ms) / 1000, UTC).astimezone(self._zona)
+        inicio_utc = datetime.fromtimestamp(int(desde_ms) / 1000, UTC)
+        fin_utc = datetime.fromtimestamp(int(hasta_ms) / 1000, UTC)
+        inicio = inicio_utc.astimezone(self._zona)
+        fin = fin_utc.astimezone(self._zona)
         minutos = max(1, round(float(segundos) / 60))
-        self.actividad.anotar(
+        texto = (
             f"Desde esta PC: se vio qué pasó en {habitacion_arte(habitacion)} "
             f"({inicio:%d/%m %H:%M}–{fin:%H:%M}, {minutos} min)"
+        )
+        if self.pc is None:
+            # An installation has no PC token: its log stays on this PC.
+            self.actividad.anotar(texto)
+            return {"ok": True}
+        self.actividad.anotar(
+            texto,
+            tipo="REPETICION_VISTA",
+            # A camera no longer in use: the API names its room.
+            objeto=agente.nombre_habitacion if agente is not None else None,
+            datos={
+                "camaraId": camara,
+                "momentoDesde": iso_utc(inicio_utc),
+                "momentoHasta": iso_utc(fin_utc),
+                "duracionSegundos": max(0, round(float(segundos))),
+            },
         )
         return {"ok": True}
 

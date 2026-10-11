@@ -3,7 +3,8 @@
 Every change made on this PC is appended to ``actividad.jsonl`` in the data folder (append-only:
 nothing is ever edited or deleted, CA-33.1) with a UUID v7 ``id`` and the time it happened. The
 changes the API does not see on its own (contract: ``MODO_AVANZADO_ACTIVADO``/``_DESACTIVADO``,
-``GUARDADO_LOCAL_CAMBIADO``, ``DATOS_LOCALES_ELIMINADOS``) are sent to
+``GUARDADO_LOCAL_CAMBIADO``, ``DATOS_LOCALES_ELIMINADOS`` and ``REPETICION_VISTA``, a replay
+watched on this PC with its camera, moment and duration, CA-39.3) are sent to
 ``POST /api/agente/pc/actividad`` in batches of at most 100; until the API answers they show
 «Pendiente de enviar» (CA-33.3). Sending the same ``id`` again is safe (``repetidos``). The ids
 the API acknowledged go to ``actividad-enviada.txt``, also append-only.
@@ -31,13 +32,26 @@ logger = logging.getLogger(__name__)
 ARCHIVO = "actividad.jsonl"
 ARCHIVO_ENVIADOS = "actividad-enviada.txt"
 LOTE = 100  # contract: at most 100 changes per request
-CAMPOS = ("id", "tipo", "ocurridoEn", "objeto", "valorAnterior", "valorNuevo")
+CAMPOS = (
+    "id",
+    "tipo",
+    "ocurridoEn",
+    "objeto",
+    "valorAnterior",
+    "valorNuevo",
+    # REPETICION_VISTA only (contract, "Activity log")
+    "camaraId",
+    "momentoDesde",
+    "momentoHasta",
+    "duracionSegundos",
+)
 TIPOS_DE_LA_PC = frozenset(
     {
         "MODO_AVANZADO_ACTIVADO",
         "MODO_AVANZADO_DESACTIVADO",
         "GUARDADO_LOCAL_CAMBIADO",
         "DATOS_LOCALES_ELIMINADOS",
+        "REPETICION_VISTA",
     }
 )
 
@@ -67,9 +81,11 @@ class RegistroActividad:
         anterior: str | None = None,
         nuevo: str | None = None,
         quien: str = "pc",
+        datos: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Appends a change. ``tipo`` (one of ``TIPOS_DE_LA_PC``) makes it go to the API;
-        ``quien`` is ``pc`` («Desde esta PC») or a family member's initials."""
+        """Appends a change. ``tipo`` (one of ``TIPOS_DE_LA_PC``) makes it go to the API, with
+        the extra fields of ``datos`` its type needs; ``quien`` is ``pc`` («Desde esta PC») or a
+        family member's initials."""
         entrada: dict[str, Any] = {
             "id": self._generar_id(),
             "ocurridoEn": iso_utc(self._reloj_utc()),
@@ -85,6 +101,9 @@ class RegistroActividad:
             ):
                 if valor is not None:
                     entrada[campo] = valor[:200] if campo != "objeto" else valor[:120]
+            for campo, dato in (datos or {}).items():
+                if campo in CAMPOS and dato is not None:
+                    entrada[campo] = dato
         with self._candado:
             try:
                 self._ruta.parent.mkdir(parents=True, exist_ok=True)
@@ -114,12 +133,7 @@ class RegistroActividad:
         enviados = 0
         while pendientes := self.pendientes()[:LOTE]:
             cambios: list[dict[str, Any]] = [
-                {
-                    k: e[k]
-                    for k in ("id", "tipo", "ocurridoEn", "objeto", "valorAnterior", "valorNuevo")
-                    if k in e
-                }
-                for e in pendientes
+                {k: e[k] for k in CAMPOS if k in e} for e in pendientes
             ]
             try:
                 remitente.actividad(cambios)

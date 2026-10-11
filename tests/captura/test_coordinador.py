@@ -336,3 +336,13 @@ def test_ver_que_paso_desde_el_coordinador(e: Escenario) -> None:
     entrada = c.lista_actividad()[0]["m"]
     assert entrada.startswith("Desde esta PC: se vio qué pasó en «c1» (")  # CA-39.3, on this PC
     assert entrada.endswith(", 2 min)")
+    # The family's log gets it too (REPETICION_VISTA): the camera, the moment and the seconds.
+    assert c.pc is not None
+    c.pc.reintentar_ahora()  # the heartbeat sends what is pending
+    esperar(lambda: any(a["tipo"] == "REPETICION_VISTA" for a in e.falso.actividad.values()))
+    [vista] = [a for a in e.falso.actividad.values() if a["tipo"] == "REPETICION_VISTA"]
+    assert vista["camaraId"] == "c1"
+    assert vista["duracionSegundos"] == 95
+    assert vista["momentoDesde"] < vista["momentoHasta"]
+    assert vista["momentoHasta"].endswith("Z")
+    assert "objeto" not in vista  # no camera in use: the API names the room

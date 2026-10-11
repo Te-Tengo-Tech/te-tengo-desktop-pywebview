@@ -22,7 +22,7 @@ Every agent token is checked on every request: the tokens of a PC that left the 
 | `GET /api/agente/movimientos/estado` | Whether movements may be stored, on the PC and in the cloud (camera or PC token) | US-35, US-37 |
 | `POST /api/agente/movimientos` | Pre-signed PUT URL for a 5-minute movement file of the camera | US-37 |
 | `POST /api/agente/movimientos/{archivoId}/confirmacion` | The file was uploaded: it enters the index | US-37 |
-| `POST /api/agente/pc/actividad` | The PC's own changes for the activity log, also those made offline (PC token) | US-33 |
+| `POST /api/agente/pc/actividad` | The PC's own changes for the activity log, also those made offline, and the replays watched on the PC (PC token) | US-33, US-39 |
 | `POST /api/agente/vinculacion` | PC link: asks for a code (RFC 8628 device authorization; no token) | US-28 |
 | `POST /api/agente/token` | PC link: polls for the tokens, and renews them (RFC 6749 token endpoint; no token) | US-28 |
 | `POST /api/agente/token/revocacion` | PC link: revokes the refresh token, which unlinks the PC (RFC 7009; no token) | US-31 |
@@ -250,9 +250,13 @@ The API logs on its own every change it sees (the PC linked or unlinked, a camer
 { "cambios": [
   { "id": "0192…", "tipo": "MODO_AVANZADO_ACTIVADO", "ocurridoEn": "2026-10-10T16:02:00Z" },
   { "id": "0192…", "tipo": "GUARDADO_LOCAL_CAMBIADO", "ocurridoEn": "2026-10-10T16:05:00Z",
-    "objeto": "Video continuo", "valorAnterior": "No", "valorNuevo": "Sí, 7 días" } ] }
+    "objeto": "Video continuo", "valorAnterior": "No", "valorNuevo": "Sí, 7 días" },
+  { "id": "0192…", "tipo": "REPETICION_VISTA", "ocurridoEn": "2026-10-10T16:20:00Z",
+    "camaraId": "0192…", "objeto": "Sala", "momentoDesde": "2026-10-10T15:36:00Z",
+    "momentoHasta": "2026-10-10T15:46:00Z", "duracionSegundos": 180 } ] }
 ```
 → `200 {registrados, repetidos}`.
-- `tipo`: `MODO_AVANZADO_ACTIVADO`, `MODO_AVANZADO_DESACTIVADO` (CA-32.1), `GUARDADO_LOCAL_CAMBIADO` (US-38: folder, a type on or off, its period, the space limit; one entry per setting) or `DATOS_LOCALES_ELIMINADOS` (e.g. the local movements after a revocation, CA-35.4). Anything else is `400 VALIDACION` (`campos["cambios[i].tipo"]`).
+- `tipo`: `MODO_AVANZADO_ACTIVADO`, `MODO_AVANZADO_DESACTIVADO` (CA-32.1), `GUARDADO_LOCAL_CAMBIADO` (US-38: folder, a type on or off, its period, the space limit; one entry per setting), `DATOS_LOCALES_ELIMINADOS` (e.g. the local movements after a revocation, CA-35.4) or `REPETICION_VISTA` (below). Anything else is `400 VALIDACION` (`campos["cambios[i].tipo"]`).
+- `REPETICION_VISTA` (US-39, CA-39.3): someone replayed a camera's movements **on the PC** («Ver qué pasó»). Reported under the same rule as the app: only when the replay was played or scrubbed, not when it was only opened. `ocurridoEn` is when the replay was opened; `camaraId` a camera of this PC (otherwise `campos["cambios[i].camaraId"]`); `objeto` the room as the PC showed it (optional: the camera's current room); `momentoDesde` < `momentoHasta` the moment replayed, not in the future (`campos["cambios[i].momentoDesde"]` / `["…momentoHasta"]`); `duracionSegundos` (≥ 0) how long it was watched (`campos["cambios[i].duracionSegundos"]`). The PC has no member identity: the log says it was done on the PC. The API stores the moment as an ISO-8601 interval in `valorAnterior` (`"2026-10-10T15:36:00Z/2026-10-10T15:46:00Z"`) and the seconds in `valorNuevo` (`"180"`), and the app shows it in «Actividad» and in the access log (API contract §10). These four fields are ignored for the other types.
 - `id`: a UUID the PC generates once per change; sending a change again (after a timeout, or the whole offline queue) stores it once (`repetidos`). `ocurridoEn`: when it happened on the PC, not more than 5 minutes ahead of the server. `objeto` up to 120 characters, `valorAnterior` and `valorNuevo` up to 200. At most 100 changes per request.
 - The family sees them in the app as «Desde la PC Sala-Rosa: …»; the PC shows the household's log with `GET /api/actividad` only through the app (the PC has no member token).
