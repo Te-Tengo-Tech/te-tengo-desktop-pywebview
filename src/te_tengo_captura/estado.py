@@ -296,7 +296,9 @@ def situacion(e: Entradas) -> Situacion:
     return Situacion.CUIDANDO
 
 
-def _aviso(s: Situacion, e: Entradas, hogar: Hogar, pausas: dict[str, str]) -> Aviso:
+def _aviso(
+    s: Situacion, e: Entradas, hogar: Hogar, pausas: dict[str, str], en_vivo: dict[str, str]
+) -> Aviso:
     camaras = list(e.camaras)
     habitaciones = [c.nombre_habitacion for c in camaras]
     ir_a_camaras = Accion("toCams", "Ir a Cámaras", "cam")
@@ -397,14 +399,13 @@ def _aviso(s: Situacion, e: Entradas, hogar: Hogar, pausas: dict[str, str]) -> A
         )
     if s is Situacion.EN_VIVO:
         viendo = next(c for c in camaras if c.en_vivo_desde is not None)
-        desde = viendo.en_vivo_desde
         return Aviso(
             "live",
             "live",
             "eye",
             escape(f"{QUIEN_MIRA} está viendo {de_habitacion(viendo.nombre_habitacion)} en vivo"),
             "Desde las "
-            + _mono(hora_local(desde) if desde else "")
+            + _mono(en_vivo.get(viendo.clave, ""))
             + ". No se graba y queda en el registro de la familia.",
             None,
         )
@@ -476,7 +477,7 @@ def derivar(
     return EstadoAgente(
         situacion=s,
         entradas=e,
-        aviso=_aviso(s, e, hogar, pausas),
+        aviso=_aviso(s, e, hogar, pausas, en_vivo),
         filas=filas,
         bandeja=_bandeja(s, e, pausas),
         hogar=hogar,
