@@ -226,6 +226,8 @@ class SupervisorCamaras:
         self._previas: dict[str, _PreviaRemota] = {}
         self._locales: dict[str, tuple[VistaPreviaLocal, LectorWebcam]] = {}
         self.inventario_enviado = False
+        # The activity log (US-33): what the app changed (heard here) and «Elegir aquí».
+        self.al_actividad: Callable[[str, str], None] = lambda _texto, _quien: None
         self._detenido = threading.Event()
         self._despertar = threading.Event()
         self._pendiente_sincronizar = threading.Event()
@@ -354,6 +356,22 @@ class SupervisorCamaras:
             self.camaras[camara.camara_id] = camara
             if not camara.en_uso:
                 self.elegidas_aqui.discard(camara.camara_id)
+        if camara.en_uso and (
+            anterior is None
+            or not anterior.en_uso
+            or anterior.nombre_habitacion != camara.nombre_habitacion
+        ):
+            self.al_actividad(
+                f"La familia eligió desde la app la {camara.nombre_dispositivo} para "
+                f"{_arte(camara.nombre_habitacion or '')}",
+                "app",
+            )
+        elif not camara.en_uso and anterior is not None and anterior.en_uso:
+            self.al_actividad(
+                f"La familia dejó de usar desde la app la {camara.nombre_dispositivo} "
+                f"{_del(anterior.nombre_habitacion or '')}",
+                "app",
+            )
         if camara.en_uso:
             logger.info(
                 "La familia eligió la cámara %s para %s",
@@ -448,6 +466,16 @@ class SupervisorCamaras:
             )
         with self._candado:
             self.elegidas_aqui.add(camara.camara_id)
+        antes = conocida.nombre_habitacion if conocida is not None and conocida.en_uso else None
+        self.al_actividad(
+            f"Desde esta PC: la cámara {camara.nombre_dispositivo} pasó "
+            + (
+                f"de {antes} a {camara.nombre_habitacion}"
+                if antes
+                else f"a {camara.nombre_habitacion}"
+            ),
+            "pc",
+        )
         logger.info(
             "Desde esta PC: la cámara %s cuida ahora %s",
             camara.nombre_dispositivo,
@@ -466,6 +494,11 @@ class SupervisorCamaras:
         with self._candado:
             camara = self.camaras.get(camara_id)
             if camara is not None:
+                self.al_actividad(
+                    f"Desde esta PC: la cámara {camara.nombre_dispositivo} ya no cuida "
+                    f"{_arte(camara.nombre_habitacion or '')}",
+                    "pc",
+                )
                 self.camaras[camara_id] = camara.model_copy(
                     update={"en_uso": False, "nombre_habitacion": None, "token": None}
                 )
@@ -619,3 +652,22 @@ class SupervisorCamaras:
             vencidas = [d for d, p in self._previas.items() if not p.vigente()]
         for dispositivo_id in vencidas:
             self.previa_remota(dispositivo_id, False)
+
+
+_ARTE = {
+    "sala": "la Sala",
+    "dormitorio": "el Dormitorio",
+    "cocina": "la Cocina",
+    "comedor": "el Comedor",
+    "pasillo": "el Pasillo",
+}
+
+
+def _arte(habitacion: str) -> str:
+    """proto.js ``ROOM_ART``: «la Sala», «el Dormitorio», «Sala comedor» in quotes."""
+    return _ARTE.get(habitacion.strip().lower(), f"«{habitacion}»")
+
+
+def _del(habitacion: str) -> str:
+    texto = _arte(habitacion)
+    return "del " + texto[3:] if texto.startswith("el ") else "de " + texto

@@ -57,6 +57,9 @@ src/te_tengo_captura/
 ├── agente.py                    an installation's camera: builds and runs its worker threads
 ├── agente_pc.py                 a linked PC: its heartbeat, control channel, cameras and unlink
 ├── camaras.py                   a linked PC's cameras: inventory, the owner's assignments, one agent each
+├── diario.py                    advanced mode: plain-language live log (logging handler, ring buffer), meters
+├── actividad.py                 the PC's append-only activity log, sent to the API
+├── diagnostico.py               «Exportar diagnóstico»: zip without secrets, images or landmarks
 ├── vinculacion/                 PC link: OAuth device grant, keychain store, session, QR (US-28, US-31)
 ├── estado.py                    EstadoAgente: priority and Spanish copy of the window and tray
 ├── sistema.py                   the PC's name and operating system (window, PC link)
@@ -93,6 +96,8 @@ src/te_tengo_captura/
 **PC link** (US-28, US-31, ADR 0009 of the API): with no installation credential, `Coordinador` starts `Vinculador` (`vinculacion/maquina.py`), which asks for a code and polls the token endpoint every `interval` (adding 5 s on `slow_down`, asking for a new code on `expired_token`/`invalid_grant`, stopping on `access_denied`). On approval the tokens go to the OS credential store (`vinculacion/credenciales.py`) and `AgentePc` starts: `SesionPc` renews the access token five minutes before it expires with the rotating refresh token (one at a time, never presenting a used one), `LatidoPc` sends `POST /api/agente/pc/senal` every 30 s and a `CanalTransmision` with the PC's token hears `{"desvincular":true}`. Any unlink signal (that message, `401 PC_DESVINCULADA`, `invalid_grant`) reaches `Coordinador._al_desvincular`, which stops capture at once, then in its own thread stops the threads, deletes the credentials and the outbox state, and shows «Esta PC se quitó…». An installation's `Agente` reports the same signals.
 
 **Cameras of a linked PC** (US-29): `SupervisorCamaras` lists the webcams every 5 s (`captura/dispositivos.py`, by the OS unique id) and sends the whole inventory when the set changes. The API answers every webcam of the PC with its room and, for those in use, a token; the supervisor starts one `Agente` per camera in use (its own `FuenteWebcamPorId`, which resolves the OpenCV index from the id each time it opens, its own `EstimadorMediaPipe` in VIDEO mode, outbox in `camaras/<camaraId>/`, heartbeat, live view and channel) and stops the others. `{"camara":…}` on the PC's channel and `GET …/camaras` after every reconnection feed the same reconciliation. A camera's `401` asks the PC's `SesionPc` for new tokens (`POST …/camaras/tokens`, also run after every renewal of the PC's tokens); a camera's `401 PC_DESVINCULADA` or `desvincular` only means that camera left its room unless the PC's own token says the PC left.
+
+**Advanced mode** (US-32 to US-34): `BucleCaptura` hands every analysed frame (`Analisis`: frame, pose, classifier, events) to its observers. Each camera's `Narrador` turns the analysis and the connection changes into plain-language log records with `extra={"diario": …}`; `ManejadorDiario` (a handler on the root logger) keeps them in `Diario`'s ring buffer per camera only while the mode is on, and the window reads the new lines twice per second. `Narrador` also keeps the latest `Medicion` for the meters. `RegistroActividad` appends the PC's changes to `actividad.jsonl` and sends the API's types after each PC heartbeat.
 
 **Startup**: single-instance check → logging → configuration → agent → splash (real steps: threads, webcam, first heartbeat) → status window. Closing or minimizing hides the window to the tray; «Salir» in the tray menu stops everything.
 

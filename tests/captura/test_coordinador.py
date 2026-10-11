@@ -235,3 +235,45 @@ def test_una_instalacion_quitada_deja_de_capturar_y_olvida_su_credencial(
     assert c.estado().a_json()["who"] == "Rosa Huamán"
     c.vincular_de_nuevo()
     esperar(lambda: c.estado().pantalla is Pantalla.VINCULAR)
+
+
+def test_modo_avanzado_apagado_por_defecto_y_anotado(e: Escenario) -> None:
+    c = e.vincular()
+    c.ir_a_estado()
+    assert c.modo_avanzado is False  # CA-32.1
+    assert c.estado().a_json()["advanced"] is False
+    assert c.registro("x", 0) == []
+    assert c.cambiar_modo_avanzado(True)
+    assert c.diario.activo
+    assert c.estado().a_json()["advanced"] is True
+    lista = c.lista_actividad()
+    assert lista[0]["m"] == "Desde esta PC: se activó el modo avanzado"
+    assert lista[0]["who"] == "pc"
+    assert c.pc is not None
+    c.pc.reintentar_ahora()  # the heartbeat sends what is pending
+    esperar(lambda: any(a["tipo"] == "MODO_AVANZADO_ACTIVADO" for a in e.falso.actividad.values()))
+    esperar(lambda: not c.lista_actividad()[0]["pend"])
+    esperar(lambda: any("vinculó la PC" in a["m"] for a in c.lista_actividad()))
+    c.cambiar_modo_avanzado(False)
+    assert not c.diario.activo
+
+
+def test_diagnostico_desde_el_coordinador(e: Escenario, tmp_path: Path) -> None:
+    c = e.vincular()
+    c.ir_a_estado()
+    nombre = c.nombre_diagnostico()
+    assert nombre.startswith("te-tengo-diagnostico-")
+    assert nombre.endswith(".zip")
+    r = c.exportar_diagnostico(tmp_path / nombre)
+    assert r["ok"] is True
+    assert r["tamano"] > 0
+    import zipfile
+
+    with zipfile.ZipFile(tmp_path / nombre) as archivo:
+        datos = json.loads(archivo.read("diagnostico.json"))
+        contenido = b"".join(archivo.read(n) for n in archivo.namelist())
+    assert datos["modo"] == "pc"
+    assert datos["programa"] == "Te Tengo Captura 0.5.0"
+    assert c.pc is not None
+    for secreto in c.pc.sesion.secretos():
+        assert secreto.encode() not in contenido

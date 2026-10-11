@@ -87,6 +87,7 @@ class BackendFalso:
     ambientes: dict[str, str] = field(default_factory=dict)  # ambienteId → name
     otra_pc_ambientes: dict[str, str] = field(default_factory=dict)  # name → other PC's name
     inventarios: list[list[dict[str, Any]]] = field(default_factory=list)
+    actividad: dict[str, dict[str, Any]] = field(default_factory=dict)  # US-33, by id
     _tokens_camara: dict[str, str] = field(default_factory=dict)  # token → camaraId
     _retirados: set[str] = field(default_factory=set)
     _codigos: dict[str, dict[str, Any]] = field(default_factory=dict)  # device_code → request
@@ -469,6 +470,22 @@ class BackendFalso:
         if (metodo, ruta) == ("POST", rutas_pc.RUTA_SENAL_PC):
             self.senales_pc.append(_cuerpo(solicitud))
             return httpx.Response(200, json=self._pc_del_agente())
+        if (metodo, ruta) == ("POST", rutas_pc.RUTA_ACTIVIDAD):
+            cambios = _cuerpo(solicitud).get("cambios", [])
+            permitidos = {
+                "MODO_AVANZADO_ACTIVADO",
+                "MODO_AVANZADO_DESACTIVADO",
+                "GUARDADO_LOCAL_CAMBIADO",
+                "DATOS_LOCALES_ELIMINADOS",
+            }
+            if len(cambios) > 100 or any(c.get("tipo") not in permitidos for c in cambios):
+                return _problema(400, "VALIDACION", "Cambio inválido")
+            repetidos = sum(1 for c in cambios if c["id"] in self.actividad)
+            for cambio in cambios:
+                self.actividad.setdefault(cambio["id"], cambio)
+            return httpx.Response(
+                200, json={"registrados": len(cambios) - repetidos, "repetidos": repetidos}
+            )
         if (metodo, ruta) == ("DELETE", rutas_pc.RUTA_PC):
             self.desvinculaciones.append(
                 {"via": "delete", "datos": solicitud.url.params.get("datosLocalesBorrados")}

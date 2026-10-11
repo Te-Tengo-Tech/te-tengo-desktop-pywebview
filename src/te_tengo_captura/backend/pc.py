@@ -48,6 +48,7 @@ RUTA_INVENTARIO = "/api/agente/pc/camaras/inventario"
 RUTA_CAMARAS = "/api/agente/pc/camaras"
 RUTA_TOKENS = "/api/agente/pc/camaras/tokens"
 RUTA_AMBIENTES = "/api/agente/ambientes"
+RUTA_ACTIVIDAD = "/api/agente/pc/actividad"
 
 
 class Sesion(Protocol):
@@ -106,6 +107,10 @@ class ClientePc:
 
     def dejar_de_usar(self, camara_id: str) -> None:
         self.autenticado("DELETE", f"{RUTA_CAMARAS}/{camara_id}")
+
+    def actividad(self, cambios: list[dict[str, Any]]) -> None:
+        """The PC's own changes for the activity log (US-33), also those made offline."""
+        self.autenticado("POST", RUTA_ACTIVIDAD, json={"cambios": cambios})
 
     def cerrar(self) -> None:
         self._http.close()

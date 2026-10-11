@@ -121,6 +121,24 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         def dejar_de_usar(self, c: str) -> dict[str, object]:
             return {"ok": False}
 
+        def cambiar_modo_avanzado(self, activar: bool) -> bool:
+            return activar
+
+        def registro(self, c: str, u: int) -> list[dict[str, object]]:
+            return []
+
+        def medidores(self, c: str) -> None:
+            return None
+
+        def lista_actividad(self) -> list[dict[str, object]]:
+            return []
+
+        def nombre_diagnostico(self) -> str:
+            return "x.zip"
+
+        def exportar_diagnostico(self, destino: Path) -> dict[str, object]:
+            return {"ok": False}
+
     agente = AgenteFalso()
     pasos = [arranque.Paso(22, 0, lambda: True), arranque.Paso(100, 2, lambda: True)]
     monkeypatch.setattr(arranque, "pasos", lambda _: pasos)

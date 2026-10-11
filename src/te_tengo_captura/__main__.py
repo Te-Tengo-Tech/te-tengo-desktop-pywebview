@@ -15,6 +15,7 @@ from te_tengo_captura.captura.dispositivos import FuenteWebcamPorId
 from te_tengo_captura.captura.fuentes import FuenteArchivo, FuenteVideo, FuenteWebcam
 from te_tengo_captura.captura.pose import EstimadorMediaPipe, ruta_modelo_predeterminada
 from te_tengo_captura.coordinador import Coordinador
+from te_tengo_captura.diario import Diario, ManejadorDiario
 from te_tengo_captura.instancia import Instancia
 from te_tengo_captura.vinculacion.credenciales import AlmacenCredenciales, LlaveroEnMemoria
 
@@ -111,7 +112,9 @@ def _nada() -> None:
 
 
 def construir(
-    args: argparse.Namespace, configuracion: config.Configuracion | config.AjustesPc
+    args: argparse.Namespace,
+    configuracion: config.Configuracion | config.AjustesPc,
+    diario: Diario | None = None,
 ) -> Coordinador:
     """The installation, or a PC that links with a code (US-28) when there is no credential."""
     modelo = args.modelo or ruta_modelo_predeterminada()
@@ -168,6 +171,8 @@ def construir(
         transporte=falso.transporte() if falso is not None else None,
         canal_pc=falso is None,
         fabrica=camaras,
+        diario=diario,
+        registros=args.logs or rutas.logs(),
     )
 
 
@@ -187,6 +192,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ruta_log = registro.configurar(
         args.logs or rutas.logs(), lambda: [s for fuente in secretos for s in fuente()]
     )
+    # The advanced mode's live log (US-32): a handler that keeps the cameras' lines in memory.
+    diario = Diario()
+    logging.getLogger().addHandler(ManejadorDiario(diario))
     logger.info("Te Tengo Captura %s; registro en %s", __version__, ruta_log)
     if args.autoprueba:
         from te_tengo_captura import autoprueba
@@ -203,7 +211,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if isinstance(configuracion, config.Configuracion):
             credencial = configuracion.credencial_instalacion.get_secret_value()
             secretos.append(lambda: [credencial])
-        agente = construir(args, configuracion)
+        agente = construir(args, configuracion, diario)
         secretos.append(agente.secretos)
     except (config.ConfiguracionInvalidaError, FileNotFoundError) as error:
         logger.error("%s", error)
