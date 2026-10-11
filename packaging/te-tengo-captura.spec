@@ -92,7 +92,11 @@ a = Analysis(
 # C++ headers and Cython sources.
 a.binaries = [b for b in a.binaries if not any(f in Path(b[0]).name for f in LIBS_ARROW_SOBRANTES)]
 a.datas = [
-    d for d in a.datas if not (d[0].startswith("pyarrow") and (d[0].endswith(SOBRANTES_ARROW) or "/include/" in d[0].replace("\\", "/")))
+    d
+    for d in a.datas
+    # the symlinks to the dropped libraries live here too (codesign rejects a broken one)
+    if not any(f in Path(d[0]).name for f in LIBS_ARROW_SOBRANTES)
+    and not (d[0].startswith("pyarrow") and (d[0].endswith(SOBRANTES_ARROW) or "/include/" in d[0].replace("\\", "/")))
 ]
 pyz = PYZ(a.pure)
 exe = EXE(
