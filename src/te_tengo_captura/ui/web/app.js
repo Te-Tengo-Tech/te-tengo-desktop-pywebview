@@ -267,7 +267,7 @@
   function peekNotice(E, here){
     const d = (E.devices || []).find(x => x.peek);
     if(!d) return '';
-    return '<div class="notice info peek-n" role="status"><span class="led" aria-hidden="true"></span><div><b>'+(here ? 'Un familiar está viendo esta cámara para elegirla' : 'Un familiar está viendo la '+esc(d.name)+' para elegirla')+'</b><span>No se graba y queda en el registro de la familia.</span></div></div>';
+    return '<div class="notice info peek-n" role="status"><span class="led" aria-hidden="true"></span><div><b>'+(here ? 'Un familiar mira esta cámara para elegirla' : 'Un familiar mira la '+esc(d.name)+' para elegirla')+'</b><span>No se graba · queda registrado</span></div></div>';
   }
   function panelEstado(E, U){
     const list = E.cams.length ? '<ul class="crows" aria-label="Cámaras de esta PC">'+E.cams.map(camRow).join('')+'</ul>' : '';
@@ -324,8 +324,8 @@
       const on = !otherOn && room!=null && norm(room)===norm(x);
       return '<button class="chip2'+(on?' sel':'')+'" aria-pressed="'+on+'" data-act="pickRoom" data-arg="'+esc(x)+'">'+(on?ic('check'):'')+esc(x)+'</button>';
     }).join('') + '<button class="chip2'+(otherOn?' sel':'')+'" aria-pressed="'+otherOn+'" data-act="pickOther">'+(otherOn?ic('check'):'')+'Otra…</button>';
-    const errs = {empty:'Escribe el nombre de la habitación.', bath:'Por privacidad, Te Tengo no admite cámaras en el baño.',
-      dup:'Ya hay una cámara en la habitación '+esc(pk.errRoom||'')+' (PC '+esc(pk.errPc||'')+'). Por ahora, cada habitación usa una sola cámara.',
+    const errs = {empty:'Escribe el nombre de la habitación.', bath:'Por privacidad, no se admiten cámaras en el baño.',
+      dup:esc(pk.errRoom||'')+' ya tiene cámara (PC '+esc(pk.errPc||'')+'). Una cámara por habitación.',
       net:'Aún sin internet.'};
     const err = pk.err ? errs[pk.err] : '';
     const changed = r ? (room && norm(room)!==norm(r)) : (otherOn || !!room);
@@ -335,21 +335,20 @@
       '<span class="rooms-l" id="rooms-l">¿En qué habitación está?</span><div class="chips2" role="group" aria-labelledby="rooms-l">'+chips+'</div>'+
       (otherOn ? '<div class="other-row field'+(err?' err':'')+'"><label class="sr" for="room-other">Nombre de la habitación</label><input class="input" id="room-other" value="'+esc(pk.other || (custom ? r : ''))+'" placeholder="Por ejemplo, Sala comedor" autocomplete="off"'+(err?' aria-invalid="true" aria-describedby="room-err"':'')+'></div>' : '')+
       (err ? '<p class="field-msg err-msg" id="room-err" role="alert">'+ic('warn')+'<span>'+err+'</span></p>' : '')+
-      '<p class="help-l">'+ic('info')+'Por privacidad, Te Tengo no admite cámaras en el baño.</p>'+
+      '<p class="help-l">'+ic('info')+'Por privacidad, no se admiten cámaras en el baño.</p>'+
       '<div class="pane-actions">'+(r ? '<button class="btn btn-danger-ghost btn-sm" data-act="unuse">Dejar de usar</button>' : '')+primary+'</div></div>';
   }
   function panelCamaras(E, U){
     const devs = E.devices, any = E.cams.length, here = U.here && E.unlink && devs.length;
-    const meta = here ? 'Elige cada cámara, mira su vista previa y di en qué habitación está. La familia lo verá en la app.'
-      : !devs.length ? 'Las habitaciones se eligen desde la app Te Tengo, en tu celular.'
-      : any ? 'Cada cámara con su habitación. Las habitaciones se eligen desde la app Te Tengo, en tu celular.'
-      : 'Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'. Elígelas desde la app Te Tengo, en tu celular.';
+    const meta = here ? 'Elige la habitación de cada cámara. La familia lo verá en la app.'
+      : !devs.length || any ? 'Las habitaciones se eligen en la app.'
+      : 'Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'. Elígelas en la app.';
     const head = '<header class="p-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">'+(here?'Elegir aquí, si estás instalando':'Cámaras de esta PC')+'</h1><p class="t-meta">'+meta+'</p></div>'+
       (here ? '<button class="btn btn-secondary btn-sm" data-act="hereOff">'+ic('back')+'Volver</button>' : '')+'</header>';
     if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">No encontramos cámaras</h2>'+
       '<p class="t-small">Conecta una webcam por USB.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc(E);
     const sel = selDev(E, U);
-    const peekRow = d => !here && d.peek ? '<span class="peek"><span class="led" aria-hidden="true"></span><span>Un familiar está viendo esta cámara para elegirla · No se graba</span></span>' : '';
+    const peekRow = d => !here && d.peek ? '<span class="peek"><span class="led" aria-hidden="true"></span><span>Un familiar la mira para elegirla · No se graba</span></span>' : '';
     const rows = devs.map(d => '<button class="cpick'+(!d.connected?' lost':'')+(!here && d.peek?' peeking':'')+'" role="radio" aria-checked="'+(d===sel)+'" tabindex="'+(d===sel?0:-1)+'" data-act="selCam" data-arg="'+esc(d.id)+'">'+
       '<span class="thumb art'+(!d.connected||d.busy?' dim':'')+'">'+roomSVG(d.room || '')+'</span><span class="grow"><b>'+esc(d.name)+'</b>'+devTag(d)+'</span>'+peekRow(d)+'</button>').join('');
     const many = here && E.cams.length >= 3 ? '<p class="many">'+ic('info')+'<span>Si la detección va lenta, pasa alguna cámara a otra PC.</span></p>' : '';
@@ -536,7 +535,7 @@
       U.busy = true; render();
       call('usarAqui', [d.uid || d.id, amb ? amb.id : null, amb ? null : nombre]).then(r => {
         U.busy = false;
-        if(r && r.ok){ U.pick = {room:null, otherOn:false, other:'', err:null}; toast('ok', 'check', 'La cámara '+d.name+' cuida ahora '+ROOM_ART(nombre)); call('ambientes').then(x => { U.rooms = x || []; }); return; }
+        if(r && r.ok){ U.pick = {room:null, otherOn:false, other:'', err:null}; toast('ok', 'check', d.name+' cuida ahora '+ROOM_ART(nombre)); call('ambientes').then(x => { U.rooms = x || []; }); return; }
         const c = r && r.codigo;
         U.pick.err = c==='AMBIENTE_OCUPADO' ? 'dup' : c==='AMBIENTE_NO_PERMITIDO' ? 'bath' : c==='AMBIENTE_NOMBRE_VACIO' ? 'empty' : 'net';
         U.pick.errRoom = r && r.ambiente || nombre; U.pick.errPc = r && r.pc || E.pc.nombre; render();
@@ -545,7 +544,7 @@
     unuse(){
       const d = E.devices.find(x => x.id===U.sel); if(!d || !d.room) return;
       U.busy = true; render();
-      call('dejarDeUsar', d.id).then(r => { U.busy = false; if(r && r.ok) toast('ok', 'check', 'La cámara '+d.name+' ya no cuida '+ROOM_ART(d.room)+'.'); else { U.pick.err = 'net'; render(); } });
+      call('dejarDeUsar', d.id).then(r => { U.busy = false; if(r && r.ok) toast('ok', 'check', d.name+' ya no cuida '+ROOM_ART(d.room)+'.'); else { U.pick.err = 'net'; render(); } });
     },
     toEstado(){ U.tab = 'estado'; call('irAEstado').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },
     otherCode(){ call('otroCodigo').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },

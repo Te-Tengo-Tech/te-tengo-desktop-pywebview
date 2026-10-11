@@ -190,7 +190,7 @@ def test_sigue_las_asignaciones_del_celular(e: Escenario) -> None:
     esperar(cuidando)
     final = e.coordinador.estado().agente
     assert final is not None
-    assert final.aviso.titulo_html == "Te Tengo está cuidando 2 habitaciones"
+    assert final.aviso.titulo_html == "Te Tengo cuida 2 habitaciones"
     # «Dejar de usar» in the app: it stops at once and its room is free.
     e.falso.dejar_de_usar_desde_app(sala)
     e.mensaje_de_la_app(sala)
@@ -259,7 +259,7 @@ def test_elegir_aqui_con_las_reglas_de_la_app(e: Escenario) -> None:
     camara_id = next(iter(e.supervisor.agentes))
     assert e.supervisor.agentes[camara_id].ajustes.elegida_desde == "pc"
     sala = next(d for d in e.coordinador.estado().a_json()["devices"] if d["room"] == "Sala")
-    assert sala["by"] == "pc"  # «Elegida desde esta PC»
+    assert sala["by"] == "pc"  # «Elegida en esta PC»
     ocupada = e.coordinador.usar_aqui("usb-046d-082d", None, "Sala")
     assert ocupada == {
         "ok": False,
@@ -287,7 +287,7 @@ def test_vista_previa_de_una_webcam_sin_usar_pedida_desde_la_app(e: Escenario) -
     dispositivo = next(
         d for d in e.coordinador.estado().a_json()["devices"] if d["uid"] == "usb-046d-082d"
     )
-    assert dispositivo["peek"] is True  # «Un familiar está viendo esta cámara para elegirla»
+    assert dispositivo["peek"] is True  # «Un familiar mira esta cámara para elegirla»
     esperar(lambda: publicados.urls)
     assert publicados.urls[0].startswith("rtsp://agente:clave@m/")
     e.supervisor.previa_remota("usb-046d-082d", False)

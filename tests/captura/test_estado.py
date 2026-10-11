@@ -331,6 +331,6 @@ def test_bandeja_violeta_cuando_miran_una_camara_para_elegirla() -> None:
     estado_ = derivar(cambiar(e, webcams=(mirada,)), HOGAR, PC, "0.5.0")
     assert (estado_.bandeja.k, estado_.bandeja.etiqueta) == (
         "live",
-        "Un familiar está viendo una cámara para elegirla",
+        "Un familiar mira una cámara para elegirla",
     )
     assert estado_.a_json()["devices"][0]["peek"] is True

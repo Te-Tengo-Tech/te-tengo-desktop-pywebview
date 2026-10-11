@@ -429,7 +429,7 @@ def _estado_camara(c: CamaraEntradas, e: Entradas, pausa: str | None) -> EstadoC
 def _bandeja(s: Situacion, e: Entradas, pausas: dict[str, str]) -> EstadoBandeja:
     camaras = e.camaras
     if any(w.mirando for w in e.webcams):
-        return EstadoBandeja("live", f"{QUIEN_MIRA} está viendo una cámara para elegirla")
+        return EstadoBandeja("live", f"{QUIEN_MIRA} mira una cámara para elegirla")
     if s in (Situacion.SIN_CAMARAS, Situacion.FALTA_ELEGIR):
         return EstadoBandeja("warn", "falta elegir las cámaras en la app")
     if s is Situacion.WEBCAM_DESCONECTADA:
