@@ -1,27 +1,23 @@
 import sys
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from PIL import Image
 
 from te_tengo_captura.bandeja.avisos import Avisos
-from te_tengo_captura.bandeja.iconos import MORADO, PUNTOS, icono
-from te_tengo_captura.config import Configuracion
-from te_tengo_captura.estado import Entradas, EstadoAgente, Notificacion, derivar
+from te_tengo_captura.bandeja.iconos import CORAL, MORADO, PUNTOS, icono, poligono
+from te_tengo_captura.estado import EstadoAgente, Notificacion
+from tests.captura.estados import camara
+from tests.captura.estados import estado as estado_de
 from tests.captura.ui.pystray_falso import PystrayFalso
 
+PAUSA = datetime(2026, 10, 7, 20, 0, tzinfo=UTC)
+VIVO = datetime(2026, 10, 7, 19, 0, tzinfo=UTC)
 
-def estado(configuracion: Configuracion, **cambios: object) -> EstadoAgente:
-    base: dict[str, object] = {
-        "webcam_conectada": True,
-        "en_linea": True,
-        "consentimiento": True,
-        "pausada_hasta": None,
-        "segundos_desde_envio": 2,
-        "segundos_para_reintento": 8,
-        "nombre_habitacion": "Sala",
-    }
-    return derivar(Entradas(**{**base, **cambios}), configuracion, "1.0.0")  # type: ignore[arg-type]
+
+def estado(**cambios: Any) -> EstadoAgente:
+    return estado_de(camara(**cambios))
 
 
 def _rgb(hexadecimal: str) -> tuple[int, int, int]:
@@ -38,53 +34,83 @@ def _cerca(a: tuple[int, ...], b: tuple[int, ...], tolerancia: int = 12) -> bool
     return all(abs(x - y) <= tolerancia for x, y in zip(a, b, strict=False))
 
 
-@pytest.mark.parametrize("punto", ["ok", "idle", "warn"])
+@pytest.mark.parametrize("punto", ["ok", "idle", "warn", "live"])
 def test_icono_con_el_punto_de_estado(punto: str) -> None:
     imagen = icono(punto, 64)
     assert imagen.size == (64, 64)
     assert imagen.mode == "RGBA"
     assert pixel(imagen, (0, 0))[3] == 0  # rounded corner: transparent
-    assert _cerca(pixel(imagen, (10, 32))[:3], _rgb(MORADO))
-    assert _cerca(pixel(imagen, (32, 21))[:3], _rgb("#FFB59C"))  # the dot of the symbol
-    assert _cerca(pixel(imagen, (32, 44))[:3], (255, 255, 255))  # the stem
+    assert _cerca(pixel(imagen, (6, 32))[:3], _rgb(MORADO))
+    assert _cerca(pixel(imagen, (27, 18))[:3], (255, 255, 255))  # the hugging figure's head
+    assert _cerca(pixel(imagen, (39, 24))[:3], _rgb(CORAL))  # the hugged figure's head
     assert _cerca(pixel(imagen, (54, 54))[:3], _rgb(PUNTOS[punto]))
+
+
+def test_icono_sin_vincular_lleva_un_anillo_vacio() -> None:
+    imagen = icono("off", 64)
+    assert _cerca(pixel(imagen, (54, 54))[:3], (255, 255, 255))
+    assert _cerca(pixel(imagen, (54, 43))[:3], _rgb("#8E879C"), tolerancia=20)
 
 
 def test_icono_sin_punto() -> None:
     assert _cerca(pixel(icono(None, 64), (54, 54))[:3], _rgb(MORADO))
 
 
-def test_aviso_al_cerrar_solo_la_primera_vez(configuracion: Configuracion) -> None:
+def test_las_curvas_del_simbolo_se_aplanan() -> None:
+    puntos = poligono("M0 0 C0 10 10 10 10 0Z", pasos=4)
+    assert puntos[0] == (0.0, 0.0)
+    assert puntos[-1] == (10.0, 0.0)
+    assert len(puntos) == 5
+    assert puntos[2] == (5.0, 7.5)  # the middle of the cubic
+
+
+def test_aviso_al_cerrar_solo_la_primera_vez() -> None:
     avisos: list[Notificacion] = []
-    a = Avisos(configuracion, avisos.append)
-    a.ventana_oculta(estado(configuracion))
+    a = Avisos(avisos.append)
+    a.ventana_oculta(estado())
     a.ventana_mostrada()
-    a.ventana_oculta(estado(configuracion))
+    a.ventana_oculta(estado())
     assert avisos == [
         Notificacion(
-            "Te Tengo Captura sigue funcionando en segundo plano",
-            "Sigue enviando el video de la cámara. Ábrelo desde su ícono, junto al reloj.",
+            "Sigue funcionando en segundo plano",
+            "Cuida la sala. Ábrelo junto al reloj.",
         )
     ]
 
 
-def test_aviso_de_webcam_desconectada_con_la_ventana_cerrada(configuracion: Configuracion) -> None:
+def test_aviso_de_camara_desconectada_con_la_ventana_cerrada() -> None:
     avisos: list[Notificacion] = []
-    a = Avisos(configuracion, avisos.append)
-    a.ventana_oculta(estado(configuracion))
+    a = Avisos(avisos.append)
+    a.ventana_oculta(estado())
     avisos.clear()
-    a.estado(estado(configuracion, webcam_conectada=False))
-    a.estado(estado(configuracion, webcam_conectada=False))  # not repeated every second
-    assert [n.titulo for n in avisos] == ["La webcam se desconectó"]
-    a.estado(estado(configuracion))
-    a.estado(estado(configuracion, webcam_conectada=False))  # a new disconnection
+    a.estado(estado(webcam_conectada=False))
+    a.estado(estado(webcam_conectada=False))  # not repeated every second
+    assert [n.titulo for n in avisos] == ["La cámara de la sala no responde"]
+    a.estado(estado())
+    a.estado(estado(webcam_conectada=False))  # a new disconnection
     assert len(avisos) == 2
 
 
-def test_sin_aviso_de_webcam_con_la_ventana_abierta(configuracion: Configuracion) -> None:
+def test_aviso_de_vista_en_vivo_con_la_ventana_cerrada() -> None:
     avisos: list[Notificacion] = []
-    a = Avisos(configuracion, avisos.append)
-    a.estado(estado(configuracion, webcam_conectada=False))
+    a = Avisos(avisos.append)
+    a.ventana_oculta(estado())
+    avisos.clear()
+    a.estado(estado(en_vivo_desde=VIVO))
+    a.estado(estado(en_vivo_desde=VIVO))
+    assert avisos == [
+        Notificacion(
+            "Un familiar está viendo la sala en vivo",
+            "No se graba · queda registrado.",
+        )
+    ]
+
+
+def test_sin_avisos_con_la_ventana_abierta() -> None:
+    avisos: list[Notificacion] = []
+    a = Avisos(avisos.append)
+    a.estado(estado(webcam_conectada=False))
+    a.estado(estado(en_vivo_desde=VIVO))
     assert avisos == []
 
 
@@ -95,7 +121,7 @@ def pystray(monkeypatch: pytest.MonkeyPatch) -> PystrayFalso:
     return falso
 
 
-def test_icono_de_bandeja(pystray: PystrayFalso, configuracion: Configuracion) -> None:
+def test_icono_de_bandeja(pystray: PystrayFalso) -> None:
     from te_tengo_captura.bandeja.icono import IconoBandeja
 
     llamadas: list[str] = []
@@ -111,15 +137,14 @@ def test_icono_de_bandeja(pystray: PystrayFalso, configuracion: Configuracion) -
 
     bandeja.iniciar()
     assert icono_.corriendo
-    bandeja.actualizar(estado(configuracion))
-    assert icono_.title == "Te Tengo Captura · enviando video de la cámara de la sala"
+    bandeja.actualizar(estado())
+    assert icono_.title == "Te Tengo Captura · cuidando la sala"
     imagen = icono_.icon
-    bandeja.actualizar(estado(configuracion))
+    bandeja.actualizar(estado())
     assert icono_.icon is imagen  # not redrawn every second
-    pausa = datetime(2026, 10, 7, 20, 0, tzinfo=UTC)
-    bandeja.actualizar(estado(configuracion, pausada_hasta=pausa))
+    bandeja.actualizar(estado(pausada_hasta=PAUSA))
     assert icono_.icon is not imagen
-    assert icono_.title.startswith("Te Tengo Captura · en pausa hasta las ")
+    assert icono_.title.startswith("Te Tengo Captura · la sala en pausa hasta las ")
 
     bandeja.notificar(Notificacion("La webcam se desconectó", "Revisa…"))
     assert icono_.notificaciones == [("La webcam se desconectó", "Revisa…")]
@@ -140,7 +165,7 @@ def test_notificacion_fallida_no_rompe_nada(pystray: PystrayFalso) -> None:
 
 
 def test_en_macos_la_bandeja_se_actualiza_en_el_hilo_principal(
-    pystray: PystrayFalso, configuracion: Configuracion, monkeypatch: pytest.MonkeyPatch
+    pystray: PystrayFalso, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from types import ModuleType
 
@@ -156,7 +181,7 @@ def test_en_macos_la_bandeja_se_actualiza_en_el_hilo_principal(
     monkeypatch.setattr("te_tengo_captura.bandeja.icono.EN_MACOS", True)
 
     bandeja = IconoBandeja(lambda: None, lambda: None)
-    bandeja.actualizar(estado(configuracion))
+    bandeja.actualizar(estado())
     bandeja.notificar(Notificacion("t", "x"))
 
     icono_ = pystray.iconos[0]
@@ -164,5 +189,5 @@ def test_en_macos_la_bandeja_se_actualiza_en_el_hilo_principal(
     assert len(pendientes) == 2
     for accion in pendientes:
         accion()  # type: ignore[operator]
-    assert icono_.title.startswith("Te Tengo Captura · enviando")
+    assert icono_.title.startswith("Te Tengo Captura · cuidando")
     assert icono_.notificaciones == [("t", "x")]

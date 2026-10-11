@@ -99,12 +99,16 @@ The agent is built task by task from this checklist. An agent working autonomous
 - [x] **T19 Documentation.** Rewrite `README.md` for the agent (install, configure, run, package); update `docs/architecture.md` with a component diagram of `te_tengo_captura`; add `docs/INSTALLATION.md` for the project team (config file, webcam position as in the validation datasets, autostart).
 - [x] **T20 Live view v3** (US-23, approved on 2026-10-09). Live view at 15 fps (configurable) from every webcam frame, independent of the validated 8 fps detection sampling, with the skeleton from the latest pose; H.264 Constrained Baseline with a keyframe every 0.5 s and the first frame of every publication a keyframe (WebRTC playback); `{"preparar":true}` pre-warm for up to 60 s with no frame leaving the PC before `transmitir`; `--marca-tiempo` debug overlay for glass-to-glass measurements.
 
+### PCs, cameras and movement data (change request «PCs, cámaras y datos de movimiento», US-28 to US-39)
+Pending the advisor's approval; built ahead of it, additively: an installation with `config.toml` keeps working. Contract: `docs/AGENT_CONTRACT.md` (PC link, cameras of a linked PC, movement data, activity log). Design: the synthesized desktop prototype (`docs/references/desktop-prototype/`) and the brief (`docs/references/BRIEF-pcs-camaras-y-movimientos.md`).
+- [x] **T21 Synthesized window** (screens 00–09, 20, 23). The Te Tengo brand kit (cream, violet and coral, Poppins bundled, two figures hugging in the app and tray icons); tabs Estado · Cámaras; one summary band and one row per camera; «Datos de la instalación» folded; the live view indicator (summary band, violet tray dot, system notice); «Cámaras» with each webcam and a preview only seen on this PC.
+
 ## Local test checklist (for the team, after the cloud finishes)
 Run on a real PC; these need hardware the cloud does not have.
 1. `uv sync && make modelo && make revisar probar`.
 2. `make validar` reproduces the numbers in `docs/validation.md` (the core did not change).
-3. `uv run te-tengo-captura --backend-falso --config config.ejemplo.toml`: splash, then the status window in "Enviando".
-4. Unplug the webcam → state 05 and, with the window closed, notification 07; plug it back → resumes alone.
+3. `uv run te-tengo-captura --backend-falso --config config.ejemplo.toml`: splash, then the window's «Estado» tab with «Te Tengo cuida la sala».
+4. Unplug the webcam → state 05 and, with the window closed, notification 07; plug it back → resumes alone. Open «Cámaras»: the preview shows the real image, only on this PC.
 5. Turn off Wi-Fi → state 04 with the countdown; «Reintentar ahora» works; events made offline arrive later.
 6. With the real API running locally: consent missing → 03; pause from the mobile app → 02 and resumes at the hour.
 7. Simulate a fall in front of the webcam → event and clip reach the API; the mobile app gets the push.

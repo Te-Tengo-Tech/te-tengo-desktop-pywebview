@@ -47,6 +47,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Protocol
 from urllib.parse import urlsplit
 
@@ -208,8 +209,12 @@ class TransmisionEnVivo:
         reintento_maximo_s: float = REINTENTO_MAXIMO_S,
         reloj: Callable[[], float] = time.monotonic,
         reloj_pared: Callable[[], float] = time.time,
+        reloj_utc: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._permitida = permitida
+        self._reloj_utc = reloj_utc
+        # When the current live view was requested (the window and the tray say someone watches).
+        self.solicitada_desde: datetime | None = None
         self._abrir_publicador = abrir_publicador
         self._fps = fps
         self._marca_tiempo = marca_tiempo
@@ -299,6 +304,8 @@ class TransmisionEnVivo:
     def transmitir(self, url: str, usuario: str | None, clave: str | None, modo: ModoVista) -> None:
         partes = urlsplit(url)
         with self._candado:
+            if self._solicitud is None:
+                self.solicitada_desde = self._reloj_utc()
             self._solicitud = Solicitud(url, usuario, clave)
             self._modo = modo
             self._preparada_hasta = None
@@ -324,6 +331,7 @@ class TransmisionEnVivo:
             habia = self._solicitud is not None
             preparada = self._preparada_hasta is not None
             self._solicitud = None
+            self.solicitada_desde = None
             self._preparada_hasta = None
             self._modo = ModoVista.VIDEO
             self._generacion += 1

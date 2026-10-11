@@ -4,7 +4,6 @@ import shutil
 import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -25,11 +24,24 @@ class Llamadas:
 def test_el_puente_expone_solo_los_metodos_del_contrato() -> None:
     llamadas = Llamadas()
     puente = Puente(
-        lambda: {"situacion": "enviando"}, llamadas.ocultado, lambda: False, lambda: True
+        lambda: {"situacion": "cuidando"},
+        llamadas.ocultado,
+        lambda: False,
+        lambda: True,
+        lambda clave: b"\xff\xd8jpeg" if clave == "sala" else None,
     )
     publicos = {n for n in dir(puente) if not n.startswith("_")}
-    assert publicos == {"estado", "minimizar", "cerrar", "buscarWebcam", "reintentarAhora"}
-    assert puente.estado() == {"situacion": "enviando"}
+    assert publicos == {
+        "estado",
+        "minimizar",
+        "cerrar",
+        "buscarWebcam",
+        "reintentarAhora",
+        "vistaPrevia",
+    }
+    assert puente.estado() == {"situacion": "cuidando"}
+    assert puente.vistaPrevia("sala") == {"jpeg": "/9hqcGVn"}
+    assert puente.vistaPrevia("otra") == {"jpeg": None}
     puente.minimizar()
     puente.cerrar()
     assert llamadas.ocultar == 2  # both hide to the tray, neither stops the agent
@@ -65,6 +77,8 @@ def test_el_html_solo_usa_recursos_locales(pagina: str) -> None:
         assert (WEB / url).is_file(), url
     css = (WEB / "app.css").read_text(encoding="utf-8")
     for url in re.findall(r"url\(\"?([^\")]+)\"?\)", css):
+        if url.startswith("data:"):
+            continue  # inline images (the select's chevron): nothing is fetched
         assert not re.match(r"^([a-z]+:)?//", url), url
         assert (WEB / url).is_file(), url
     js = (WEB / "app.js").read_text(encoding="utf-8")
@@ -77,32 +91,25 @@ def test_fuentes_con_su_licencia() -> None:
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js no está instalado")
-def test_render_de_la_ventana_en_node(configuracion: Any) -> None:
+def test_render_de_la_ventana_en_node() -> None:
     from datetime import UTC, datetime
 
-    from te_tengo_captura.estado import Entradas, derivar
+    from tests.captura.estados import camara, estado
 
-    estados = {}
-    variantes: dict[str, dict[str, Any]] = {
-        "enviando": {},
-        "pausa": {"pausada_hasta": datetime(2026, 10, 7, 20, 0, tzinfo=UTC)},
-        "consentimiento": {"consentimiento": False},
-        "internet": {"en_linea": False},
-        "webcam": {"webcam_conectada": False},
-        "dormitorio": {"nombre_habitacion": "Dormitorio <b>"},
+    pausa = datetime(2026, 10, 7, 20, 0, tzinfo=UTC)
+    tres = (camara("Sala"), camara("Dormitorio"), camara("Pasillo"))
+    variantes = {
+        "uno": estado(camara()),
+        "tres": estado(*tres),
+        "pausa": estado(camara(pausada_hasta=pausa), camara("Dormitorio")),
+        "consentimiento": estado(camara(), consentimiento=False),
+        "internet": estado(camara(), en_linea=False),
+        "perdida": estado(camara(webcam_conectada=False), camara("Dormitorio")),
+        "vivo": estado(camara(en_vivo_desde=pausa)),
+        "html": estado(camara("Dormitorio <b>")),
+        "renombrada": estado(camara(nombre_habitacion="Sala comedor")),
     }
-    for nombre, cambios in variantes.items():
-        base: dict[str, Any] = {
-            "webcam_conectada": True,
-            "en_linea": True,
-            "consentimiento": True,
-            "pausada_hasta": None,
-            "segundos_desde_envio": 2,
-            "segundos_para_reintento": 8,
-            "nombre_habitacion": "Sala",
-        }
-        entradas = Entradas(**{**base, **cambios})
-        estados[nombre] = derivar(entradas, configuracion, "1.0.0").a_json()
+    estados = {nombre: e.a_json() for nombre, e in variantes.items()}
     resultado = subprocess.run(
         ["node", str(PRUEBA_JS), str(WEB / "app.js")],
         input=json.dumps(estados),

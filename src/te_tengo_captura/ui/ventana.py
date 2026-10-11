@@ -1,4 +1,4 @@
-"""The status window (screens 01–05): 960 × 640, not resizable, frameless with the prototype's
+"""The window (tabs Estado · Cámaras): 960 × 640, not resizable, frameless with the prototype's
 36 px title bar. Closing or minimizing hides it to the tray; it never stops the agent.
 
 pywebview is imported inside the methods, so this module loads without a display.
@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 WEB = Path(__file__).resolve().parent / "web"
 ANCHO, ALTO = 960, 640
-FONDO = "#EEF0F4"  # --ground, so no white flash before the page paints
-FONDO_ARRANQUE = "#4A2A85"  # --morado
+FONDO = "#FFF7F1"  # --ground (cream), so no white flash before the page paints
+FONDO_ARRANQUE = FONDO  # the splash is on cream too (brand kit)
 
 
 def script_actualizar(datos: dict[str, Any]) -> str:

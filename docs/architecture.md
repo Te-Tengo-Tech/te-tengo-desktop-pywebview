@@ -55,12 +55,13 @@ src/te_tengo_captura/
 ├── config.py                    fixed TOML installation file (platformdirs or --config)
 ├── agente.py                    composition root: builds and runs the worker threads
 ├── estado.py                    EstadoAgente: priority and Spanish copy of the window and tray
+├── sistema.py                   the PC's name and operating system (window, PC link)
 ├── latido.py                    heartbeat every 30 s; consent, pause and room name
 ├── umbrales_remotos.py          GET /api/agente/configuracion, hourly
 ├── backend/                     ClienteBackend, typed errors, BackendFalso, live view control channel
 ├── captura/                     sources, sampling, MediaPipe estimator, capture loop, live view
 ├── envios/                      persistent outbox (SQLite) and its sender thread
-├── ui/                          splash, status window, JS bridge; web/ (HTML, CSS, JS, fonts)
+├── ui/                          splash, window (tabs Estado · Cámaras), JS bridge; web/ (HTML, CSS, JS, Poppins)
 ├── bandeja/                     tray icon images, menu and notifications
 ├── instancia.py                 single instance (file lock + loopback socket)
 ├── autoinicio.py                per-user Run registry entry on Windows
@@ -81,7 +82,7 @@ src/te_tengo_captura/
 
 **Capture state** (heartbeat thread): every 30 s, or as soon as the webcam state changes, `POST /api/agente/senal` reports `webcamConectada` and `deteccionConfiable`. The answer updates consent, pause and room name. The state is stored on disk, so an offline restart honours it, and a pause ends on its own at its hour (CA-22.3). Offline, the heartbeat retries at 2, 4, 8 and 16 s, then every 30 s, and the window shows the countdown.
 
-**The window** (notifier thread → main thread): every second `Agente.estado()` derives an immutable `EstadoAgente`. Its priority is lost webcam › no internet › no consent › paused › sending. The window gets it with `ttg.actualizar(...)`, the tray updates its dot and tooltip, and `Avisos` decides the system notifications. The page patches its regions in place, so the countdown never moves the focus.
+**The window** (notifier thread → main thread): every second `Agente.estado()` derives an immutable `EstadoAgente` from the cameras of the PC. Its summary (`health`) has the priority a camera does not answer › no internet › no consent › a camera paused › someone watching live › all good, and each camera has its own row (`camStatus`). The window gets it with `ttg.actualizar(...)` and renders the tabs «Estado» and «Cámaras» of the synthesized prototype; the tray updates its dot (green, grey, amber, violet while someone watches) and tooltip, and `Avisos` decides the system notifications. The page only patches the countdown in place, so it never moves the focus. In «Cámaras» the window asks four times per second for the selected camera's preview (`vistaPrevia`): `VistaPreviaLocal` keeps the newest webcam frame in memory only while it is asked for and returns a small JPEG; nothing is written to disk or sent.
 
 **Live view** (control channel and publisher threads, US-23): `CanalTransmision` keeps the WebSocket `/api/agente/transmision` open with the camera token. On `{"transmitir":true,…}` `Captador` starts handing every frame the webcam delivers to `TransmisionEnVivo` (`ofrecer`, before the 8 fps detection sampling, which does not change), and the capture loop hands it each estimated pose (`anotar_pose`). `Ritmo` keeps one frame per slot of a 15 fps grid (configurable, `[vista_en_vivo] fps`) and the frame is only queued (two frames; the oldest is dropped when behind). The worker downscales it to 480p, draws the picture for the mode from the latest pose (`postura.componer`: the frame, the frame with the skeleton, or the skeleton alone on the brand purple with no camera pixels) and `PublicadorPyAV` encodes it as H.264 Constrained Baseline (keyframe every 0.5 s, the first frame of every publication included) and publishes it to `urlPublicacion` over RTSP/TCP. `{"preparar":true}` (the app opened the camera screen) warms everything local for up to 60 s without sending anything: PyAV and libx264 loaded and run once on a grey picture, the webcam frames flowing at 15 fps with only the newest kept in memory, the last publish host resolved again; `transmitir` then publishes that newest frame at once. `{"transmitir":false}`, a closed channel, or capture no longer allowed (the loop calls `suspender` and the worker checks the gate) close the publisher and drop the warm state at once. A failed publish retries at 1 s doubling up to 30 s. `--marca-tiempo` (or `[vista_en_vivo] marca_tiempo`) draws the capture time in milliseconds on the published picture, to measure glass-to-glass latency.
 

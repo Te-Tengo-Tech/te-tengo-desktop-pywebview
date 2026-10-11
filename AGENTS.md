@@ -15,7 +15,7 @@ The family manages everything else (consent, pauses, room name, alerts) in the m
 | What to build, and in which order | [docs/WORK_PLAN.md](docs/WORK_PLAN.md) — a checklist; follow the autonomous loop described there |
 | What the agent sends and receives (paths, bodies, errors) | [docs/AGENT_CONTRACT.md](docs/AGENT_CONTRACT.md) — **shared with the API; implement it exactly** |
 | How the classifier works and why | [docs/classification-spec.md](docs/classification-spec.md), [docs/validation.md](docs/validation.md), ADRs in [docs/adr/](docs/adr) |
-| What the window, splash and tray look like | `docs/references/desktop-prototype/`: `screens/00–07` PNGs, `DESIGN.md`, `PRODUCT.md` and the source `src/core.js`, `src/app.css` (exact Spanish copy, SVG icons and tokens) |
+| What the window, splash and tray look like | `docs/references/desktop-prototype/`: the `screens/` PNGs, `DESIGN.md`, `PRODUCT.md` and the source `src/core.js`, `src/app.css` (exact Spanish copy, SVG icons and tokens) |
 | Acceptance criteria (Given/When/Then) | [docs/references/PRODUCT_BACKLOG.md](docs/references/PRODUCT_BACKLOG.md) — Spanish source document; every business value comes from here |
 | How each flow moves through the components | `docs/references/diagrams/integracion.puml` |
 

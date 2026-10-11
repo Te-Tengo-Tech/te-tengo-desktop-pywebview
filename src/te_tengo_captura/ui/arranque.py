@@ -1,7 +1,7 @@
-"""Splash window (screen 00): 480 × 300, frameless, centered, in ``--morado``.
+"""Splash window (screen 00): 480 × 300, frameless, centered, on the brand's cream.
 
 The progress follows the real startup (``BOOT_STEPS`` of the prototype): «Iniciando…» while
-the agent's threads start, «Abriendo la webcam configurada…» until the webcam answers (or capture
+the agent's threads start, «Abriendo las cámaras…» until the webcam answers (or capture
 turns out not to be allowed yet), «Conectando con Te Tengo…» until the first heartbeat answers.
 Each step has a time limit so a missing webcam or internet never blocks the window. Steps keep
 the prototype's cadence as a minimum (``proto.js``: 22 % at 0.08 s, 54 % at 0.72 s, 86 % at

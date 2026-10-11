@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 
 from te_tengo_captura.config import Configuracion
-from te_tengo_captura.estado import Entradas, derivar
 from te_tengo_captura.ui.puente import Puente
 from te_tengo_captura.ui.ventana import ALTO, ANCHO, WEB, VentanaEstado
+from tests.captura.estados import estado as estado_de_ejemplo
 from tests.captura.ui.pystray_falso import PystrayFalso
 from tests.captura.ui.webview_falso import WebviewFalso
 
@@ -53,8 +53,7 @@ def test_actualiza_la_pagina_solo_cuando_cargo(
 ) -> None:
     estado = VentanaEstado(puente())
     ventana = webview.ventanas[0]
-    entradas = Entradas(True, True, True, None, 2, 8, "Sala")
-    agente = derivar(entradas, configuracion, "1.0.0")
+    agente = estado_de_ejemplo()
     estado.actualizar(agente)
     assert ventana.scripts == []
     ventana.events.loaded.disparar()
@@ -80,7 +79,7 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         config = configuracion
 
         def estado(self) -> object:
-            return derivar(Entradas(True, True, True, None, 2, 8, "Sala"), configuracion, "1.0.0")
+            return estado_de_ejemplo()
 
         def publicar_estado(self) -> None:
             self.eventos.append("publicar")
@@ -100,6 +99,9 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         def reintentar_ahora(self) -> bool:
             return True
 
+        def vista_previa_jpeg(self, clave: str) -> bytes | None:
+            return None
+
     agente = AgenteFalso()
     pasos = [arranque.Paso(22, 0, lambda: True), arranque.Paso(100, 2, lambda: True)]
     monkeypatch.setattr(arranque, "pasos", lambda _: pasos)
@@ -115,15 +117,15 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     assert inicio.scripts[-1] == "window.ttg && window.ttg.arranqueFin()"
     assert estado.visible
     puente = estado.opciones["js_api"]
-    assert puente.estado()["situacion"] == "enviando"
+    assert puente.estado()["situacion"] == "cuidando"
     bandeja = pystray.iconos[0]
     assert not bandeja.corriendo  # stopped when the app ended
     puente.cerrar()
     assert not estado.visible
     assert bandeja.notificaciones == [
         (
-            "Te Tengo Captura sigue funcionando en segundo plano",
-            "Sigue enviando el video de la cámara. Ábrelo desde su ícono, junto al reloj.",
+            "Sigue funcionando en segundo plano",
+            "Cuida la sala. Ábrelo junto al reloj.",
         )
     ]
     assert bandeja.menu is not None

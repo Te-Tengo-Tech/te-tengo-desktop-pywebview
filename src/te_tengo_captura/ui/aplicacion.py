@@ -51,12 +51,13 @@ class Aplicacion:
     def __init__(self, agente: Agente) -> None:
         self._agente = agente
         self._icono = IconoBandeja(abrir=self.abrir, salir=self.salir)
-        self._avisos = Avisos(agente.config, self._icono.notificar)
+        self._avisos = Avisos(self._icono.notificar)
         puente = Puente(
             estado=lambda: agente.estado().a_json(),
             ocultar=self.ocultar,
             buscar_webcam=agente.buscar_webcam,
             reintentar_ahora=agente.reintentar_ahora,
+            vista_previa=agente.vista_previa_jpeg,
         )
         self._inicio = arranque.VentanaArranque(agente.version)
         self._ventana = VentanaEstado(puente, al_ocultar=self._al_ocultar, oculta=True)
