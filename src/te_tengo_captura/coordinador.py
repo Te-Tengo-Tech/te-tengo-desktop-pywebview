@@ -207,7 +207,12 @@ class Coordinador:
                     e,
                     self._datos_vinculada(pc, e),
                 )
-            return EstadoVentana(Pantalla.PRINCIPAL, e.bandeja, e, {**e.a_json(), "unlink": True})
+            return EstadoVentana(
+                Pantalla.PRINCIPAL,
+                e.bandeja,
+                e,
+                {**e.a_json(), "unlink": True, "dataBytes": self._tamano_datos()},
+            )
         if vinculador is not None and vinculador.fase is Fase.RECHAZADA:
             return EstadoVentana(
                 Pantalla.RECHAZADA,

@@ -106,6 +106,7 @@ def test_aprobada_en_el_celular_queda_vinculada(e: Escenario) -> None:
     estado = c.estado()
     assert estado.pantalla is Pantalla.PRINCIPAL
     assert estado.a_json()["unlink"] is True
+    assert estado.a_json()["dataBytes"] >= 0  # «Borrar también los datos… (3,2 GB)»
     assert estado.agente is not None
     assert estado.agente.aviso.titulo_html == "Falta elegir las cámaras en la app"
     esperar(lambda: e.falso.senales_pc)  # «En línea» in the app with no camera (CA-30.2)
