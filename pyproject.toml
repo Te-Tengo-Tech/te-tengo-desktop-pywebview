@@ -20,6 +20,10 @@ dependencies = [
     "pystray>=0.19.5",
     "pillow>=12.3.0",
     "websockets>=15",
+    "pyobjc-framework-avfoundation>=12.2.2 ; sys_platform == 'darwin'",
+    "comtypes>=1.4.17 ; sys_platform == 'win32'",
+    "keyring>=25.7.0",
+    "segno>=1.6.6",
 ]
 
 [project.scripts]
@@ -72,7 +76,17 @@ files = ["src", "tests", "scripts"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["mediapipe.*", "cv2.*", "pystray.*", "PyObjCTools.*", "AppKit.*"]
+module = [
+    "mediapipe.*",
+    "cv2.*",
+    "pystray.*",
+    "PyObjCTools.*",
+    "AppKit.*",
+    "objc.*",
+    "AVFoundation.*",
+    "Foundation.*",
+    "comtypes.*",
+]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- Pytest

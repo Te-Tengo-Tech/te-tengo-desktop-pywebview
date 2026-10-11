@@ -4,7 +4,13 @@ from pathlib import Path
 import pytest
 
 from te_tengo_captura import config
-from te_tengo_captura.config import ConfiguracionInvalidaError, cargar
+from te_tengo_captura.config import (
+    AjustesPc,
+    ConfiguracionInvalidaError,
+    cargar,
+    cargar_instalacion,
+    olvidar_credencial,
+)
 
 EJEMPLO = Path(__file__).resolve().parents[2] / "config.ejemplo.toml"
 
@@ -34,7 +40,7 @@ def escribir(tmp_path: Path, texto: str) -> Path:
 
 
 def test_lee_todos_los_campos(tmp_path: Path) -> None:
-    c = cargar(escribir(tmp_path, MINIMO))
+    c = cargar_instalacion(escribir(tmp_path, MINIMO))
     assert c.api_url == "https://api.tetengo.test"
     assert c.credencial_instalacion.get_secret_value() == "secreto-123"
     assert c.instalada_el == date(2026, 9, 22)
@@ -74,7 +80,7 @@ def test_clasificacion_sobrescribe_solo_lo_indicado(tmp_path: Path) -> None:
 
 
 def test_el_ejemplo_del_repositorio_es_valido() -> None:
-    c = cargar(EJEMPLO)
+    c = cargar_instalacion(EJEMPLO)
     assert c.camara.nombre_habitacion == "Sala"
     assert c.clasificacion.calibrado
 
@@ -136,3 +142,37 @@ def test_ruta_predeterminada_en_el_directorio_de_la_plataforma() -> None:
 
 def test_la_credencial_no_aparece_en_repr(tmp_path: Path) -> None:
     assert "secreto-123" not in repr(cargar(escribir(tmp_path, MINIMO)))
+
+
+def test_sin_archivo_la_pc_se_vincula_con_un_codigo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(config, "ruta_predeterminada", lambda: tmp_path / "no-existe.toml")
+    ajustes = cargar()
+    assert isinstance(ajustes, AjustesPc)
+    assert ajustes.api_url == "https://api.tetengo.reqsai.tech"
+    assert ajustes.clasificacion.velocidad_descenso_min == 0.01
+    with pytest.raises(ConfiguracionInvalidaError, match="No se encontró"):
+        cargar(tmp_path / "otro.toml")  # an explicit --config must exist
+
+
+def test_ajustes_de_una_pc_vinculada(tmp_path: Path) -> None:
+    ajustes = cargar(
+        escribir(tmp_path, 'api_url = "http://localhost:8080/"\n[vista_en_vivo]\nfps = 10\n')
+    )
+    assert isinstance(ajustes, AjustesPc)
+    assert (ajustes.api_url, ajustes.vista_en_vivo.fps) == ("http://localhost:8080", 10.0)
+    with pytest.raises(ConfiguracionInvalidaError, match="no es de una instalación"):
+        cargar_instalacion(escribir(tmp_path, 'api_url = "http://localhost:8080"\n'))
+
+
+def test_olvidar_la_credencial_de_una_instalacion_quitada(tmp_path: Path) -> None:
+    ruta = escribir(tmp_path, MINIMO)
+    olvidar_credencial(ruta)
+    texto = ruta.read_text(encoding="utf-8")
+    assert "credencial_instalacion" not in texto
+    assert "secreto-123" not in texto
+    assert 'nombre_habitacion = "Sala"' in texto
+    # Without the credential the file is still an installation's: it asks for it.
+    with pytest.raises(ConfiguracionInvalidaError, match="Falta el campo «credencial_instalacion»"):
+        cargar(ruta)

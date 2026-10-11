@@ -16,7 +16,12 @@ import os
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
+from PyInstaller.utils.hooks import (
+    collect_data_files,
+    collect_dynamic_libs,
+    collect_submodules,
+    copy_metadata,
+)
 
 RAIZ = Path(SPECPATH).parent
 sys.path.insert(0, str(RAIZ / "src"))
@@ -45,12 +50,20 @@ datas = [
     (str(RAIZ / "src" / "te_tengo_captura" / "ui" / "web"), "te_tengo_captura/ui/web"),
     *collect_data_files("mediapipe"),
     *collect_data_files("webview"),
+    *copy_metadata("keyring"),  # its backends are found through entry points
 ]
 binaries = collect_dynamic_libs("mediapipe")
 hiddenimports = [
     *collect_submodules("pystray"),  # the backend is chosen at run time
     *collect_submodules("webview.platforms"),
+    # keyring picks the OS credential store at run time (Windows Credential Manager, the macOS
+    # Keychain): its backends are entry points PyInstaller cannot follow.
+    *collect_submodules("keyring.backends"),
 ]
+if EN_MACOS:
+    hiddenimports += ["AVFoundation", "Foundation"]  # webcam ids (captura/dispositivos.py)
+elif sys.platform == "win32":
+    hiddenimports += ["comtypes", "comtypes.persist", "comtypes.automation"]
 
 a = Analysis(
     [str(RAIZ / "packaging" / "lanzador.py")],

@@ -19,6 +19,7 @@ from te_tengo_captura.backend.falso import URL_API, BackendFalso
 from te_tengo_captura.captura.fuentes import FuenteFalsa, Imagen
 from te_tengo_captura.config import Configuracion
 from te_tengo_deteccion.pose.schemas import Pose
+from tests.captura.estados import coordinador_de
 
 
 class SinPersonas:
@@ -68,7 +69,7 @@ def test_corre_el_agente_sin_ventana_hasta_que_se_detiene(
 
     hilo = threading.Thread(target=detener_al_conectar)
     hilo.start()
-    sin_interfaz.ejecutar(agente, detener)
+    sin_interfaz.ejecutar(coordinador_de(agente, tmp_path), detener)
     hilo.join()
 
     assert backend.registros >= 1
@@ -83,10 +84,12 @@ def test_registra_solo_los_cambios_de_situacion(
     agente, _ = crear_agente(tmp_path, configuracion)
     registro = sin_interfaz.RegistroDeEstado()
     caplog.set_level(logging.INFO, logger="te_tengo_captura")
-    registro(agente.estado())
-    registro(agente.estado())
+    coordinador = coordinador_de(agente, tmp_path)
+    coordinador.agente = agente
+    registro(coordinador.estado())
+    registro(coordinador.estado())
     agente.reintentar_ahora()
-    registro(agente.estado())
+    registro(coordinador.estado())
     assert [m for m in caplog.messages if m.startswith("Estado del agente")] == [
         "Estado del agente: sin_consentimiento",
         "Estado del agente: cuidando",
@@ -103,7 +106,7 @@ def test_sigterm_detiene_el_agente(
     anterior = signal.getsignal(signal.SIGTERM)
     threading.Timer(0.5, os.kill, (os.getpid(), signal.SIGTERM)).start()
 
-    sin_interfaz.ejecutar(agente)
+    sin_interfaz.ejecutar(coordinador_de(agente, tmp_path))
 
     assert "Señal SIGTERM recibida" in caplog.text
     assert signal.getsignal(signal.SIGTERM) == anterior  # the previous handler is restored

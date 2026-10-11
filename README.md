@@ -71,7 +71,9 @@ uv run te-tengo-captura --backend-falso --config config.ejemplo.toml
 
 ## Configuration
 
-The project team writes a fixed TOML file: `%APPDATA%\TeTengoCaptura\config.toml` on Windows (platform config directory, app name `TeTengoCaptura`), or `--config <path>`. Every field is documented in [config.ejemplo.toml](config.ejemplo.toml): API URL, installation credential, webcam index and name, household, room and installation date. Without a `[clasificacion]` table, the agent uses the calibrated thresholds of [docs/validation.md](docs/validation.md). A missing field stops the agent with a Spanish message naming it. The backend can adjust thresholds remotely (`GET /api/agente/configuracion`, hourly).
+A new PC needs no file: it links with the phone (QR or 8-letter code, US-28; [docs/INSTALLATION.md](docs/INSTALLATION.md), section 0) and keeps its tokens in the OS credential store. `--api-url` (or a `config.toml` with only `api_url`) points it to another API; `uv run te-tengo-captura --backend-falso` with no `--config` shows the link screen and approves itself after a few seconds.
+
+Installations made before PC links keep working: the project team writes a fixed TOML file: `%APPDATA%\TeTengoCaptura\config.toml` on Windows (platform config directory, app name `TeTengoCaptura`), or `--config <path>`. Every field is documented in [config.ejemplo.toml](config.ejemplo.toml): API URL, installation credential, webcam index and name, household, room and installation date. Without a `[clasificacion]` table, the agent uses the calibrated thresholds of [docs/validation.md](docs/validation.md). A missing field stops the agent with a Spanish message naming it. The backend can adjust thresholds remotely (`GET /api/agente/configuracion`, hourly).
 
 Installing on a household PC (installation credential, configuration, webcam position, verification, troubleshooting, autostart and a local end-to-end test): [docs/INSTALLATION.md](docs/INSTALLATION.md).
 

@@ -7,6 +7,7 @@ from te_tengo_captura.config import Configuracion
 from te_tengo_captura.ui.puente import Puente
 from te_tengo_captura.ui.ventana import ALTO, ANCHO, WEB, VentanaEstado
 from tests.captura.estados import estado as estado_de_ejemplo
+from tests.captura.estados import ventana
 from tests.captura.ui.pystray_falso import PystrayFalso
 from tests.captura.ui.webview_falso import WebviewFalso
 
@@ -79,7 +80,7 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         config = configuracion
 
         def estado(self) -> object:
-            return estado_de_ejemplo()
+            return ventana(estado_de_ejemplo())
 
         def publicar_estado(self) -> None:
             self.eventos.append("publicar")
@@ -101,6 +102,15 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
 
         def vista_previa_jpeg(self, clave: str) -> bytes | None:
             return None
+
+        def otro_codigo(self) -> None: ...
+
+        def vincular_de_nuevo(self) -> None: ...
+
+        def ir_a_estado(self) -> None: ...
+
+        def desvincular(self, borrar: bool) -> dict[str, bool]:
+            return {"ok": False}
 
     agente = AgenteFalso()
     pasos = [arranque.Paso(22, 0, lambda: True), arranque.Paso(100, 2, lambda: True)]

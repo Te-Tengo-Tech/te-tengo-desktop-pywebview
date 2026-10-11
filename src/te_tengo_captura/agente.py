@@ -1,9 +1,10 @@
-"""The agent without its UI: builds the components, runs their threads and derives the state.
+"""An installation's agent (one camera configured by the project team): builds the components,
+runs their threads and derives the state.
 
 Threads (AGENTS.md): pywebview owns the main thread; the capture loop (with MediaPipe), the
-heartbeat, the outbox sender, the state notifier, the live view publisher and its control
-channel each run in a worker thread. The UI gets
-the state through ``suscribir`` and the bridge, never by reading globals.
+heartbeat, the outbox sender, the live view publisher and its control channel each run in a
+worker thread. ``coordinador.Coordinador`` runs the state notifier and gives the UI the state
+through subscriptions and the bridge, never through globals.
 """
 
 import logging
@@ -39,8 +40,6 @@ from te_tengo_deteccion.clips.codificar import codificar_mp4
 
 logger = logging.getLogger(__name__)
 
-INTERVALO_ESTADO_S = 1.0  # the window's countdowns move every second
-
 
 class Agente:
     def __init__(
@@ -55,14 +54,20 @@ class Agente:
         zona: tzinfo | None = None,
         codificar: Callable[[list[tuple[float, bytes]]], bytes] | None = None,
         vista_en_vivo: bool = False,
+        al_desvincular: Callable[[str], None] | None = None,
     ) -> None:
         """``vista_en_vivo`` opens the live view's control channel to ``config.api_url``; it is
         off for ``--backend-falso`` and the tests, which have no WebSocket server. ``codificar``
-        defaults to ``codificar_mp4`` with its temporary file in the outbox's clip directory."""
+        defaults to ``codificar_mp4`` with its temporary file in the outbox's clip directory.
+        ``al_desvincular`` hears that the installation's PC was removed from the household in the
+        app (``401 PC_DESVINCULADA`` or ``{"desvincular":true}``, US-31); capture stops at once."""
         self.config = config
         self.version = version
         self._cliente = cliente
         self._reloj_utc = reloj_utc
+        self._al_desvincular = al_desvincular
+        self._bloqueada = False  # the PC left the household: never capture again
+        cliente.al_desvincular = self._desvinculada
         self._zona = zona
         directorio_datos.mkdir(parents=True, exist_ok=True)
         self.cola = ColaEnvios(directorio_datos)
@@ -74,7 +79,7 @@ class Agente:
             al_cambiar=self._al_latir,
         )
         self.en_vivo = TransmisionEnVivo(
-            permitida=self.latido.captura_permitida,
+            permitida=self._permitida,
             fps=config.vista_en_vivo.fps,
             marca_tiempo=config.vista_en_vivo.marca_tiempo,
         )
@@ -85,14 +90,18 @@ class Agente:
             estimador,
             config.clasificacion,
             self.cola,
-            permitida=self.latido.captura_permitida,
+            permitida=self._permitida,
             al_encolar=self._al_encolar,
             codificar=codificar or partial(codificar_mp4, directorio=self.cola.directorio_clips),
             reloj_utc=reloj_utc,
             en_vivo=self.en_vivo,
         )
         self._canal = (
-            CanalTransmision(cliente, config.api_url, self.en_vivo) if vista_en_vivo else None
+            CanalTransmision(
+                cliente, config.api_url, self.en_vivo, al_desvincular=self._desvinculada
+            )
+            if vista_en_vivo
+            else None
         )
         self._enviador = EnviadorPendientes(self.cola, cliente)
         self.umbrales = ActualizadorUmbrales(
@@ -100,7 +109,6 @@ class Agente:
         )
         self._hilo_captura = HiloCaptura(self.bucle)
         self._hilo_latido = HiloLatido(self.latido)
-        self._oyentes: list[Callable[[EstadoAgente], None]] = []
         self._hogar = Hogar(config.vivienda.nombre_adulto_mayor, config.vivienda.direccion)
         self._pc = DatosPc(
             nombre=nombre_pc(),
@@ -109,7 +117,6 @@ class Agente:
             instalada_el=config.instalada_el.strftime("%d/%m/%Y"),
         )
         self._detenido = threading.Event()
-        self._hilo_estado = threading.Thread(target=self._notificar, name="estado", daemon=True)
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -122,7 +129,6 @@ class Agente:
         if self._canal is not None:
             self._canal.iniciar()
         self.umbrales.iniciar()
-        self._hilo_estado.start()
 
     def detener(self) -> None:
         self._detenido.set()
@@ -141,10 +147,6 @@ class Agente:
         return [*self._cliente.secretos(), *self.en_vivo.secretos()]
 
     # ------------------------------------------------------------------ state
-
-    def suscribir(self, oyente: Callable[[EstadoAgente], None]) -> None:
-        """``oyente`` gets the state every second (window, tray); it runs in a worker thread."""
-        self._oyentes.append(oyente)
 
     def estado(self) -> EstadoAgente:
         latido = self.latido
@@ -209,6 +211,19 @@ class Agente:
 
     # ------------------------------------------------------------------ internals
 
+    def _permitida(self) -> bool:
+        return not self._bloqueada and self.latido.captura_permitida()
+
+    def _desvinculada(self, motivo: str) -> None:
+        """The PC left the household: stop capturing at once (CA-31.1), then tell the owner."""
+        if self._bloqueada:
+            return
+        self._bloqueada = True
+        self._hilo_captura.despertar()
+        logger.warning("La instalación se quitó de la vivienda (%s): se detiene la captura", motivo)
+        if self._al_desvincular is not None:
+            self._al_desvincular(motivo)
+
     def _al_leer(self, instante: float, imagen: Imagen) -> None:
         self.en_vivo.ofrecer(instante, imagen)
         self.vista_previa.ofrecer(instante, imagen)
@@ -227,15 +242,3 @@ class Agente:
 
     def _al_encolar(self) -> None:
         self._enviador.notificar()
-
-    def _notificar(self) -> None:
-        while not self._detenido.wait(INTERVALO_ESTADO_S):
-            self.publicar_estado()
-
-    def publicar_estado(self) -> None:
-        estado = self.estado()
-        for oyente in list(self._oyentes):
-            try:
-                oyente(estado)
-            except Exception:
-                logger.exception("Error al mostrar el estado")

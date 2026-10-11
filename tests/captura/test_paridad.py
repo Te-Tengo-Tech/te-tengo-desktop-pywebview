@@ -117,7 +117,7 @@ def test_el_agente_no_cambia_la_confianza_de_mediapipe_con_visibilidad_min(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from te_tengo_captura import __main__ as principal
-    from te_tengo_captura.config import cargar
+    from te_tengo_captura.config import cargar_instalacion
 
     creados: list[float] = []
     monkeypatch.setattr(
@@ -130,5 +130,5 @@ def test_el_agente_no_cambia_la_confianza_de_mediapipe_con_visibilidad_min(
     ejemplo = (RAIZ / "config.ejemplo.toml").read_text(encoding="utf-8")
     config.write_text(ejemplo + "\n[clasificacion]\nvisibilidad_min = 0.8\n", encoding="utf-8")
     args = principal.argumentos(["--backend-falso", "--config", str(config)])
-    principal.construir_agente(args, cargar(config))
+    principal.construir_agente(args, cargar_instalacion(config))
     assert creados == [0.5]

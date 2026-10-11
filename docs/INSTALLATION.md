@@ -1,4 +1,21 @@
-# Installation guide (project team)
+# Installation guide
+
+## 0. New installs: link the PC with the phone (US-28)
+
+Since the change request «PCs, cámaras y datos de movimiento», a new PC needs **no configuration file and no credential**. The household's owner links it from the app:
+
+1. Install Te Tengo Captura (section 3) and start it. With no `config.toml` it opens on «Vincula esta PC con tu celular»: a QR, an 8-letter code (`XXXX-XXXX`, consonants only), the address `app.tetengo.reqsai.tech/vincular` and a 10-minute countdown. The code renews itself when it expires (CA-28.3).
+2. In the app: Ajustes › PCs y cámaras › Agregar PC, scan the QR or type the code, check the PC's name, system and version, and «Aprobar» (only the owner can, CA-28.5).
+3. Within a few seconds the PC says «Esta PC quedó vinculada a la casa de …» and lists the webcams it detected. Its tokens are stored in the operating system's credential store (Windows Credential Manager, the macOS Keychain), never in files.
+4. The owner chooses each camera's room in the app (US-29; the PC follows on its own).
+
+The PC stays linked through restarts and network changes; it only asks for a new link after being removed from the app, «Desvincular esta PC» in its «Cámaras» tab, or 90 days without internet (CA-28.7). Removing it from the app makes it stop capturing at once, delete its tokens and show the code again (CA-31.1, CA-31.2).
+
+The production API is the default (`https://api.tetengo.reqsai.tech`). To link against another API (a local one for tests) pass `--api-url http://localhost:8080`, or write a `config.toml` with only `api_url` (and optionally `[vista_en_vivo]` and `[clasificacion]`). Headless (`--sin-interfaz`), the log prints the code: `Código para vincular esta PC: KQWT-MXHD …`.
+
+The rest of this guide is the **installation** the project team made before PC links. It keeps working unchanged: a `config.toml` with `credencial_instalacion` runs as before. If the household's owner removes that installation («PC de la casa») from the app, the agent stops capturing, deletes the credential from `config.toml` and shows the link code.
+
+## Installation by the project team (until now)
 
 Te Tengo Captura is installed by the project team on the household PC, with a fixed configuration. The family does not configure anything on the PC: consent, pauses, room name and alerts are managed in the Te Tengo mobile app.
 

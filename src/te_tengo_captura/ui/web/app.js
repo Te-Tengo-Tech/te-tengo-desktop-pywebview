@@ -1,11 +1,13 @@
 /* ================= Te Tengo Captura · ventana =================
    Port of the desktop prototype (docs/references/desktop-prototype/src/core.js and proto.js):
-   icons, brand kit (two figures hugging), room illustrations, title bar, the tab bar
-   (Estado · Cámaras) and their panels, in-window notices and the splash.
+   icons, brand kit (two figures hugging), room illustrations, title bar, «Vincular esta PC»
+   (QR and code), the result screens (vinculada, rechazada, quitada), the tab bar
+   (Estado · Cámaras) and their panels, the dialogs, in-window notices and the splash.
    Every state-dependent text comes from Python (te_tengo_captura/estado.py) through
    ttg.actualizar(); this file renders it, keeps what only the window knows (the open tab, the
    selected camera, the folded sections) and calls the bridge window.pywebview.api:
-   estado(), minimizar(), cerrar(), buscarWebcam(), reintentarAhora(), vistaPrevia(clave). */
+   estado(), minimizar(), cerrar(), buscarWebcam(), reintentarAhora(), vistaPrevia(clave),
+   otroCodigo(), vincularDeNuevo(), irAEstado(), desvincular(borrarDatos). */
 (function(global){
   'use strict';
 
@@ -140,6 +142,8 @@
 
   /* ---------- textos de la casa (core.js / proto.js) ---------- */
   const ROOM_ART = r => ({sala:'la Sala', dormitorio:'el Dormitorio', cocina:'la Cocina', comedor:'el Comedor', pasillo:'el Pasillo'})[String(r).trim().toLowerCase()] || '«'+r+'»';
+  function pad2(n){ return String(n).padStart(2, '0'); }
+  function mmss(s){ s = Math.max(0, s); return Math.floor(s/60) + ':' + pad2(s%60); }
   function listY(a){ return a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' y ' + a[a.length-1]; }
 
   /* ---------- ventana ---------- */
@@ -152,6 +156,78 @@
   function sec(cls, enter, inner){ return '<section class="scr'+(cls?' '+cls:'')+(enter?' '+enter:'')+'" aria-labelledby="scr-h">'+inner+'</section>'; }
   function det(U, k, cls, summary, body){
     return '<details class="inst'+(cls?' '+cls:'')+'" data-k="'+k+'"'+(U.open[k]?' open':'')+'><summary>'+summary+ic('chevDown')+'</summary>'+body+'</details>';
+  }
+
+  /* =================== Vincular esta PC (QR + código de 8 letras) =================== */
+  function qrSVG(qr){
+    const n = qr.n;
+    return '<svg class="qr" viewBox="-2 -2 '+(n+4)+' '+(n+4)+'" role="img" aria-label="Código QR para vincular esta PC" shape-rendering="crispEdges"><rect x="-2" y="-2" width="'+(n+4)+'" height="'+(n+4)+'" fill="#fff"/>'+
+      '<path d="'+esc(qr.d)+'" fill="#2B1D4E"/></svg>';
+  }
+  function pairCard(E){
+    const p = E.pair;
+    const off = (icon, t, s) => '<div class="card pair-card pair-off" role="status"><span class="ci lg aviso dash">'+ic(icon)+'</span><h2 class="t-h2">'+t+'</h2>'+
+      '<p class="t-small">'+s+' Reintentamos en <span class="mono" id="retry" data-r="pr">'+mmss(p.retry)+'</span>.</p>'+
+      '<button class="btn btn-secondary btn-sm" data-act="retryNow">'+ic('refresh')+'Reintentar ahora</button></div>';
+    if(p.fase==='sin_internet') return off('wifiOff', 'Sin internet', 'Conecta esta PC a internet para vincularla.');
+    if(p.fase==='sin_servidor') return off('cloud', 'No pudimos conectar con Te Tengo', 'Puede ser un problema nuestro: no tienes que hacer nada.');
+    if(!p.code || !p.qr) return '<div class="card pair-card" role="status"><div class="pane-scan"><span class="spin"></span></div></div>';
+    const spoken = p.code.replace('-', '').split('').join(' ').replace(/^(\S \S \S \S) /, '$1, guion, ');
+    return '<div class="card pair-card'+(p.fresh?' fresh':'')+'">'+
+      (p.renewed ? '<p class="renew">'+ic('refresh')+'Código nuevo · el anterior venció</p>' : '')+
+      '<div class="qrwrap">'+qrSVG(p.qr)+'<span class="qr-logo" aria-hidden="true">'+LOGO+'</span></div>'+
+      '<p class="t-meta">¿No puedes escanearlo? Escribe este código en la app:</p>'+
+      '<p class="code-big"><span aria-hidden="true">'+esc(p.code)+'</span><span class="sr">'+esc(spoken)+'</span></p>'+
+      '<p class="pair-url">'+esc(p.url)+'</p>'+
+      '<p class="pair-left'+(p.left<=60?' low':'')+'" data-r="pl">'+ic('clock')+'Vence en <span class="mono" id="pair-left">'+mmss(p.left)+'</span></p>'+
+      '<span class="sr" role="status" id="pair-ann">'+(p.renewed?'Código nuevo':'')+'</span></div>';
+  }
+  function scrVincular(E, U, enter){
+    const p = E.pair, ok = p.fase==='codigo' || p.fase==='pidiendo';
+    return sec('pair', enter,
+      (p.re90 ? '<div class="notice warn band90" role="status">'+ic('clock')+'<div><b>Esta PC estuvo más de 90 días sin conexión</b><span>Vuelve a vincularla con tu celular.</span></div></div>' : '')+
+      '<div class="pair-grid"><div class="pair-l">'+
+        '<h1 class="t-title" id="scr-h" tabindex="-1">Vincula esta PC con tu celular</h1>'+
+        '<ol class="steps2"><li><span class="n">1</span><span>Abre la app Te Tengo en tu celular</span></li>'+
+        '<li><span class="n">2</span><span class="path">Ajustes'+ic('chevR')+'PCs y cámaras'+ic('chevR')+'Agregar PC</span></li>'+
+        '<li><span class="n">3</span><span>Escanea este código</span></li></ol>'+
+        '<p class="pcname"><span class="ci">'+ic('monitor')+'</span><span>Esta PC se llama <b>'+esc(E.pcname)+'</b></span></p>'+
+        det(U, 'help', 'phelp', ic('mobile')+'¿El celular muestra un error?',
+          '<ul class="helplist"><li><b>«Este código ya venció o ya se usó»</b>Escanea otra vez: esta PC ya muestra un código nuevo.</li>'+
+          '<li><b>«Demasiados intentos»</b>Espera hasta la hora que indica el celular y vuelve a intentarlo. Esta PC seguirá mostrando un código válido.</li></ul>')+
+      '</div>'+pairCard(E)+'</div>'+
+      '<div class="pair-foot">'+(ok ? '<p class="wait2" role="status"><span class="spin"></span>Esperando la aprobación en el celular…</p>'
+                                     : '<p class="wait2 stop"><span class="spin"></span>El código aparece cuando haya conexión</p>')+'</div>');
+  }
+  /* la PC informa las webcams que detectó; la familia las asigna desde la app */
+  function foundList(E){
+    const devs = E.devices;
+    if(!devs.length) return '<div class="notice warn">'+ic('cam')+'<div><b>No encontramos cámaras en esta PC</b><span>Conecta una webcam por USB y pulsa Buscar de nuevo.</span></div></div>';
+    return '<div class="found"><p class="found-h">'+ic('usb')+'<b>Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'</b><span>La familia las ve en la app con su nombre.</span></p>'+
+      '<ul class="found-l">'+devs.map(d => '<li><span class="thumb art'+(!d.connected?' dim':'')+'">'+roomSVG(d.room || '')+'</span><span class="grow"><b>'+esc(d.name)+'</b>'+devTag(d)+'</span></li>').join('')+'</ul></div>';
+  }
+  function scrVinculada(E, U, enter){
+    const kept = E.cams.length;
+    return sec('', enter, '<div class="result linked"><span class="ok-badge">'+ic('check')+'</span>'+
+      '<h1 class="t-title" id="scr-h" tabindex="-1">Esta PC quedó vinculada a la casa de '+esc(E.home.who)+'</h1>'+
+      '<p class="t-lead">Aprobada por '+esc(E.linkedBy || '')+' desde su celular a las <span class="mono">'+esc(E.linkedAt)+'</span> · Esta PC: <b>'+esc(E.pc.nombre)+'</b></p>'+
+      (kept ? '<div class="notice ok next">'+ic('check')+'<div><b>Las cámaras siguen en su habitación</b><span>'+esc(listY(E.cams.map(c => c.room)))+'. Se cambian desde la app Te Tengo, en tu celular.</span></div></div>'
+            : '<div class="notice info next">'+ic('mobile')+'<div><b>Listo. Ahora elige las cámaras desde la app Te Tengo, en tu celular.</b><span class="path">Ajustes'+ic('chevR')+'PCs y cámaras'+ic('chevR')+esc(E.pc.nombre)+' · esta PC se actualiza sola.</span></div></div>')+
+      foundList(E)+
+      (!E.consent ? '<div class="notice warn">'+ic('doc')+'<div><b>Falta el consentimiento de '+esc(E.home.first)+'</b><span>Las cámaras no enviarán nada hasta que la familia lo registre en la app.</span></div></div>' : '')+
+      '<div class="actions"><button class="btn btn-primary btn-lg" data-act="toEstado">'+ic('pulse')+'Ir a Estado</button></div></div>');
+  }
+  function scrRechazada(E, U, enter){
+    return sec('', enter, '<div class="result"><span class="ci lg pausa">'+ic('x')+'</span>'+
+      '<h1 class="t-title" id="scr-h" tabindex="-1">No se vinculó esta PC</h1>'+
+      '<p class="t-lead">Alguien eligió «No reconozco esta PC» en la app.</p>'+
+      '<div class="actions"><button class="btn btn-primary btn-lg" data-act="otherCode">'+ic('qr')+'Mostrar otro código</button></div></div>');
+  }
+  function scrQuitada(E, U, enter){
+    return sec('', enter, '<div class="result"><span class="ci lg pausa">'+ic('unlink')+'</span>'+
+      '<h1 class="t-title" id="scr-h" tabindex="-1">'+(E.who ? 'Esta PC se quitó de la casa de '+esc(E.who) : 'Esta PC se quitó de la vivienda')+'</h1>'+
+      '<p class="t-lead">La familia la quitó desde la app a las <span class="mono">'+esc(E.at)+'</span>. Ya no usa las cámaras.</p>'+
+      '<div class="actions"><button class="btn btn-primary btn-lg" data-act="pairAgain">'+ic('link')+'Vincular de nuevo</button></div></div>');
   }
 
   /* ---------- barra de pestañas ---------- */
@@ -189,7 +265,7 @@
   }
   function panelEstado(E, U){
     const list = E.cams.length ? '<ul class="crows" aria-label="Cámaras de esta PC">'+E.cams.map(camRow).join('')+'</ul>' : '';
-    return '<header class="cam-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Vivienda de '+esc(E.home.who)+'</h1><p class="t-meta mt4">'+ic('home')+esc(E.home.addr)+'</p></div></header>'+
+    return '<header class="cam-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Vivienda de '+esc(E.home.who)+'</h1>'+(E.home.addr ? '<p class="t-meta mt4">'+ic('home')+esc(E.home.addr)+'</p>' : '')+'</div></header>'+
       health(E)+list+
       '<div class="card instcard">'+det(U, 'inst', '', ic('lock')+'Datos de la instalación', instData(E))+'</div>'+
       '<p class="scr-foot">'+ic('mobile')+'<span class="ft">Cámaras, pausas, consentimiento y alertas: en la app</span><span class="sep"></span>'+ic('power')+'<span>Se inicia con Windows</span></p>';
@@ -203,13 +279,18 @@
     if(d.new) return '<span class="ctag new">'+ic('plus')+'Nueva · Sin usar</span>';
     return '<span class="ctag">Sin usar</span>';
   }
+  function thisPc(E){
+    if(!E.unlink) return '';
+    return '<div class="thispc"><span class="ci">'+ic('monitor')+'</span><span class="grow"><b>Esta PC: '+esc(E.pc.nombre)+'</b><span>Vinculada por '+esc(E.pc.vinculada_por || '')+' el '+esc(E.pc.vinculada_el || '')+'</span></span>'+
+      '<button class="btn btn-danger-ghost btn-xs" data-act="unlinkAsk">'+ic('unlink')+'Desvincular esta PC</button></div>';
+  }
   function selDev(E, U){ return E.devices.find(d => d.id===U.sel) || E.devices[0] || null; }
   function camInfo(E, U, d){
     if(!d.connected) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('videoOff')+'<h2 class="t-h2">No responde: revisa el cable USB</h2>'+
       '<p class="t-small">'+(d.room ? esc(d.room)+' sigue asignada a esta cámara. ' : '')+'Conéctala y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
     if(d.busy) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('warn')+'<h2 class="t-h2">Otro programa usa esta cámara</h2>'+
       '<p class="t-small">Ciérralo y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
-    const by = d.room ? (d.by==='pc' ? 'Elegida en esta PC' : d.by==='app' ? 'La eligió la familia en la app' : 'Se cambia en la app') : 'Se elige en la app';
+    const by = d.room ? (d.by==='pc' ? 'Elegida en esta PC' : d.by==='app' ? 'La eligió la familia en la app' : 'El nombre se cambia en la app Te Tengo') : 'Se elige en la app';
     return '<div class="cpane info"><figure class="pv2 art" id="pv" data-clave="'+esc(d.id)+'">'+roomSVG(d.room || '')+'<img class="pv-img" id="pv-img" alt="" hidden>'+
       '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></figure>'+
       '<dl class="cinfo"><div><dt>Habitación</dt><dd><b>'+(d.room ? esc(d.room) : 'Sin usar')+'</b><span>'+by+'</span></dd></div>'+
@@ -223,18 +304,41 @@
       : 'Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'. Elígelas en la app.';
     const head = '<header class="p-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Cámaras de esta PC</h1><p class="t-meta">'+meta+'</p></div></header>';
     if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">No encontramos cámaras</h2>'+
-      '<p class="t-small">Conecta una webcam por USB.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>';
+      '<p class="t-small">Conecta una webcam por USB.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc(E);
     const sel = selDev(E, U);
     const rows = devs.map(d => '<button class="cpick'+(!d.connected?' lost':'')+'" role="radio" aria-checked="'+(d===sel)+'" tabindex="'+(d===sel?0:-1)+'" data-act="selCam" data-arg="'+esc(d.id)+'">'+
       '<span class="thumb art'+(!d.connected||d.busy?' dim':'')+'">'+roomSVG(d.room || '')+'</span><span class="grow"><b>'+esc(d.name)+'</b>'+devTag(d)+'</span></button>').join('');
     return head+'<div class="camgrid"><div class="clist"><p class="grp-l" id="g-cams">Cámaras conectadas</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
-      '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>'+camInfo(E, U, sel)+'</div>';
+      '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc(E)+'</div>'+camInfo(E, U, sel)+'</div>';
+  }
+
+  /* =================== diálogos =================== */
+  function dlgBox(id, icon, title, text, body, actions){
+    return '<div class="dlg-back"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="'+id+'-t"'+(text?' aria-describedby="'+id+'-d"':'')+' id="'+id+'"><div class="dlg-h">'+icon+'<div><h2 id="'+id+'-t">'+title+'</h2>'+(text?'<p id="'+id+'-d">'+text+'</p>':'')+'</div></div>'+body+'<div class="dlg-actions">'+actions+'</div></div></div>';
+  }
+  function num1(n){ return n.toFixed(1).replace('.', ','); }
+  function dialog(E, U){
+    if(U.dlg==='unlink' && E.screen==='main'){
+      const rooms = E.cams.map(c => c.room), gb = (E.dataBytes || 0) / 1e9;
+      return dlgBox('dlg-unlink', '<span class="ci lg caida">'+ic('unlink')+'</span>', '¿Desvincular esta PC?',
+        (rooms.length ? 'Dejaremos de detectar caídas en '+esc(listY(rooms))+'. ' : '')+'Esta PC borrará su acceso y la familia recibirá un aviso.',
+        '<label class="checkrow"><input type="checkbox" id="unlink-wipe"'+(U.unlinkWipe?' checked':'')+'><span>Borrar también los datos guardados en esta PC ('+num1(gb)+' GB)<span>Movimientos, video y clips de la carpeta de Te Tengo.</span></span></label>',
+        '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-danger" data-act="unlinkDo"'+(U.busy?' disabled':'')+'>'+ic('unlink')+'Desvincular</button>');
+    }
+    return '';
   }
 
   /* ---------- la ventana completa ---------- */
+  function screen(E, U, enter){
+    if(E.screen==='vincular') return scrVincular(E, U, enter);
+    if(E.screen==='vinculada') return scrVinculada(E, U, enter);
+    if(E.screen==='rechazada') return scrRechazada(E, U, enter);
+    if(E.screen==='quitada') return scrQuitada(E, U, enter);
+    return scrMain(E, U, enter);
+  }
   function win(E, U, enter){
     const t = U.toast ? '<div class="wtoast '+U.toast.kind+'" role="status">'+ic(U.toast.icon||'check')+'<span>'+esc(U.toast.text)+'</span></div>' : '';
-    return titlebar()+'<div class="wb">'+scrMain(E, U, enter)+t+'</div>';
+    return titlebar()+'<div class="wb">'+screen(E, U, enter)+t+dialog(E, U)+'</div>';
   }
 
   /* ---------- arranque: ventana de inicio (core.js) ---------- */
@@ -250,7 +354,7 @@
 
   /* ---------- avisos dentro de la ventana al cambiar el estado (proto.js) ---------- */
   function transition(prev, E){
-    if(!prev || !prev.listo || !E.listo) return null;
+    if(!prev || prev.screen!=='main' || E.screen!=='main' || !prev.listo || !E.listo) return null;
     const before = {}; prev.cams.forEach(c => before[c.id] = c);
     for(const c of E.cams){
       const p = before[c.id]; if(!p) continue;
@@ -264,16 +368,22 @@
     return null;
   }
   /* What forces a full render; the countdown in the summary is only patched in place. */
-  function structure(E){ const h = Object.assign({}, E.health, {detalle_html:''}); return JSON.stringify(Object.assign({}, E, {retry:0, health:h})); }
+  function structure(E){
+    const o = Object.assign({}, E, {retry:0});
+    if(E.health) o.health = Object.assign({}, E.health, {detalle_html:''});
+    if(E.pair) o.pair = Object.assign({}, E.pair, {left:0, retry:0});
+    return JSON.stringify(o);
+  }
 
-  const api = { ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG };
+  const api = { ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
 
   /* ---------- DOM: render with focus, folded sections and scroll preserved ---------- */
   if(typeof document === 'undefined'){ if(typeof module !== 'undefined') module.exports = api; return; }
 
   const $ = id => document.getElementById(id);
   let E = null, first = true, toastTimer = null, preview = null, previewSrc = null;
-  const U = {tab:'estado', sel:null, open:{}, toast:null};
+  const U = {tab:'estado', sel:null, open:{}, toast:null, dlg:null, unlinkWipe:false, busy:false};
+  let opener = null;
   const bridge = () => (global.pywebview && global.pywebview.api) || null;
 
   function snap(){
@@ -294,7 +404,9 @@
     $('app').innerHTML = win(E, U, enter);
     const rows2 = document.querySelector('.clist-rows'); if(rows2) rows2.scrollTop = top;
     showPreview();
-    if(enter){ const t = $('scr-h'); if(t) t.focus({preventScroll:true}); } else restore(f);
+    const d = document.querySelector('#app .dlg');
+    if(d && !d.contains(document.activeElement)){ const b = d.querySelector('.dlg-actions .btn:not([disabled])'); if(b) b.focus({preventScroll:true}); }
+    else if(enter){ const t = $('scr-h'); if(t) t.focus({preventScroll:true}); } else restore(f);
   }
   function patch(){
     const tpl = document.createElement('template');
@@ -302,6 +414,7 @@
     tpl.content.querySelectorAll('[data-r]').forEach(nuevo => {
       const actual = document.querySelector('#app [data-r="'+nuevo.dataset.r+'"]');
       if(actual && actual.innerHTML !== nuevo.innerHTML) actual.innerHTML = nuevo.innerHTML;
+      if(actual && actual.className !== nuevo.className) actual.className = nuevo.className;
     });
   }
   function toast(kind, icon, text){
@@ -311,13 +424,21 @@
   }
   function actualizar(nuevo){
     const prev = E; E = nuevo;
-    if(!E.devices.some(d => d.id===U.sel)) U.sel = E.devices.length ? E.devices[0].id : null;
+    const devs = E.devices || [];
+    if(!devs.some(d => d.id===U.sel)) U.sel = devs.length ? devs[0].id : null;
+    if(E.screen!=='main') U.dlg = null;
     const t = transition(prev, E);
-    if(first){ first = false; render('enter'); }
+    if(first || prev.screen!==E.screen){ first = false; if(E.pair) E.pair.fresh = false; render('enter'); }
     else if(t) toast(t.kind, t.icon, t.text);
-    else if(structure(prev) !== structure(E)) render();
+    else if(structure(prev) !== structure(E)){
+      if(E.pair && prev.pair && E.pair.code !== prev.pair.code && E.pair.code){ E.pair.fresh = true; }
+      render();
+      if(E.pair && E.pair.renewed && E.pair.code !== (prev.pair && prev.pair.code)) announce('Código nuevo');
+    }
     else patch();
+    if(E.pair && prev && prev.pair && prev.pair.left > 60 && E.pair.left <= 60 && E.pair.left > 0) announce('El código vence en 1 minuto');
   }
+  function announce(text){ const a = $('pair-ann'); if(a){ a.textContent = ''; setTimeout(() => { a.textContent = text; }, 30); } }
 
   /* ---------- vista previa local de la cámara elegida (solo en esta PC) ---------- */
   function showPreview(){
@@ -348,6 +469,20 @@
     tab(el){ U.tab = el.dataset.arg; render(); const t = $('tab-'+U.tab); if(t) t.focus({preventScroll:true}); },
     toCams(){ U.tab = 'camaras'; render(); const t = $('tab-camaras'); if(t) t.focus({preventScroll:true}); },
     selCam(el){ U.sel = el.dataset.arg; previewSrc = null; render(); },
+    toEstado(){ U.tab = 'estado'; call('irAEstado').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },
+    otherCode(){ call('otroCodigo').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },
+    pairAgain(){ call('vincularDeNuevo').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },
+    unlinkAsk(el){ opener = el; U.dlg = 'unlink'; U.unlinkWipe = false; render(); },
+    dlgClose(){ closeDlg(); },
+    unlinkDo(){
+      U.busy = true; render();
+      const wipe = U.unlinkWipe;
+      call('desvincular', wipe).then(r => {
+        U.busy = false; U.dlg = null; opener = null;
+        if(r && r.ok){ U.tab = 'estado'; toast('ok', 'unlink', wipe ? 'Esta PC se desvinculó y borró sus datos. La familia recibió un aviso.' : 'Esta PC se desvinculó. La familia recibió un aviso.'); call('estado').then(s => { if(s) actualizar(s); }); }
+        else render();
+      });
+    },
     retryNow(){
       call('reintentarAhora').then(r => { if(r && !r.ok) toast('warn', 'wifiOff', 'Aún sin internet.'); });
     },
@@ -363,9 +498,23 @@
     const t = e.target.closest('[data-act]');
     if(t && ACT[t.dataset.act] && !t.disabled && t.getAttribute('aria-disabled') !== 'true'){ e.preventDefault(); ACT[t.dataset.act](t); }
   });
+  function closeDlg(){ U.dlg = null; render(); if(opener && document.body.contains(opener)) opener.focus({preventScroll:true}); else restore({act:'unlinkAsk'}); opener = null; }
+  document.addEventListener('change', e => { if(e.target && e.target.id==='unlink-wipe') U.unlinkWipe = e.target.checked; });
   document.addEventListener('toggle', e => { const d = e.target; if(d && d.matches && d.matches('details[data-k]')) U.open[d.dataset.k] = d.open; }, true);
   document.addEventListener('keydown', e => {
     const t = e.target, role = t.getAttribute && t.getAttribute('role');
+    if(U.dlg){
+      if(e.key==='Escape'){ e.preventDefault(); closeDlg(); return; }
+      if(e.key==='Tab'){
+        const d = document.querySelector('#app .dlg'); if(!d) return;
+        const f = [...d.querySelectorAll('button:not([disabled]),input,select,[tabindex="0"]')];
+        if(!f.length) return;
+        if(e.shiftKey && document.activeElement===f[0]){ e.preventDefault(); f[f.length-1].focus(); }
+        else if(!e.shiftKey && document.activeElement===f[f.length-1]){ e.preventDefault(); f[0].focus(); }
+        else if(!d.contains(document.activeElement)){ e.preventDefault(); f[0].focus(); }
+        return;
+      }
+    }
     if((role==='tab' || role==='radio') && /^Arrow(Left|Right|Up|Down)$/.test(e.key)){
       const group = t.closest('[role="tablist"],[role="radiogroup"]'); if(!group) return;
       const items = [...group.querySelectorAll('[role="tab"],[role="radio"]')].filter(x => !x.disabled && x.getAttribute('aria-disabled')!=='true');

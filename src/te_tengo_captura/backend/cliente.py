@@ -2,12 +2,15 @@
 
 It is synchronous and thread-safe: the capture loop, the heartbeat and the outbox call it from
 their own worker threads. The camera token is obtained by registering with the installation
-credential and renewed on any ``401`` other than ``CREDENCIAL_INVALIDA``. Neither the credential
-nor the token, nor the pre-signed upload URL, is ever logged.
+credential and renewed on any ``401`` other than ``CREDENCIAL_INVALIDA`` and ``PC_DESVINCULADA``.
+A ``401 PC_DESVINCULADA`` (the installation's PC was removed in the app, US-31) is reported to
+``al_desvincular`` and never retried. Neither the credential nor the token, nor the pre-signed
+upload URL, is ever logged.
 """
 
 import logging
 import threading
+from collections.abc import Callable
 from typing import Any, TypeVar
 
 import httpx
@@ -17,6 +20,7 @@ from te_tengo_captura.backend.errores import (
     POR_CODIGO,
     ErrorBackendError,
     NoAutorizadoError,
+    PcDesvinculadaError,
     SinConexionError,
 )
 from te_tengo_captura.backend.modelos import (
@@ -60,8 +64,12 @@ class ClienteBackend:
         nombre_habitacion: str,
         version_agente: str,
         transporte: httpx.BaseTransport | None = None,
+        al_desvincular: Callable[[str], None] | None = None,
     ) -> None:
+        """``al_desvincular`` hears a ``401 PC_DESVINCULADA``: the installation's PC was removed
+        from the household in the app (US-31)."""
         self._credencial = credencial_instalacion
+        self.al_desvincular = al_desvincular
         self._nombre_habitacion = nombre_habitacion
         self._version = version_agente
         self._http = httpx.Client(
@@ -96,14 +104,14 @@ class ClienteBackend:
             version_agente=self._version,
         )
         respuesta = self._enviar("POST", RUTA_REGISTRO, json=cuerpo.json_api())
-        registro = _leer(Registro, respuesta)
+        registro = leer_modelo(Registro, respuesta)
         with self._candado:
             self._registro = registro
         logger.info("Cámara registrada: %s (%s)", registro.camara_id, registro.nombre_habitacion)
         return registro
 
     def estado_captura(self) -> EstadoCaptura:
-        return _leer(EstadoCaptura, self._autenticado("GET", RUTA_ESTADO))
+        return leer_modelo(EstadoCaptura, self._autenticado("GET", RUTA_ESTADO))
 
     def senal(self, webcam_conectada: bool, deteccion_confiable: bool) -> EstadoCaptura:
         cuerpo = Senal(
@@ -111,17 +119,19 @@ class ClienteBackend:
             deteccion_confiable=deteccion_confiable,
             version_agente=self._version,
         )
-        return _leer(EstadoCaptura, self._autenticado("POST", RUTA_SENAL, json=cuerpo.json_api()))
+        return leer_modelo(
+            EstadoCaptura, self._autenticado("POST", RUTA_SENAL, json=cuerpo.json_api())
+        )
 
     def publicar_evento(self, evento: EventoAgente) -> tuple[EventoRecibido, bool]:
         """Publishes an event. Returns the response and whether it was a duplicate (``200``)."""
         respuesta = self._autenticado("POST", RUTA_EVENTOS, json=evento.json_api())
-        return _leer(EventoRecibido, respuesta), respuesta.status_code == 200
+        return leer_modelo(EventoRecibido, respuesta), respuesta.status_code == 200
 
     def solicitar_subida_clip(self, evento_id: str, tamano_bytes: int) -> SubidaClip:
         cuerpo = SolicitudClip(tamano_bytes=tamano_bytes)
         ruta = RUTA_CLIP.format(evento_id=evento_id)
-        return _leer(SubidaClip, self._autenticado("POST", ruta, json=cuerpo.json_api()))
+        return leer_modelo(SubidaClip, self._autenticado("POST", ruta, json=cuerpo.json_api()))
 
     def subir_clip(self, subida: SubidaClip, mp4: bytes) -> None:
         """``PUT`` of the MP4 to the pre-signed URL, with the headers the backend returned."""
@@ -138,7 +148,7 @@ class ClienteBackend:
             )
 
     def configuracion(self) -> ConfiguracionRemota:
-        return _leer(ConfiguracionRemota, self._autenticado("GET", RUTA_CONFIGURACION))
+        return leer_modelo(ConfiguracionRemota, self._autenticado("GET", RUTA_CONFIGURACION))
 
     def token_vigente(self) -> str:
         """The camera token, registering first if there is none (control channel handshake)."""
@@ -187,11 +197,14 @@ class ClienteBackend:
                 f"Sin conexión con el backend ({metodo} {ruta}): {type(error).__name__}"
             ) from None
         if respuesta.is_error:
-            raise _error(metodo, ruta, respuesta)
+            fallo = error_de_respuesta(metodo, ruta, respuesta)
+            if isinstance(fallo, PcDesvinculadaError) and self.al_desvincular is not None:
+                self.al_desvincular("PC_DESVINCULADA")
+            raise fallo
         return respuesta
 
 
-def _error(metodo: str, ruta: str, respuesta: httpx.Response) -> ErrorBackendError:
+def error_de_respuesta(metodo: str, ruta: str, respuesta: httpx.Response) -> ErrorBackendError:
     codigo: str | None = None
     detalle = ""
     try:
@@ -209,7 +222,7 @@ def _error(metodo: str, ruta: str, respuesta: httpx.Response) -> ErrorBackendErr
     return ErrorBackendError(mensaje, respuesta.status_code, codigo)
 
 
-def _leer(modelo: type[_Modelo], respuesta: httpx.Response) -> _Modelo:
+def leer_modelo(modelo: type[_Modelo], respuesta: httpx.Response) -> _Modelo:
     try:
         return modelo.model_validate(respuesta.json())
     except (ValueError, ValidationError) as error:

@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, tzinfo
 from enum import StrEnum
 from html import escape
-from typing import Any
+from typing import Any, Protocol
 
 QUIEN_MIRA = "Un familiar"  # core.js osToast fallback: the contract does not say who watches
 QUIEN_PAUSA = "la familia"  # core.js health fallback (``S.pauseBy||'la familia'``)
@@ -145,6 +145,15 @@ class Notificacion:
 
     titulo: str
     texto: str
+
+
+class Mostrable(Protocol):
+    """What the window and the tray icon need: the page's JSON and the tray dot."""
+
+    @property
+    def bandeja(self) -> "EstadoBandeja": ...
+
+    def a_json(self) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -513,4 +522,25 @@ def aviso_en_vivo(habitacion: str) -> Notificacion:
     return Notificacion(
         f"{QUIEN_MIRA} está viendo {de_habitacion(habitacion)} en vivo",
         "No se graba · queda registrado.",
+    )
+
+
+def aviso_sin_vincular(estado: EstadoAgente | None) -> Notificacion:
+    """``osToast(S, 'closed')`` before the cameras run: not linked yet, or none chosen."""
+    if estado is not None and estado.entradas.vinculada:
+        texto = (
+            "Falta elegir las cámaras desde la app Te Tengo, en tu celular. "
+            "Esta PC se actualiza sola."
+        )
+    else:
+        texto = "Ábrelo desde su ícono, junto al reloj, para vincular esta PC."
+    return Notificacion("Te Tengo Captura sigue funcionando en segundo plano", texto)
+
+
+def aviso_pc_quitada(hora: str) -> Notificacion:
+    """``osToast(S, 'removed')``: the PC was removed from the household in the app (D-31.2)."""
+    return Notificacion(
+        "Esta PC se quitó de la vivienda",
+        f"{QUIEN_PAUSA} la quitó desde la app a las {hora}. Ya no usa las cámaras. "
+        "Ábrela para vincularla de nuevo.",
     )

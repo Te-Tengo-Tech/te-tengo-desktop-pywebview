@@ -27,6 +27,16 @@ class NoAutorizadoError(ErrorBackendError):
     """``401`` even after registering again."""
 
 
+class PcDesvinculadaError(ErrorBackendError):
+    """``401 PC_DESVINCULADA``: the PC (or the installation's PC) left the household (US-31).
+
+    The agent stops capturing, deletes its credentials and shows the link code (CA-31.1)."""
+
+
+class SesionExpiradaError(ErrorBackendError):
+    """``401 SESION_EXPIRADA``: the token expired; a linked PC renews it once."""
+
+
 class CapturaNoPermitidaError(ErrorBackendError):
     """``409 CAPTURA_NO_PERMITIDA``: consent is missing or the camera is paused."""
 
@@ -37,6 +47,7 @@ class EventoNoEncontradoError(ErrorBackendError):
 
 POR_CODIGO: dict[str, type[ErrorBackendError]] = {
     "CREDENCIAL_INVALIDA": CredencialInvalidaError,
+    "PC_DESVINCULADA": PcDesvinculadaError,
     "CAPTURA_NO_PERMITIDA": CapturaNoPermitidaError,
     "EVENTO_NO_ENCONTRADO": EventoNoEncontradoError,
 }

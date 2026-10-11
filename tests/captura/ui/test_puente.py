@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -38,6 +39,10 @@ def test_el_puente_expone_solo_los_metodos_del_contrato() -> None:
         "buscarWebcam",
         "reintentarAhora",
         "vistaPrevia",
+        "otroCodigo",
+        "vincularDeNuevo",
+        "irAEstado",
+        "desvincular",
     }
     assert puente.estado() == {"situacion": "cuidando"}
     assert puente.vistaPrevia("sala") == {"jpeg": "/9hqcGVn"}
@@ -110,6 +115,7 @@ def test_render_de_la_ventana_en_node() -> None:
         "renombrada": estado(camara(nombre_habitacion="Sala comedor")),
     }
     estados = {nombre: e.a_json() for nombre, e in variantes.items()}
+    estados.update(_pantallas_de_vinculacion())
     resultado = subprocess.run(
         ["node", str(PRUEBA_JS), str(WEB / "app.js")],
         input=json.dumps(estados),
@@ -118,3 +124,57 @@ def test_render_de_la_ventana_en_node() -> None:
         check=False,
     )
     assert resultado.returncode == 0, resultado.stdout + resultado.stderr
+
+
+def _pantallas_de_vinculacion() -> dict[str, Any]:
+    """The PC link's screens as the coordinator builds them (D-28.1, D-28.4, D-28.5, D-31.2)."""
+    from te_tengo_captura.estado import DatosPc, Entradas, Webcam, derivar
+    from te_tengo_captura.vinculacion.qr import codigo_qr
+    from tests.captura.estados import HOGAR
+
+    qr = codigo_qr("https://app.tetengo.reqsai.tech/vincular?codigo=KQWT-MXHD")
+    par = {
+        "fase": "codigo",
+        "code": "KQWT-MXHD",
+        "url": "app.tetengo.reqsai.tech/vincular",
+        "qr": {"n": qr.modulos, "d": qr.ruta},
+        "left": 581,
+        "renewed": False,
+        "retry": 0,
+        "re90": False,
+    }
+    pc = DatosPc("Sala-Rosa", "Windows 11 Home", "Te Tengo Captura 0.5.0", "Carmen", "23/09/2026")
+    webcams = (
+        Webcam("id-1", "Webcam USB HD", "id-1", None),
+        Webcam("id-2", "Logitech C920", "id-2", None),
+        Webcam("id-3", "USB2.0 PC Camera", "id-3", None),
+    )
+    vinculada = derivar(
+        Entradas((), True, False, 8, webcams, vinculada=True, webcams_detectadas=3),
+        HOGAR,
+        pc,
+        "0.5.0",
+    ).a_json()
+    return {
+        "vincular": {"screen": "vincular", "pcname": "Sala-Rosa", "pair": par},
+        "renovado": {
+            "screen": "vincular",
+            "pcname": "Sala-Rosa",
+            "pair": {**par, "code": "PJZD-RNCV", "renewed": True, "left": 45},
+        },
+        "sinInternet": {
+            "screen": "vincular",
+            "pcname": "Sala-Rosa",
+            "pair": {**par, "fase": "sin_internet", "code": None, "qr": None, "retry": 25},
+        },
+        "noventa": {"screen": "vincular", "pcname": "Sala-Rosa", "pair": {**par, "re90": True}},
+        "vinculada": {
+            **vinculada,
+            "screen": "vinculada",
+            "linkedBy": "Carmen",
+            "linkedAt": "10:31",
+        },
+        "pcPrincipal": {**vinculada, "unlink": True, "dataBytes": 3_200_000_000},
+        "rechazada": {"screen": "rechazada"},
+        "quitada": {"screen": "quitada", "who": "Rosa Huamán", "at": "11:20"},
+    }

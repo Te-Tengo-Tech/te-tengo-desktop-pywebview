@@ -12,9 +12,11 @@ from te_tengo_captura.backend.modelos import ModoVista
 from te_tengo_captura.backend.transmision import url_websocket
 from te_tengo_captura.captura.fuentes import FuenteFalsa, Imagen
 from te_tengo_captura.config import Configuracion
-from te_tengo_captura.estado import EstadoAgente, Situacion
+from te_tengo_captura.coordinador import EstadoVentana
+from te_tengo_captura.estado import Situacion
 from te_tengo_deteccion.clips.codificar import codificar_mp4
 from te_tengo_deteccion.pose.schemas import Pose
+from tests.captura.estados import coordinador_de
 
 AHORA = datetime(2026, 10, 7, 14, 0, tzinfo=UTC)
 
@@ -101,24 +103,25 @@ def test_webcam_desconectada(e: Escenario) -> None:
     assert e.agente.estado().situacion is Situacion.CUIDANDO
 
 
-def test_hilos_publican_el_estado_y_se_detienen(e: Escenario) -> None:
-    recibidos: list[EstadoAgente] = []
+def test_hilos_publican_el_estado_y_se_detienen(e: Escenario, tmp_path: Path) -> None:
+    recibidos: list[EstadoVentana] = []
     listo = threading.Event()
+    coordinador = coordinador_de(e.agente, tmp_path)
 
-    def oyente(estado: EstadoAgente) -> None:
+    def oyente(estado: EstadoVentana) -> None:
         recibidos.append(estado)
-        if estado.situacion is Situacion.CUIDANDO:
+        if estado.agente is not None and estado.agente.situacion is Situacion.CUIDANDO:
             listo.set()
 
-    def roto(estado: EstadoAgente) -> None:
+    def roto(estado: EstadoVentana) -> None:
         raise RuntimeError("la ventana falló")
 
-    e.agente.suscribir(roto)
-    e.agente.suscribir(oyente)
-    e.agente.iniciar()
+    coordinador.suscribir(roto)
+    coordinador.suscribir(oyente)
+    coordinador.iniciar()
     assert listo.wait(5)
-    assert e.agente.buscar_webcam(espera_s=5)
-    e.agente.detener()
+    assert coordinador.buscar_webcam()
+    coordinador.detener()
     assert e.backend.senales
 
 
