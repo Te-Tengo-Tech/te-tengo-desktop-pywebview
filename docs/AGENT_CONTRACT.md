@@ -139,6 +139,8 @@ Decided by the project owner on 2026-10-07; it replaces the WebSocket JPEG relay
 ## PC link (US-28, US-30, US-31)
 OAuth 2.0 Device Authorization Grant (RFC 8628) with rotating refresh tokens (RFC 9700), implemented by the API (ADR 0009). The three OAuth endpoints follow the RFCs, not the rest of this contract: **requests are `application/x-www-form-urlencoded`**, responses are snake_case JSON with `Cache-Control: no-store`, and **errors are `{"error": "…", "error_description": "…"}`** (RFC 6749 §5.2), HTTP 400 except `invalid_client` (401). No bearer token is sent to them. `client_id` is always `te-tengo-captura`.
 
+**Limits per address.** Device authorization and the token endpoint are public, so the API limits them per client address **[implementation choice]**: 10 code requests per minute and 60 per hour, and 60 token requests per minute. Over a limit they answer `429` with `Retry-After` (seconds) and an `application/problem+json` body with `codigo: DEMASIADAS_SOLICITUDES`; on a device code poll the body also carries `"error": "slow_down"` (RFC 8628 §3.5). One PC polling every `interval` never reaches them; several PCs behind one address might. On a `429` the PC waits at least `Retry-After` (as for any `429`, it may wait longer) and keeps its code, which stays valid.
+
 **1. Ask for a code** — `POST /api/agente/vinculacion`
 ```
 client_id=te-tengo-captura&nombre_pc=Sala-Rosa&sistema_operativo=Windows%2011%20Home&version_agente=0.5.0
