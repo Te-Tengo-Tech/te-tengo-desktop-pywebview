@@ -11,6 +11,7 @@ worker thread. ``coordinador.Coordinador`` runs the state notifier and gives the
 through subscriptions and the bridge, never through globals.
 """
 
+import contextlib
 import logging
 import threading
 import time
@@ -32,6 +33,7 @@ from te_tengo_captura.captura.vista_previa import VistaPreviaLocal
 from te_tengo_captura.config import Configuracion, VistaEnVivo
 from te_tengo_captura.diario import Narrador
 from te_tengo_captura.envios.cola import ColaEnvios, EnviadorPendientes
+from te_tengo_captura.envios.movimientos import CarrilMovimientos
 from te_tengo_captura.estado import (
     CamaraEntradas,
     DatosPc,
@@ -162,10 +164,14 @@ class Agente:
             reloj=time.monotonic,
         )
         self.bucle.observadores.append(self._analizado)
-        # Local storage (US-38): this camera's recorder, once its camera id is known.
-        self._almacen = almacen
+        # Local storage (US-38) and the cloud (US-36, US-37): this camera's recorder, once its
+        # camera id is known, and the movements lane of its outbox.
+        self._almacen: AlmacenLocal | None = None
         self._grabador: GrabadorCamara | None = None
+        self._eventos: dict[str, datetime] = {}  # eventoId → when, for the clip's landmarks
         self.bucle.al_clip.append(self._clip)
+        if almacen is not None:
+            self.conectar_almacen(almacen)
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -189,8 +195,12 @@ class Agente:
         self._hilo_latido.detener()
         self._enviador.detener()
         self.cola.cerrar()
-        if self._almacen is not None and self._grabador is not None:
-            self._almacen.soltar_camara(self._cliente.camara_id or "")
+        if self._almacen is not None:
+            for lista in (self._almacen.al_movimientos, self._almacen.al_cambiar_permiso):
+                with contextlib.suppress(ValueError):
+                    lista.remove(self._hay_movimientos)
+            if self._grabador is not None:
+                self._almacen.soltar_camara(self._cliente.camara_id or "")
         self._cliente.cerrar()
         logger.info("Te Tengo Captura detenido")
 
@@ -323,6 +333,10 @@ class Agente:
         self.narrador.analizado(
             analisis.fotograma.instante, analisis.pose, analisis.clasificador, analisis.eventos
         )
+        for evento in analisis.detectados:
+            self._eventos[evento.evento_id] = evento.ocurrido_en
+            while len(self._eventos) > 32:
+                self._eventos.pop(next(iter(self._eventos)))
         grabador = self._grabador_listo()
         if grabador is not None:
             grabador.analizado(analisis)
@@ -330,6 +344,13 @@ class Agente:
     def conectar_almacen(self, almacen: AlmacenLocal) -> None:
         """An installation's storage is the coordinator's (it exists before the agent)."""
         self._almacen = almacen
+        self.cola.carril_movimientos = CarrilMovimientos(almacen, lambda: self._cliente.camara_id)
+        almacen.al_movimientos.append(self._hay_movimientos)
+        almacen.al_cambiar_permiso.append(self._hay_movimientos)
+
+    def _hay_movimientos(self, *_: object) -> None:
+        """A new movement file, or the cloud turned on: the outbox looks again."""
+        self._enviador.notificar()
 
     def estado_movimientos(self) -> EstadoMovimientos:
         return self._cliente.estado_movimientos()
@@ -339,12 +360,19 @@ class Agente:
             camara_id = self._cliente.camara_id
             if camara_id:
                 self._grabador = self._almacen.para_camara(camara_id)
+                self._grabador.al_puntos_clip = self._puntos_clip
         return self._grabador
 
     def _clip(self, evento_id: str, mp4: bytes) -> None:
         grabador = self._grabador_listo()
         if grabador is not None:
-            grabador.clip(evento_id, self._reloj_utc() - timedelta(seconds=12), mp4)
+            ocurrido_en = self._eventos.get(evento_id) or self._reloj_utc() - timedelta(seconds=6)
+            grabador.clip(evento_id, ocurrido_en, mp4)
+
+    def _puntos_clip(self, evento_id: str, parquet: bytes) -> None:
+        """The landmarks of the clip's 12 s (US-36): uploaded after the clip."""
+        self.cola.agregar_puntos_clip(evento_id, parquet)
+        self._enviador.notificar()
 
     def _permitida(self) -> bool:
         return not self._bloqueada and self.latido.captura_permitida()

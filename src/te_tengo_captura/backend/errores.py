@@ -54,9 +54,33 @@ class EventoNoEncontradoError(ErrorBackendError):
     """``404 EVENTO_NO_ENCONTRADO``: the clip refers to an event the backend does not have."""
 
 
+class SinPermisoDeMovimientosError(ErrorBackendError):
+    """``409 SIN_CONSENTIMIENTO_DE_MOVIMIENTOS`` or ``409 MOVIMIENTOS_EN_LA_NUBE_DESACTIVADOS``:
+    stop uploading movements and ask ``GET /api/agente/movimientos/estado`` (US-35, US-37)."""
+
+
+class ArchivoYaSubidoError(ErrorBackendError):
+    """``409 ARCHIVO_YA_SUBIDO``: the movement file is already in the index; drop it."""
+
+
+class FueraDelPlazoError(ErrorBackendError):
+    """``422 MOVIMIENTOS_FUERA_DEL_PLAZO``: older than the cloud retention; drop it."""
+
+
+class ArchivoNoSubidoError(ErrorBackendError):
+    """``409 ARCHIVO_NO_SUBIDO`` or ``404 ARCHIVO_NO_ENCONTRADO`` at the confirmation: upload the
+    file again."""
+
+
 POR_CODIGO: dict[str, type[ErrorBackendError]] = {
     "CREDENCIAL_INVALIDA": CredencialInvalidaError,
     "PC_DESVINCULADA": PcDesvinculadaError,
     "CAPTURA_NO_PERMITIDA": CapturaNoPermitidaError,
     "EVENTO_NO_ENCONTRADO": EventoNoEncontradoError,
+    "SIN_CONSENTIMIENTO_DE_MOVIMIENTOS": SinPermisoDeMovimientosError,
+    "MOVIMIENTOS_EN_LA_NUBE_DESACTIVADOS": SinPermisoDeMovimientosError,
+    "ARCHIVO_YA_SUBIDO": ArchivoYaSubidoError,
+    "MOVIMIENTOS_FUERA_DEL_PLAZO": FueraDelPlazoError,
+    "ARCHIVO_NO_SUBIDO": ArchivoNoSubidoError,
+    "ARCHIVO_NO_ENCONTRADO": ArchivoNoSubidoError,
 }

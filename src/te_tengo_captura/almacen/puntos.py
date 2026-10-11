@@ -229,6 +229,11 @@ def escribir_parquet(
     return bytes(salida.getvalue().to_pybytes())
 
 
+def contar_filas(datos: bytes) -> int:
+    """Rows of a movement file, from its footer (``fotogramas`` of the upload, US-37)."""
+    return int(pq.ParquetFile(pa.BufferReader(datos)).metadata.num_rows)
+
+
 def leer_parquet(datos: bytes) -> tuple[dict[str, str], list[FilaMovimiento]]:
     """The file metadata and the rows, with the landmarks decoded to MediaPipe units."""
     tabla = pq.read_table(pa.BufferReader(datos))

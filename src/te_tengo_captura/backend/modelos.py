@@ -89,6 +89,27 @@ class SubidaClip(_Cuerpo):
     expira_en: datetime
 
 
+class SolicitudMovimientos(_Cuerpo):
+    """``POST /api/agente/movimientos``: one 5-minute movement file of the camera (US-37)."""
+
+    desde: datetime
+    hasta: datetime
+    tamano_bytes: int
+    sha256: str
+    fotogramas: int
+
+    @field_serializer("desde", "hasta")
+    def _iso(self, instante: datetime) -> str:
+        return iso_utc(instante)
+
+
+class SubidaMovimientos(_Cuerpo):
+    archivo_id: str
+    url_subida: str
+    cabeceras: dict[str, str] = {}
+    expira_en: datetime
+
+
 class ConfiguracionRemota(_Cuerpo):
     version_agente: str
     umbrales: dict[str, Any] = {}

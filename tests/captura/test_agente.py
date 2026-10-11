@@ -203,3 +203,47 @@ def test_vista_previa_local_solo_de_la_camara_y_cuando_se_pide(e: Escenario) -> 
     assert jpeg is not None
     assert jpeg.startswith(b"\xff\xd8")
     assert e.agente.vista_previa_jpeg("otra") is None
+
+
+def test_el_almacen_recibe_las_filas_y_los_puntos_del_clip_van_a_la_bandeja(
+    e: Escenario, tmp_path: Path
+) -> None:
+    import numpy as np
+
+    from te_tengo_captura.almacen.gestor import AlmacenLocal
+    from te_tengo_captura.backend.modelos import EventoAgente
+    from te_tengo_captura.captura.bucle import Analisis
+    from te_tengo_captura.captura.fuentes import Fotograma
+    from te_tengo_captura.vinculacion.credenciales import LlaveroEnMemoria
+    from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico, TipoEvento
+    from te_tengo_deteccion.clasificacion.umbrales import Umbrales
+    from tests.fabricas import DE_PIE
+
+    almacen = AlmacenLocal(tmp_path / "ajustes", tmp_path / "Datos", LlaveroEnMemoria())
+    almacen.iniciar(e.agente.estado_movimientos)
+    almacen.revisar_permiso()
+    e.agente.conectar_almacen(almacen)
+    assert e.agente.cola.carril_movimientos is not None  # the movements lane (US-37)
+    e.agente._cliente.registrar()
+    clasificador = ClasificadorCinematico(Umbrales(velocidad_descenso_min=0.5))
+    evento = EventoAgente(
+        evento_id="0192f6e4-0000-7000-8000-000000000009",
+        tipo=TipoEvento.CAIDA,
+        ocurrido_en=AHORA + timedelta(seconds=10),
+    )
+    for i in range(20 * 8):
+        instante = i / 8
+        e.agente._analizado(
+            Analisis(
+                fotograma=Fotograma(instante, b"", np.zeros((4, 4, 3), dtype=np.uint8)),
+                pose=DE_PIE,
+                clasificador=clasificador,
+                eventos=[],
+                detectados=[evento] if i == 80 else [],
+                ocurrido_en=AHORA + timedelta(seconds=instante),
+            )
+        )
+    e.agente._clip(evento.evento_id, b"mp4")
+    almacen.soltar_camara("camara-1")
+    assert e.agente.cola.puntos_pendientes() == [evento.evento_id]  # US-36
+    almacen.detener()

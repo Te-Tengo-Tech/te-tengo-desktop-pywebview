@@ -99,6 +99,11 @@ class BackendFalso:
     _tokens_pc: set[str] = field(default_factory=set)
     _tokens: set[str] = field(default_factory=set)
     _subidas: dict[str, str] = field(default_factory=dict)  # upload key → eventoId
+    # Movement files (US-37) and clip landmarks (US-36) the agent uploaded.
+    movimientos: dict[str, dict[str, Any]] = field(default_factory=dict)  # archivoId → file
+    puntos_clips: dict[str, bytes] = field(default_factory=dict)  # eventoId → Parquet
+    _subidas_movimientos: dict[str, str] = field(default_factory=dict)  # key → archivoId
+    _subidas_puntos: dict[str, str] = field(default_factory=dict)  # key → eventoId
     _contador: Iterator[int] = field(default_factory=lambda: count(1))
     _candado: threading.Lock = field(default_factory=threading.Lock)
 
@@ -364,6 +369,13 @@ class BackendFalso:
                 evento_id, _, resto = ruta.removeprefix(rutas.RUTA_EVENTOS + "/").partition("/")
                 if resto == "clip":
                     return self._solicitar_clip(evento_id, _cuerpo(solicitud))
+                if resto == "clip/puntos":
+                    return self._solicitar_puntos(evento_id)
+            if (metodo, ruta) == ("POST", rutas.RUTA_MOVIMIENTOS):
+                return self._solicitar_movimientos(solicitud, _cuerpo(solicitud))
+            if metodo == "POST" and ruta.startswith(rutas.RUTA_MOVIMIENTOS + "/"):
+                archivo_id = ruta.removeprefix(rutas.RUTA_MOVIMIENTOS + "/").split("/")[0]
+                return self._confirmar_movimientos(archivo_id)
             if (metodo, ruta) == ("GET", rutas.RUTA_CONFIGURACION):
                 return httpx.Response(
                     200, json={"versionAgente": self.version_agente, "umbrales": self.umbrales}
@@ -589,7 +601,111 @@ class BackendFalso:
             },
         )
 
+    # ------------------------------------------------------------------ movements (US-36, US-37)
+
+    def _sin_nube(self) -> httpx.Response | None:
+        if not self.consentimiento_vigente or self.motivo == MotivoCaptura.SIN_CONSENTIMIENTO:
+            return _problema(409, "SIN_CONSENTIMIENTO_DE_MOVIMIENTOS", "Sin consentimiento")
+        if self.movimientos_en_la_nube_dias is None:
+            return _problema(409, "MOVIMIENTOS_EN_LA_NUBE_DESACTIVADOS", "Nube desactivada")
+        return None
+
+    def _solicitar_movimientos(
+        self, solicitud: httpx.Request, cuerpo: dict[str, Any]
+    ) -> httpx.Response:
+        if (rechazo := self._sin_nube()) is not None:
+            return rechazo
+        try:
+            desde = datetime.fromisoformat(cuerpo["desde"])
+            hasta = datetime.fromisoformat(cuerpo["hasta"])
+            tamano, sha, filas = cuerpo["tamanoBytes"], cuerpo["sha256"], cuerpo["fotogramas"]
+        except (KeyError, TypeError, ValueError):
+            return _problema(400, "VALIDACION", "Cuerpo inválido")
+        if not desde < hasta <= desde + timedelta(minutes=10) or len(sha) != 64:
+            return _problema(400, "VALIDACION", "Rango o SHA-256 inválido")
+        if desde < self.reloj() - timedelta(days=self.movimientos_en_la_nube_dias or 0):
+            return _problema(422, "MOVIMIENTOS_FUERA_DEL_PLAZO", "Fuera del plazo")
+        camara = self._tokens_camara.get(_token(solicitud), self.camara_id)
+        for archivo_id, archivo in self.movimientos.items():
+            if (archivo["camara"], archivo["desde"]) == (camara, desde):
+                if archivo["estado"] == "DISPONIBLE":
+                    return _problema(409, "ARCHIVO_YA_SUBIDO", "Ya subido", archivoId=archivo_id)
+                break
+        else:
+            archivo_id = f"archivo-{next(self._contador)}"
+        self.movimientos[archivo_id] = {
+            "camara": camara,
+            "desde": desde,
+            "hasta": hasta,
+            "tamanoBytes": tamano,
+            "sha256": sha,
+            "fotogramas": filas,
+            "estado": "PENDIENTE",
+            "contenido": None,
+        }
+        clave = f"m{next(self._contador)}"
+        self._subidas_movimientos[clave] = archivo_id
+        return httpx.Response(
+            201,
+            json={
+                "archivoId": archivo_id,
+                "urlSubida": f"https://{HOST_ALMACEN}/movimientos/{clave}.parquet?firma=secreta",
+                "cabeceras": {"Content-Type": "application/vnd.apache.parquet"},
+                "expiraEn": iso_utc(self.reloj() + timedelta(minutes=10)),
+            },
+        )
+
+    def _confirmar_movimientos(self, archivo_id: str) -> httpx.Response:
+        archivo = self.movimientos.get(archivo_id)
+        if archivo is None:
+            return _problema(404, "ARCHIVO_NO_ENCONTRADO", "No existe")
+        rechazo = self._sin_nube()
+        if rechazo is not None and rechazo.json()["codigo"] == "SIN_CONSENTIMIENTO_DE_MOVIMIENTOS":
+            del self.movimientos[archivo_id]  # revoked meanwhile: the API deletes the object
+            return rechazo
+        if archivo["contenido"] is None:
+            return _problema(409, "ARCHIVO_NO_SUBIDO", "El almacenamiento no lo tiene")
+        archivo["estado"] = "DISPONIBLE"
+        return httpx.Response(
+            200,
+            json={
+                "archivoId": archivo_id,
+                "estado": "DISPONIBLE",
+                "tamanoBytes": archivo["tamanoBytes"],
+            },
+        )
+
+    def _solicitar_puntos(self, evento_id: str) -> httpx.Response:
+        if evento_id not in self.eventos:
+            return _problema(404, "EVENTO_NO_ENCONTRADO", "Evento no encontrado")
+        if not self.consentimiento_vigente or self.motivo == MotivoCaptura.SIN_CONSENTIMIENTO:
+            return _problema(409, "SIN_CONSENTIMIENTO_DE_MOVIMIENTOS", "Sin consentimiento")
+        clave = f"p{next(self._contador)}"
+        self._subidas_puntos[clave] = evento_id
+        return httpx.Response(
+            201,
+            json={
+                "urlSubida": f"https://{HOST_ALMACEN}/puntos/{clave}.parquet?firma=secreta",
+                "cabeceras": {"Content-Type": "application/vnd.apache.parquet"},
+                "expiraEn": iso_utc(self.reloj() + timedelta(minutes=15)),
+            },
+        )
+
     def _subir(self, solicitud: httpx.Request) -> httpx.Response:
+        if solicitud.url.path.startswith("/movimientos/"):
+            clave = solicitud.url.path.removeprefix("/movimientos/").removesuffix(".parquet")
+            if solicitud.method != "PUT" or clave not in self._subidas_movimientos:
+                return httpx.Response(403)
+            archivo = self.movimientos.get(self._subidas_movimientos.pop(clave))
+            if archivo is not None:
+                archivo["contenido"] = solicitud.read()
+            return httpx.Response(200)
+        if solicitud.url.path.startswith("/puntos/"):
+            clave = solicitud.url.path.removeprefix("/puntos/").removesuffix(".parquet")
+            if solicitud.method != "PUT" or clave not in self._subidas_puntos:
+                return httpx.Response(403)
+            self.puntos_clips[self._subidas_puntos.pop(clave)] = solicitud.read()
+            return httpx.Response(200)
         clave = solicitud.url.path.removeprefix("/clips/").removesuffix(".mp4")
         if solicitud.method != "PUT" or clave not in self._subidas:
             return httpx.Response(403)
@@ -617,7 +733,7 @@ def _error_oauth(estado: int, codigo: str) -> httpx.Response:
     return httpx.Response(estado, json={"error": codigo}, headers={"Cache-Control": "no-store"})
 
 
-def _problema(estado: int, codigo: str, detalle: str) -> httpx.Response:
+def _problema(estado: int, codigo: str, detalle: str, **extra: Any) -> httpx.Response:
     return httpx.Response(
         estado,
         headers={"Content-Type": "application/problem+json"},
@@ -627,5 +743,10 @@ def _problema(estado: int, codigo: str, detalle: str) -> httpx.Response:
             "status": estado,
             "detail": detalle,
             "codigo": codigo,
+            **extra,
         },
     )
+
+
+def _token(solicitud: httpx.Request) -> str:
+    return str(solicitud.headers.get("Authorization", "")).removeprefix("Bearer ")
