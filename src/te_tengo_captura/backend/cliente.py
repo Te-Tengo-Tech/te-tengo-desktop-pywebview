@@ -32,8 +32,10 @@ from te_tengo_captura.backend.modelos import (
     Registro,
     Senal,
     SolicitudClip,
+    SolicitudMovimientos,
     SolicitudRegistro,
     SubidaClip,
+    SubidaMovimientos,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,6 +54,9 @@ RUTA_EVENTOS = "/api/agente/eventos"
 RUTA_CLIP = "/api/agente/eventos/{evento_id}/clip"
 RUTA_CONFIGURACION = "/api/agente/configuracion"
 RUTA_ESTADO_MOVIMIENTOS = "/api/agente/movimientos/estado"
+RUTA_MOVIMIENTOS = "/api/agente/movimientos"
+RUTA_CONFIRMACION = "/api/agente/movimientos/{archivo_id}/confirmacion"
+RUTA_PUNTOS_CLIP = "/api/agente/eventos/{evento_id}/clip/puntos"
 
 # Seconds; a clip upload carries about 1 MB, so it gets a longer write timeout.
 TIMEOUT = httpx.Timeout(10.0, connect=5.0)
@@ -168,6 +173,31 @@ class ClienteBackend:
                 f"El almacenamiento rechazó el clip ({respuesta.status_code})",
                 respuesta.status_code,
             )
+
+    def solicitar_subida_movimientos(self, solicitud: SolicitudMovimientos) -> SubidaMovimientos:
+        """Step 1 of a movement file's upload (US-37)."""
+        respuesta = self._autenticado("POST", RUTA_MOVIMIENTOS, json=solicitud.json_api())
+        return leer_modelo(SubidaMovimientos, respuesta)
+
+    def subir_archivo(self, url: str, cabeceras: dict[str, str], datos: bytes, que: str) -> None:
+        """``PUT`` of a movement or landmarks file to its pre-signed URL (never through the API)."""
+        try:
+            respuesta = self._almacen.put(url, content=datos, headers=cabeceras)
+        except httpx.TransportError as error:
+            raise SinConexionError(f"Sin conexión al subir {que}: {type(error).__name__}") from None
+        if respuesta.is_error:
+            raise ErrorBackendError(
+                f"El almacenamiento rechazó {que} ({respuesta.status_code})", respuesta.status_code
+            )
+
+    def confirmar_movimientos(self, archivo_id: str) -> None:
+        """Step 3: the file enters the index."""
+        self._autenticado("POST", RUTA_CONFIRMACION.format(archivo_id=archivo_id))
+
+    def solicitar_subida_puntos_clip(self, evento_id: str) -> SubidaClip:
+        """The landmarks of an event's clip (US-36): a pre-signed URL next to the clip."""
+        ruta = RUTA_PUNTOS_CLIP.format(evento_id=evento_id)
+        return leer_modelo(SubidaClip, self._autenticado("POST", ruta))
 
     def estado_movimientos(self) -> EstadoMovimientos:
         """Whether movements may be stored (US-35), with the camera's token."""

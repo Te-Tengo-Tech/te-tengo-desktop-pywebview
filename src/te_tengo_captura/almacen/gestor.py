@@ -25,6 +25,11 @@
   is behind.
 * **The index** (``indice.py``, SQLite in the folder) knows every file by camera, type and time:
   retention, the space limit, the replay (US-39) and the cloud upload (US-37) only read it.
+* **The cloud** (US-37): with ``guardarEnLaNube`` the 5-minute files are also written when the
+  local switch is off, uploaded by each camera's outbox (``envios/movimientos.py``) and then
+  deleted if they were only kept for the upload.
+* **A clip's landmarks** (US-36): the writer keeps the last rows of each camera; when an alert's
+  clip is ready it hands the rows of its 12 seconds, as Parquet, to the camera's outbox.
 """
 
 import contextlib
@@ -34,6 +39,7 @@ import queue
 import shutil
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
@@ -45,10 +51,18 @@ from te_tengo_captura.almacen.cifrado import (
     AlmacenCredenciales,
     ClaveDatos,
     EscritorCifrado,
+    abrir_descifrado,
     cifrar_bytes,
 )
-from te_tengo_captura.almacen.indice import IndiceArchivos, TipoArchivo
-from te_tengo_captura.almacen.puntos import FilaMovimiento, TramoCerrado, TramoMovimientos, a_ms
+from te_tengo_captura.almacen.indice import Archivo, IndiceArchivos, TipoArchivo
+from te_tengo_captura.almacen.puntos import (
+    FilaMovimiento,
+    TramoCerrado,
+    TramoMovimientos,
+    a_ms,
+    escribir_parquet,
+    instante_ms,
+)
 from te_tengo_captura.almacen.retencion import (
     Politica,
     ReglaTipo,
@@ -67,6 +81,8 @@ REVISION_RETENCION_S = 3600.0
 SEGMENTO_VIDEO_S = 600.0  # CA-38.2: 10-minute parts
 FPS_VIDEO = 8
 COLA_FOTOGRAMAS = 16  # frames waiting for the video writer (2 s): older ones are dropped
+FILAS_RECIENTES = 20 * 8  # the last 20 s of rows of a camera: a clip's 12 s fit (US-36)
+MEDIO_CLIP_MS = 6000  # a clip is 6 s before and 6 s after its event
 CERCA_DEL_LIMITE = 0.9  # «Queda poco espacio» from 90 % of the limit
 ARCHIVO_AJUSTES = "almacenamiento.json"
 INDICE = "indice.sqlite3"
@@ -138,6 +154,7 @@ class AlmacenLocal:
         self.liberado: str | None = None  # «Borramos el video del 01/10 …» (CA-38.3)
         self.moviendo: float | None = None  # bytes being moved to a new folder
         self.al_movimientos: list[Callable[[str, int], None]] = []  # (camera, index id): US-37
+        self.al_cambiar_permiso: list[Callable[[], None]] = []  # the cloud turned on or off
         self._grabadores: dict[str, GrabadorCamara] = {}
         self._detenido = threading.Event()
         self._despertar = threading.Event()
@@ -211,6 +228,56 @@ class AlmacenLocal:
         """Only with the movement consent (CA-35.3)."""
         permiso = self.permiso
         return permiso is not None and permiso.guardar_en_la_pc
+
+    @property
+    def sube_movimientos(self) -> bool:
+        """The consent and a cloud retention the owner chose (CA-37.1)."""
+        permiso = self.permiso
+        return self.puede_movimientos and permiso is not None and permiso.guardar_en_la_nube
+
+    @property
+    def escribe_tramos(self) -> bool:
+        """5-minute files are written to keep them here, to upload them, or both."""
+        return self.puede_movimientos and (self.ajustes.movimientos or self.sube_movimientos)
+
+    def pendientes_de_subir(self, camara_id: str) -> list[Archivo]:
+        """The camera's movement files the cloud does not have yet, oldest first."""
+        indice = self._indice
+        if indice is None:
+            return []
+        return [
+            a
+            for a in indice.pendientes_de_subir(TipoArchivo.MOVIMIENTOS)
+            if a.camara_id == camara_id
+        ]
+
+    def leer(self, archivo: Archivo) -> bytes | None:
+        """The decrypted content of a file (``None`` if it is gone or cannot be read)."""
+        clave = self.clave()
+        if clave is None:
+            return None
+        try:
+            return abrir_descifrado(clave, self.carpeta / archivo.ruta)
+        except Exception as error:  # gone, damaged, or encrypted with a deleted key
+            logger.warning("No se pudo leer %s: %s", archivo.ruta, type(error).__name__)
+            return None
+
+    def terminar_subida(self, archivo: Archivo) -> None:
+        """The cloud has it (or will never take it): the file stays only if it is kept here."""
+        indice = self._indice
+        if indice is None:
+            return
+        if self.ajustes.movimientos and self.puede_movimientos:
+            indice.marcar_subido(archivo.id)
+        else:
+            self._borrar_archivo(archivo.ruta)
+            indice.borrar(archivo.id)
+
+    def olvidar(self, archivo: Archivo) -> None:
+        """A file the index knows but the disk lost."""
+        indice = self._indice
+        if indice is not None:
+            indice.borrar(archivo.id)
 
     # ------------------------------------------------------------------ writing (writer threads)
 
@@ -435,11 +502,15 @@ class AlmacenLocal:
         except ErrorBackendError as error:
             logger.info("No se pudo consultar el permiso de movimientos: %s", error)
             return
-        antes = self.puede_movimientos
+        antes, nube = self.puede_movimientos, self.sube_movimientos
         self.permiso = permiso
         if antes and not permiso.guardar_en_la_pc:
             logger.warning("Se revocó el permiso de guardar movimientos: no se guardan más")
             self.revocado = TipoArchivo.MOVIMIENTOS in {t for t, b in self.uso().items() if b > 0}
+        if nube != self.sube_movimientos:
+            logger.info("Movimientos en la nube: %s", "sí" if self.sube_movimientos else "no")
+            for oyente in list(self.al_cambiar_permiso):
+                oyente()
 
     def _correr(self) -> None:
         proximo_permiso = proxima_retencion = 0.0
@@ -526,6 +597,8 @@ class GrabadorCamara:
         self._tramo = TramoMovimientos(camara_id)
         self._cola: queue.Queue[tuple[str, Any] | None] = queue.Queue(maxsize=256)
         self._video: _SegmentoVideo | None = None
+        self._recientes: deque[FilaMovimiento] = deque(maxlen=FILAS_RECIENTES)
+        self.al_puntos_clip: Callable[[str, bytes], None] | None = None  # the camera's outbox
         self.descartados = 0
         self._hilo = threading.Thread(
             target=self._correr, name=f"guardar-{camara_id[:8]}", daemon=True
@@ -537,7 +610,7 @@ class GrabadorCamara:
     def analizado(self, analisis: Analisis) -> None:
         """A ``BucleCaptura`` observer: queues the movement row and the video frame."""
         almacen = self._almacen
-        if almacen.guarda(TipoArchivo.MOVIMIENTOS):
+        if almacen.puede_movimientos:  # kept, uploaded, or only for an alert's landmarks
             self._poner(("fila", _fila(analisis)))
         if almacen.guarda(TipoArchivo.VIDEO):
             self._poner(("video", (analisis.ocurrido_en, analisis.fotograma.imagen)))
@@ -545,8 +618,9 @@ class GrabadorCamara:
             self._poner(("cerrar_video", None))
 
     def clip(self, evento_id: str, ocurrido_en: datetime, mp4: bytes) -> None:
-        """A local copy of an alert's clip (the outbox keeps its own copy for the upload)."""
-        if self._almacen.guarda(TipoArchivo.CLIP):
+        """An alert's clip is ready (``ocurrido_en``: its event): the local copy, and the
+        landmarks of its 12 seconds for the cloud (US-36). The outbox keeps its own clip copy."""
+        if self._almacen.guarda(TipoArchivo.CLIP) or self._almacen.puede_movimientos:
             self._poner(("clip", (evento_id, ocurrido_en, mp4)))
 
     def cerrar(self) -> None:
@@ -570,14 +644,20 @@ class GrabadorCamara:
             tipo, datos = elemento
             try:
                 if tipo == "fila":
-                    for tramo in self._tramo.agregar(datos):
-                        self._escribir_tramo(tramo)
+                    self._recientes.append(datos)
+                    if self._almacen.escribe_tramos:
+                        for tramo in self._tramo.agregar(datos):
+                            self._escribir_tramo(tramo)
+                    elif self._tramo.n_filas:
+                        self._tramo = TramoMovimientos(self._camara_id)  # switched off
                 elif tipo == "video":
                     self._video_fotograma(*datos)
                 elif tipo == "cerrar_video":
                     self._cerrar_video()
                 elif tipo == "clip":
-                    self._escribir_clip(*datos)
+                    if self._almacen.guarda(TipoArchivo.CLIP):
+                        self._escribir_clip(*datos)
+                    self._puntos_clip(datos[0], datos[1])
             except Exception:
                 logger.exception("Error al guardar datos de la cámara")
         for tramo in self._tramo.cerrar():
@@ -615,9 +695,28 @@ class GrabadorCamara:
             for oyente in list(self._almacen.al_movimientos):
                 oyente(self._camara_id, archivo_id)
 
+    def _puntos_clip(self, evento_id: str, ocurrido_en: datetime) -> None:
+        """The rows of the clip's 12 seconds, for ``POST …/clip/puntos`` (US-36)."""
+        oyente = self.al_puntos_clip
+        if oyente is None or not self._almacen.puede_movimientos:
+            return
+        centro = a_ms(ocurrido_en)
+        filas = [
+            f for f in self._recientes if centro - MEDIO_CLIP_MS <= f.t_ms <= centro + MEDIO_CLIP_MS
+        ]
+        if not filas:
+            return
+        datos = escribir_parquet(
+            filas,
+            self._camara_id,
+            instante_ms(centro - MEDIO_CLIP_MS),
+            instante_ms(centro + MEDIO_CLIP_MS),
+        )
+        oyente(evento_id, datos)
+
     def _escribir_clip(self, evento_id: str, ocurrido_en: datetime, mp4: bytes) -> None:
         relativa = f"clips/{self._camara_id}/{ocurrido_en:%Y/%m/%d}/{evento_id}.mp4{EXTENSION}"
-        desde = a_ms(ocurrido_en) - 6000
+        desde = a_ms(ocurrido_en) - MEDIO_CLIP_MS
 
         def escribir(destino: Path, clave: bytes) -> int:
             cifrado = cifrar_bytes(clave, mp4)
