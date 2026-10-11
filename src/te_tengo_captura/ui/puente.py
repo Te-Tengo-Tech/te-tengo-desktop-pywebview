@@ -32,6 +32,11 @@ class Acciones:
     exportar_diagnostico: Callable[[], dict[str, Any]] = lambda: {"ok": False}
     nombre_diagnostico: Callable[[], str] = lambda: ""
     mostrar_en_carpeta: Callable[[str], None] = lambda _ruta: None
+    # Local storage (US-38, US-35).
+    cambiar_almacenamiento: Callable[[dict[str, Any]], dict[str, Any]] = lambda _c: {"ok": False}
+    cambiar_carpeta: Callable[[], dict[str, Any]] = lambda: {"ok": False}
+    borrar_movimientos: Callable[[], dict[str, Any]] = lambda: {"ok": False}
+    conservar_movimientos: Callable[[], dict[str, Any]] = lambda: {"ok": False}
 
 
 class Puente:
@@ -136,3 +141,19 @@ class Puente:
     def mostrarEnCarpeta(self, ruta: str) -> None:  # noqa: N802 (JavaScript name)
         """«Mostrar en la carpeta»."""
         self._acciones.mostrar_en_carpeta(str(ruta))
+
+    def cambiarAlmacenamiento(self, cambios: dict[str, Any]) -> dict[str, Any]:  # noqa: N802
+        """A switch, a period or the space limit of «Almacenamiento» (CA-38.1)."""
+        return self._acciones.cambiar_almacenamiento(dict(cambios or {}))
+
+    def cambiarCarpeta(self) -> dict[str, Any]:  # noqa: N802 (JavaScript name)
+        """«Cambiar carpeta»: the system's folder dialog, then the move (CA-38.1)."""
+        return self._acciones.cambiar_carpeta()
+
+    def borrarMovimientos(self) -> dict[str, Any]:  # noqa: N802 (JavaScript name)
+        """«Borrar» the movements kept on this PC after a revocation (CA-35.4)."""
+        return self._acciones.borrar_movimientos()
+
+    def conservarMovimientos(self) -> dict[str, Any]:  # noqa: N802 (JavaScript name)
+        """«Conservar» them (nothing new is stored)."""
+        return self._acciones.conservar_movimientos()

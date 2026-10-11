@@ -139,6 +139,18 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         def exportar_diagnostico(self, destino: Path) -> dict[str, object]:
             return {"ok": False}
 
+        def cambiar_almacenamiento(self, cambios: dict[str, object]) -> dict[str, object]:
+            return {"ok": True}
+
+        def cambiar_carpeta(self, nueva: Path) -> dict[str, object]:
+            return {"ok": True}
+
+        def borrar_movimientos(self) -> dict[str, object]:
+            return {"ok": True}
+
+        def conservar_movimientos(self) -> dict[str, object]:
+            return {"ok": True}
+
     agente = AgenteFalso()
     pasos = [arranque.Paso(22, 0, lambda: True), arranque.Paso(100, 2, lambda: True)]
     monkeypatch.setattr(arranque, "pasos", lambda _: pasos)

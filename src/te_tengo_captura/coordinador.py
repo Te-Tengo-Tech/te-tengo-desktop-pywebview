@@ -48,7 +48,10 @@ from te_tengo_captura.agente_pc import (
     enviar_revocacion_pendiente,
     leer_pc,
 )
+from te_tengo_captura.almacen.gestor import AjustesAlmacen, AlmacenLocal
+from te_tengo_captura.almacen.indice import TipoArchivo
 from te_tengo_captura.backend.errores import ErrorBackendError
+from te_tengo_captura.backend.modelos import EstadoMovimientos
 from te_tengo_captura.backend.pc import ClientePc
 from te_tengo_captura.captura.dispositivos import Dispositivo, listar_dispositivos
 from te_tengo_captura.diagnostico import exportar, nombre_archivo
@@ -59,6 +62,7 @@ from te_tengo_captura.vinculacion.credenciales import (
     AlmacenCredenciales,
     AlmacenNoDisponibleError,
     CredencialesPc,
+    Llavero,
 )
 from te_tengo_captura.vinculacion.maquina import Fase, HiloVinculacion, Vinculador
 from te_tengo_captura.vinculacion.oauth import ClienteOAuth, TokensPc
@@ -125,6 +129,8 @@ class Coordinador:
         fabrica: FabricaCamaras | None = None,
         diario: Diario | None = None,
         registros: Path | None = None,
+        llavero: Llavero | None = None,
+        carpeta_datos: Path | None = None,
     ) -> None:
         """``fabrica`` builds the agents of a linked PC's cameras (US-29); ``diario`` keeps the
         advanced mode's live log (US-32); ``registros`` is the log folder (diagnostic, US-34)."""
@@ -132,10 +138,14 @@ class Coordinador:
         self.diario = diario or Diario()
         self._registros = registros
         self.actividad = RegistroActividad(directorio_datos)
+        # Local storage (US-38): its folder may be anywhere; its settings stay with the agent.
+        self._llavero = llavero if llavero is not None else almacen.llavero
+        self._directorio = directorio_datos
+        self._carpeta_datos = carpeta_datos or directorio_datos / "Datos"
+        self.almacen = self._nuevo_almacen()
         self._cpu = MedidorProceso()
         self._fabrica = fabrica
         self._api_url = api_url
-        self._directorio = directorio_datos
         self._almacen = almacen
         self._instalacion = instalacion
         self._olvidar_instalacion = olvidar_instalacion
@@ -169,9 +179,12 @@ class Coordinador:
     def iniciar(self) -> None:
         self._directorio.mkdir(parents=True, exist_ok=True)
         self.diario.activo = self.modo_avanzado
+        self.almacen.iniciar(self._consultar_movimientos)
         if self._instalacion is not None:
             self.agente = self._instalacion(self._al_desvincular)
+            self.agente.conectar_almacen(self.almacen)
             self.agente.iniciar()
+            self.almacen.pedir_permiso()
         else:
             credenciales = self._leer_credenciales()
             if credenciales is not None:
@@ -185,6 +198,7 @@ class Coordinador:
         self._detenido.set()
         with self._candado:
             self._detener_modo()
+        self.almacen.detener()
         self._oauth.cerrar()
 
     def secretos(self) -> list[str]:
@@ -229,7 +243,10 @@ class Coordinador:
         if agente is not None:
             e = agente.estado()
             return EstadoVentana(
-                Pantalla.PRINCIPAL, e.bandeja, e, {**e.a_json(), "advanced": self._avanzado}
+                Pantalla.PRINCIPAL,
+                e.bandeja,
+                e,
+                {**e.a_json(), "advanced": self._avanzado, "store": self.almacen.estado()},
             )
         if pc is not None:
             e = pc.estado()
@@ -249,6 +266,7 @@ class Coordinador:
                     "unlink": True,
                     "dataBytes": self._tamano_datos(),
                     "advanced": self._avanzado,
+                    "store": self.almacen.estado(),
                 },
             )
         if vinculador is not None and vinculador.fase is Fase.RECHAZADA:
@@ -524,8 +542,72 @@ class Coordinador:
 
     def borrar_datos_locales(self) -> None:
         """«Borrar también los datos guardados en esta PC» (CA-31.6): movements, video and clips
-        of the data folder (the outbox's pending clips until US-38 adds the rest)."""
+        of the data folder, and the key that encrypted them."""
         shutil.rmtree(self._directorio / "clips", ignore_errors=True)
+        self.almacen.borrar_todo()
+        self.almacen = self._nuevo_almacen()
+        self.almacen.iniciar(self._consultar_movimientos)
+
+    def _nuevo_almacen(self) -> AlmacenLocal:
+        return AlmacenLocal(self._directorio, self._carpeta_datos, self._llavero)
+
+    def _consultar_movimientos(self) -> EstadoMovimientos:
+        """``GET /api/agente/movimientos/estado`` with the PC's or the camera's token."""
+        if self.pc is not None:
+            return self.pc.estado_movimientos()
+        if self.agente is not None:
+            return self.agente.estado_movimientos()
+        raise ErrorBackendError("Sin vincular")
+
+    # ------------------------------------------------------------------ storage (US-38, US-35)
+
+    def cambiar_almacenamiento(self, cambios: dict[str, Any]) -> dict[str, Any]:
+        """A setting of «Almacenamiento»: one activity entry per setting (contract)."""
+        permitidos = set(AjustesAlmacen.__dataclass_fields__) - {"carpeta"}
+        validos = {k: v for k, v in cambios.items() if k in permitidos}
+        if (
+            "movimientos" in validos
+            and validos["movimientos"]
+            and not self.almacen.puede_movimientos
+        ):
+            return {"ok": False, "codigo": "SIN_PERMISO"}  # CA-35.3: disabled with its reason
+        for cambio in self.almacen.cambiar(**validos):
+            self.actividad.anotar(
+                cambio.texto,
+                tipo="GUARDADO_LOCAL_CAMBIADO",
+                objeto=cambio.objeto,
+                anterior=cambio.anterior,
+                nuevo=cambio.nuevo,
+            )
+        return {"ok": True}
+
+    def cambiar_carpeta(self, nueva: Path) -> dict[str, Any]:
+        """«Cambiar carpeta»: moves the files while detection goes on (CA-38.1)."""
+
+        def terminado(ok: bool) -> None:
+            if ok:
+                self.actividad.anotar(
+                    "Desde esta PC: se cambió la carpeta de los datos",
+                    tipo="GUARDADO_LOCAL_CAMBIADO",
+                    objeto="Carpeta",
+                )
+
+        self.almacen.mover_carpeta(nueva, terminado)
+        return {"ok": True}
+
+    def borrar_movimientos(self) -> dict[str, Any]:
+        """«Borrar» after the movement consent was revoked (CA-35.4)."""
+        bytes_borrados = self.almacen.borrar_tipo(TipoArchivo.MOVIMIENTOS)
+        self.actividad.anotar(
+            "Desde esta PC: se borraron los movimientos guardados",
+            tipo="DATOS_LOCALES_ELIMINADOS",
+            objeto="Movimientos",
+        )
+        return {"ok": True, "bytes": bytes_borrados}
+
+    def conservar_movimientos(self) -> dict[str, Any]:
+        self.almacen.conservar()
+        return {"ok": True}
 
     # ------------------------------------------------------------------ moves
 
@@ -613,8 +695,10 @@ class Coordinador:
             al_contactar=self._contacto,
             fabrica=self._fabrica,
             actividad=self.actividad,
+            almacen_local=self.almacen,
         )
         self.pc.iniciar()
+        self.almacen.pedir_permiso()
 
     def _iniciar_vinculacion(self) -> None:
         quitada = self._leer_json(ARCHIVO_QUITADA)

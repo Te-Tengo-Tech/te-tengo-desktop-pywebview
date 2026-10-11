@@ -3,8 +3,8 @@
 Used as the smoke test of the packaged app in CI: the MediaPipe model loads and runs, a clip is
 encoded, the live view encodes H.264 and has its RTSP muxer and WebSocket client, pywebview and
 pystray import, the web assets are present, the OS credential store is reachable through keyring
-(not on Linux CI, which has no Secret Service), the PC link's QR is drawn and the webcam listing
-loads.
+(not on Linux CI, which has no Secret Service), the PC link's QR is drawn, the webcam listing
+loads and a movements file is written, encrypted, decrypted and read back (pyarrow, cryptography).
 """
 
 import logging
@@ -98,6 +98,29 @@ def _vinculacion() -> None:
     listar_dispositivos()  # no webcam in CI: an empty list, but the OS libraries load
 
 
+def _almacenamiento() -> None:
+    import os
+    from datetime import UTC, datetime
+
+    from te_tengo_captura.almacen.cifrado import cifrar_bytes, descifrar_bytes
+    from te_tengo_captura.almacen.puntos import (
+        FilaMovimiento,
+        TramoMovimientos,
+        a_ms,
+        leer_parquet,
+    )
+
+    tramo = TramoMovimientos("autoprueba")
+    inicio = a_ms(datetime(2026, 9, 23, tzinfo=UTC))
+    for i in range(16):
+        tramo.agregar(FilaMovimiento(inicio + i * 125, [(0.5, 0.5, 0.0, 0.9)] * 33))
+    [cerrado] = tramo.cerrar()
+    clave = os.urandom(32)
+    _, filas = leer_parquet(descifrar_bytes(clave, cifrar_bytes(clave, cerrado.datos)))
+    if len(filas) != 16:
+        raise RuntimeError("el archivo de movimientos no se leyó completo")
+
+
 def ejecutar(ruta_modelo: Path) -> int:
     pruebas: list[tuple[str, Callable[[], None]]] = [
         ("modelo de pose", lambda: _modelo(ruta_modelo)),
@@ -105,6 +128,7 @@ def ejecutar(ruta_modelo: Path) -> int:
         ("vista en vivo", _vista_en_vivo),
         ("interfaz", _interfaz),
         ("vinculación", _vinculacion),
+        ("almacenamiento", _almacenamiento),
     ]
     fallidas = 0
     for nombre, prueba in pruebas:

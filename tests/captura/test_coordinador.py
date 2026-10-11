@@ -157,12 +157,16 @@ def test_desvincular_desde_esta_pc(e: Escenario, borrar: bool) -> None:
     c = e.vincular()
     c.ir_a_estado()
     (e.datos / "clips").mkdir(parents=True, exist_ok=True)
+    guardado = c.almacen.carpeta / "movimientos" / "c1" / "x.parquet.ttg"
+    guardado.parent.mkdir(parents=True)
+    guardado.write_bytes(b"TTG1")
     resultado = c.desvincular(borrar)
     assert resultado == {"ok": True, "avisada": True}
     assert e.falso.desvinculaciones == [{"via": "delete", "datos": "true" if borrar else None}]
     assert e.almacen.leer() is None
     assert c.estado().pantalla is Pantalla.VINCULAR  # the code again (CA-31.3)
     assert not (e.datos / "clips").exists()
+    assert guardado.exists() is not borrar  # «Borrar también los datos de esta PC» (CA-31.6)
 
 
 def test_desvincular_sin_internet_queda_pendiente_y_se_envia_despues(e: Escenario) -> None:
@@ -277,3 +281,33 @@ def test_diagnostico_desde_el_coordinador(e: Escenario, tmp_path: Path) -> None:
     assert c.pc is not None
     for secreto in c.pc.sesion.secretos():
         assert secreto.encode() not in contenido
+
+
+def test_almacenamiento_desde_la_ventana(e: Escenario) -> None:
+    c = e.vincular()
+    c.ir_a_estado()
+    esperar(lambda: c.almacen.puede_movimientos)  # asked as soon as the PC started (CA-35.3)
+    store = c.estado().a_json()["store"]
+    assert store["permisoMovimientos"] is True
+    assert store["nube"] == 90
+    assert store["ajustes"]["video"] is False  # CA-38.2
+    assert c.cambiar_almacenamiento({"limite_gb": 25, "carpeta": "/otra"}) == {"ok": True}
+    assert c.almacen.ajustes.limite_gb == 25
+    assert c.almacen.ajustes.carpeta is None  # only «Cambiar carpeta» moves the folder
+    entrada = c.lista_actividad()[0]
+    assert entrada["m"] == "Desde esta PC: el límite de espacio pasó de 50 GB a 25 GB"
+
+    e.falso.movimientos_en_la_pc = False  # Rosa no longer allows it (CA-35.4)
+    c.almacen.revisar_permiso()
+    assert c.estado().a_json()["store"]["permisoMovimientos"] is False
+    assert c.cambiar_almacenamiento({"movimientos": True}) == {"ok": False, "codigo": "SIN_PERMISO"}
+    assert c.borrar_movimientos()["ok"] is True
+    assert c.lista_actividad()[0]["m"] == "Desde esta PC: se borraron los movimientos guardados"
+    assert c.pc is not None
+    c.pc.reintentar_ahora()
+    esperar(
+        lambda: (
+            {"GUARDADO_LOCAL_CAMBIADO", "DATOS_LOCALES_ELIMINADOS"}
+            <= {a["tipo"] for a in e.falso.actividad.values()}
+        )
+    )

@@ -70,6 +70,11 @@ class AlmacenCredenciales:
             self._llavero = llavero_del_sistema()
         return self._llavero
 
+    @property
+    def llavero(self) -> Llavero:
+        """The credential store itself: the local data key lives there too (US-38)."""
+        return self._sistema()
+
     # ------------------------------------------------------------------ tokens
 
     def leer(self) -> CredencialesPc | None:

@@ -16,11 +16,13 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from functools import partial
 from pathlib import Path
 
+from te_tengo_captura.almacen.gestor import AlmacenLocal, GrabadorCamara
 from te_tengo_captura.backend.cliente import ClienteBackend
+from te_tengo_captura.backend.modelos import EstadoMovimientos
 from te_tengo_captura.backend.transmision import CanalTransmision
 from te_tengo_captura.captura.bucle import Analisis, BucleCaptura, HiloCaptura
 from te_tengo_captura.captura.en_vivo import TransmisionEnVivo
@@ -85,6 +87,7 @@ class Agente:
         codificar: Callable[[list[tuple[float, bytes]]], bytes] | None = None,
         vista_en_vivo: bool = False,
         al_desvincular: Callable[[str], None] | None = None,
+        almacen: AlmacenLocal | None = None,
     ) -> None:
         """``vista_en_vivo`` opens the live view's control channel to ``config.api_url``; it is
         off for ``--backend-falso`` and the tests, which have no WebSocket server. ``codificar``
@@ -159,6 +162,10 @@ class Agente:
             reloj=time.monotonic,
         )
         self.bucle.observadores.append(self._analizado)
+        # Local storage (US-38): this camera's recorder, once its camera id is known.
+        self._almacen = almacen
+        self._grabador: GrabadorCamara | None = None
+        self.bucle.al_clip.append(self._clip)
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -182,6 +189,8 @@ class Agente:
         self._hilo_latido.detener()
         self._enviador.detener()
         self.cola.cerrar()
+        if self._almacen is not None and self._grabador is not None:
+            self._almacen.soltar_camara(self._cliente.camara_id or "")
         self._cliente.cerrar()
         logger.info("Te Tengo Captura detenido")
 
@@ -314,6 +323,28 @@ class Agente:
         self.narrador.analizado(
             analisis.fotograma.instante, analisis.pose, analisis.clasificador, analisis.eventos
         )
+        grabador = self._grabador_listo()
+        if grabador is not None:
+            grabador.analizado(analisis)
+
+    def conectar_almacen(self, almacen: AlmacenLocal) -> None:
+        """An installation's storage is the coordinator's (it exists before the agent)."""
+        self._almacen = almacen
+
+    def estado_movimientos(self) -> EstadoMovimientos:
+        return self._cliente.estado_movimientos()
+
+    def _grabador_listo(self) -> "GrabadorCamara | None":
+        if self._grabador is None and self._almacen is not None:
+            camara_id = self._cliente.camara_id
+            if camara_id:
+                self._grabador = self._almacen.para_camara(camara_id)
+        return self._grabador
+
+    def _clip(self, evento_id: str, mp4: bytes) -> None:
+        grabador = self._grabador_listo()
+        if grabador is not None:
+            grabador.clip(evento_id, self._reloj_utc() - timedelta(seconds=12), mp4)
 
     def _permitida(self) -> bool:
         return not self._bloqueada and self.latido.captura_permitida()

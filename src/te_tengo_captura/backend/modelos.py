@@ -197,3 +197,14 @@ class AsignacionCamara(_Cuerpo):
 
     def json_api(self) -> dict[str, Any]:
         return self.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+
+class EstadoMovimientos(_Cuerpo):
+    """``GET /api/agente/movimientos/estado``: may movements be stored, on the PC and in the
+    cloud (US-35, US-37)."""
+
+    consentimiento_vigente: bool
+    guardar_en_la_pc: bool
+    guardar_en_la_nube: bool
+    retencion_dias: int | None = None
+    version_texto_vigente: str | None = None

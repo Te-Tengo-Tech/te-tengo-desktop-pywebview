@@ -81,6 +81,15 @@ class VentanaEstado:
         ruta = elegido if isinstance(elegido, str) else elegido[0]
         return Path(ruta)
 
+    def elegir_carpeta(self) -> Path | None:
+        """The system's folder dialog; ``None`` if cancelled."""
+        import webview
+
+        elegido = self._ventana.create_file_dialog(webview.FOLDER_DIALOG)
+        if not elegido:
+            return None
+        return Path(elegido if isinstance(elegido, str) else elegido[0])
+
     def destruir(self) -> None:
         self._saliendo = True
         self._ventana.destroy()

@@ -26,6 +26,7 @@ from te_tengo_captura.backend.errores import (
 from te_tengo_captura.backend.modelos import (
     ConfiguracionRemota,
     EstadoCaptura,
+    EstadoMovimientos,
     EventoAgente,
     EventoRecibido,
     Registro,
@@ -50,6 +51,7 @@ RUTA_SENAL = "/api/agente/senal"
 RUTA_EVENTOS = "/api/agente/eventos"
 RUTA_CLIP = "/api/agente/eventos/{evento_id}/clip"
 RUTA_CONFIGURACION = "/api/agente/configuracion"
+RUTA_ESTADO_MOVIMIENTOS = "/api/agente/movimientos/estado"
 
 # Seconds; a clip upload carries about 1 MB, so it gets a longer write timeout.
 TIMEOUT = httpx.Timeout(10.0, connect=5.0)
@@ -166,6 +168,10 @@ class ClienteBackend:
                 f"El almacenamiento rechazó el clip ({respuesta.status_code})",
                 respuesta.status_code,
             )
+
+    def estado_movimientos(self) -> EstadoMovimientos:
+        """Whether movements may be stored (US-35), with the camera's token."""
+        return leer_modelo(EstadoMovimientos, self._autenticado("GET", RUTA_ESTADO_MOVIMIENTOS))
 
     def configuracion(self) -> ConfiguracionRemota:
         return leer_modelo(ConfiguracionRemota, self._autenticado("GET", RUTA_CONFIGURACION))

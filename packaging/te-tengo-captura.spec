@@ -65,15 +65,35 @@ if EN_MACOS:
 elif sys.platform == "win32":
     hiddenimports += ["comtypes", "comtypes.persist", "comtypes.automation"]
 
+PYARROW_SOBRANTE = [
+    f"pyarrow.{m}"
+    for m in (
+        "flight", "_flight", "dataset", "_dataset", "_dataset_orc", "_dataset_parquet",
+        "_dataset_parquet_encryption", "_parquet_encryption", "acero", "_acero", "substrait",
+        "_substrait", "_s3fs", "_gcsfs", "_azurefs", "_hdfs", "orc", "_orc", "cuda", "_cuda",
+        "gandiva", "interchange", "tests",
+    )
+]
+# The core links libarrow_dataset, _acero and _substrait, so those libraries stay.
+LIBS_ARROW_SOBRANTES = ("arrow_flight", "arrow_s3", "gandiva", "python_flight", "python_parquet_encryption")
+SOBRANTES_ARROW = (".pyx", ".pxd", ".pxi", ".h", ".hpp", ".cc")
+
 a = Analysis(
     [str(RAIZ / "packaging" / "lanzador.py")],
     pathex=[str(RAIZ / "src")],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    excludes=["tkinter", "pytest"],  # mediapipe imports matplotlib: keep it
+    excludes=["tkinter", "pytest", *PYARROW_SOBRANTE],  # mediapipe imports matplotlib: keep it
     noarchive=False,
 )
+# pyarrow's hook takes every Arrow library (~120 MB). The movements (almacen/puntos.py) only read
+# and write Parquet in memory: Flight, Gandiva and the cloud file systems stay out, and so do the
+# C++ headers and Cython sources.
+a.binaries = [b for b in a.binaries if not any(f in Path(b[0]).name for f in LIBS_ARROW_SOBRANTES)]
+a.datas = [
+    d for d in a.datas if not (d[0].startswith("pyarrow") and (d[0].endswith(SOBRANTES_ARROW) or "/include/" in d[0].replace("\\", "/")))
+]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,

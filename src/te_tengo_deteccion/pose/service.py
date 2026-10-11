@@ -70,7 +70,8 @@ def detectar(landmarker: Any, imagen_bgr: Any, instante_ms: int | None = None) -
     if not resultado.pose_landmarks:
         return None
     landmarks = tuple(
-        Landmark(lm.x, lm.y, lm.visibility or 0.0) for lm in resultado.pose_landmarks[0]
+        Landmark(lm.x, lm.y, lm.visibility or 0.0, lm.z or 0.0)
+        for lm in resultado.pose_landmarks[0]
     )
     return Pose(landmarks, ancho, alto)
 
