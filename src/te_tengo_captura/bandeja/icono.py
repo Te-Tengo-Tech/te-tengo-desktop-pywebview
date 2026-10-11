@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 from te_tengo_captura.bandeja.iconos import icono
-from te_tengo_captura.estado import EstadoAgente, Notificacion
+from te_tengo_captura.estado import Mostrable, Notificacion
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def _en_hilo_principal(accion: Callable[[], None]) -> None:
         accion()
 
 
-def descripcion(estado: EstadoAgente) -> str:
+def descripcion(estado: Mostrable) -> str:
     """Tooltip, as the ``title`` of the tray button in the prototype."""
     return f"Te Tengo Captura · {estado.bandeja.etiqueta}"
 
@@ -57,7 +57,7 @@ class IconoBandeja:
         # called from the main thread, before ``webview.start``.
         self._icono.run_detached()
 
-    def actualizar(self, estado: EstadoAgente) -> None:
+    def actualizar(self, estado: Mostrable) -> None:
         punto, titulo = estado.bandeja.k, descripcion(estado)
 
         def aplicar() -> None:

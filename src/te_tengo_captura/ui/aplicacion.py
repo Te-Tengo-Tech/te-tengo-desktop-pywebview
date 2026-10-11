@@ -11,12 +11,12 @@ import tempfile
 from collections.abc import MutableMapping
 from pathlib import Path
 
-from te_tengo_captura.agente import Agente
 from te_tengo_captura.bandeja.avisos import Avisos
 from te_tengo_captura.bandeja.icono import EN_MACOS, IconoBandeja
 from te_tengo_captura.bandeja.iconos import icono
+from te_tengo_captura.coordinador import Coordinador
 from te_tengo_captura.ui import arranque
-from te_tengo_captura.ui.puente import Puente
+from te_tengo_captura.ui.puente import Acciones, Puente
 from te_tengo_captura.ui.ventana import VentanaEstado
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ def mostrar_icono_en_el_dock(ruta: Path) -> None:
 
 
 class Aplicacion:
-    def __init__(self, agente: Agente) -> None:
+    def __init__(self, agente: Coordinador) -> None:
         self._agente = agente
         self._icono = IconoBandeja(abrir=self.abrir, salir=self.salir)
         self._avisos = Avisos(self._icono.notificar)
@@ -58,6 +58,12 @@ class Aplicacion:
             buscar_webcam=agente.buscar_webcam,
             reintentar_ahora=agente.reintentar_ahora,
             vista_previa=agente.vista_previa_jpeg,
+            acciones=Acciones(
+                otro_codigo=agente.otro_codigo,
+                vincular_de_nuevo=agente.vincular_de_nuevo,
+                ir_a_estado=agente.ir_a_estado,
+                desvincular=agente.desvincular,
+            ),
         )
         self._inicio = arranque.VentanaArranque(agente.version)
         self._ventana = VentanaEstado(puente, al_ocultar=self._al_ocultar, oculta=True)
@@ -107,5 +113,5 @@ class Aplicacion:
         self._agente.publicar_estado()
 
 
-def ejecutar(agente: Agente) -> None:
+def ejecutar(agente: Coordinador) -> None:
     Aplicacion(agente).ejecutar()

@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from te_tengo_captura.estado import EstadoAgente
+from te_tengo_captura.estado import Mostrable
 from te_tengo_captura.ui.puente import Puente
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ class VentanaEstado:
         self._ventana.hide()
         self._al_ocultar()
 
-    def actualizar(self, estado: EstadoAgente) -> None:
+    def actualizar(self, estado: Mostrable) -> None:
         if self._cargada.is_set() and not self._saliendo:
             self._ventana.evaluate_js(script_actualizar(estado.a_json()))
 

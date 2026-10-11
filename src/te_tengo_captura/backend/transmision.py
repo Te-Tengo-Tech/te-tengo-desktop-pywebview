@@ -7,7 +7,11 @@ token in the handshake (``Authorization: Bearer``) and receives **text JSON only
 * ``{"modo": "VIDEO_CON_POSTURA"}``: change the mode during a transmission;
 * ``{"transmitir": false}``: stop publishing;
 * ``{"preparar": true}``: the app opened the camera screen; get ready without sending video
-  (``captura/en_vivo.py``, "Pre-warm").
+  (``captura/en_vivo.py``, "Pre-warm");
+* ``{"desvincular": true}``: the PC was removed from the household (US-31); the API then closes
+  the channel with code 4001. ``al_desvincular`` hears it, as it hears a ``401 PC_DESVINCULADA``
+  in the handshake (CA-31.1). A linked PC opens one more channel with its own token
+  (``docs/AGENT_CONTRACT.md``, "Control channel").
 
 Messages with none of these fields are ignored.
 
@@ -62,6 +66,15 @@ class ReceptorTransmision(Protocol):
     def detener(self) -> None: ...
 
 
+def _codigo(respuesta: Any) -> str | None:
+    """The ``codigo`` of a ``ProblemDetail`` in a refused handshake, if any."""
+    try:
+        cuerpo = json.loads(bytes(respuesta.body or b"").decode("utf-8"))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return cuerpo.get("codigo") if isinstance(cuerpo, dict) else None
+
+
 def url_websocket(api_url: str) -> str:
     """``https://host/base`` → ``wss://host/base/api/agente/transmision``."""
     partes = urlsplit(api_url.rstrip("/"))
@@ -91,8 +104,12 @@ class CanalTransmision:
         conectar: Callable[[str, str], Any] = _conectar,
         reintento_inicial_s: float = REINTENTO_INICIAL_S,
         reintento_maximo_s: float = REINTENTO_MAXIMO_S,
+        al_desvincular: Callable[[str], None] | None = None,
+        nombre: str = "Canal de vista en vivo",
     ) -> None:
         self._cliente = cliente
+        self._al_desvincular = al_desvincular
+        self._nombre = nombre
         self._url = url_websocket(api_url)
         self._receptor = receptor
         self._conectar = conectar
@@ -135,8 +152,11 @@ class CanalTransmision:
             self._atender(token)
         except InvalidStatus as error:
             estado = error.response.status_code
+            if estado == 401 and _codigo(error.response) == "PC_DESVINCULADA":
+                self._desvincular("PC_DESVINCULADA")
+                return self._reintento_maximo
             if estado == 401 and token is not None:
-                logger.info("Canal de vista en vivo: token rechazado; se registra de nuevo")
+                logger.info("%s: token rechazado; se renueva", self._nombre)
                 try:
                     self._cliente.renovar_token(token)
                 except ErrorBackendError as registro:
@@ -162,29 +182,30 @@ class CanalTransmision:
                 return
             self.conectado = True
             self._fallos = 0
-            logger.info("Canal de vista en vivo conectado")
+            logger.info("%s conectado", self._nombre)
             for mensaje in conexion:
                 self.atender_mensaje(mensaje)
 
     def atender_mensaje(self, mensaje: str | bytes) -> None:
         if isinstance(mensaje, bytes):
-            logger.warning("Canal de vista en vivo: mensaje binario ignorado")
+            logger.warning("%s: mensaje binario ignorado", self._nombre)
             return
         try:
             orden = OrdenTransmision.model_validate(json.loads(mensaje))
         except (ValueError, ValidationError) as error:
             # Never echo the message: it may carry the publish token.
-            logger.warning(
-                "Canal de vista en vivo: mensaje inválido ignorado (%s)", type(error).__name__
-            )
+            logger.warning("%s: mensaje inválido ignorado (%s)", self._nombre, type(error).__name__)
             return
         if orden.transmitir is True:
             if not orden.url_publicacion:
-                logger.warning("Canal de vista en vivo: «transmitir» sin urlPublicacion")
+                logger.warning("%s: «transmitir» sin urlPublicacion", self._nombre)
                 return
             self._receptor.transmitir(
                 orden.url_publicacion, orden.usuario, orden.clave, orden.modo or ModoVista.VIDEO
             )
+        elif orden.desvincular is True:
+            self._receptor.detener()
+            self._desvincular("desvincular")
         elif orden.transmitir is False:
             self._receptor.detener()
         elif orden.preparar is True:
@@ -192,19 +213,21 @@ class CanalTransmision:
         elif orden.modo is not None:
             self._receptor.cambiar_modo(orden.modo)
 
+    def _desvincular(self, motivo: str) -> None:
+        if self._al_desvincular is not None:
+            self._al_desvincular(motivo)
+
     def _cerrado(self) -> None:
         with self._candado:
             self._conexion = None
         if self.conectado:
             self.conectado = False
-            logger.info("Canal de vista en vivo cerrado")
+            logger.info("%s cerrado", self._nombre)
         self._receptor.detener()
 
     def _fallo(self, motivo: str) -> float:
         self._fallos += 1
         espera = min(self._reintento_maximo, self._reintento_inicial * 2.0 ** (self._fallos - 1))
         nivel = logging.WARNING if self._fallos == 1 else logging.DEBUG
-        logger.log(
-            nivel, "Canal de vista en vivo sin conexión (%s); reintento en %.0f s", motivo, espera
-        )
+        logger.log(nivel, "%s sin conexión (%s); reintento en %.0f s", self._nombre, motivo, espera)
         return espera

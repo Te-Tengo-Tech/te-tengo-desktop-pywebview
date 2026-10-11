@@ -1,0 +1,529 @@
+"""What the PC is right now, and the moves between those states (US-28, US-31).
+
+* **Installation** (``config.toml`` with ``credencial_instalacion``): the project team's camera
+  (``agente.Agente``), unchanged.
+* **Linking** («Vincular esta PC», D-28.1): no credentials yet; ``vinculacion.Vinculador`` shows
+  the QR and the code until the owner approves it in the app.
+* **Linked PC** (``agente_pc.AgentePc``): its tokens are in the OS credential store.
+
+Moves:
+
+* approved in the app → the tokens are stored, the PC starts and the window says «Esta PC quedó
+  vinculada a la casa de …» (D-28.4) until «Ir a Estado»;
+* removed from the app (``{"desvincular":true}``, ``401 PC_DESVINCULADA``, or ``invalid_grant``
+  when renewing) → capture stops at once, the credentials are deleted (the tokens, or the
+  installation credential from ``config.toml``), and the window says «Esta PC se quitó de la casa
+  de …» (D-31.2) with «Vincular de nuevo» (CA-31.1, CA-31.2). After 90 days or more without
+  connecting it goes straight to the code with «Esta PC estuvo más de 90 días sin conexión»
+  (CA-28.7);
+* «Desvincular esta PC» from the PC (CA-31.3, CA-31.6) → the API is told (or the revocation is
+  left pending until there is internet), the credentials and, if asked, the data saved on the PC
+  are deleted, and the code is shown again.
+
+The coordinator also runs the state notifier: every second the window, the tray icon and the
+system notices get an ``EstadoVentana`` (``suscribir``). Moves triggered by a worker thread run
+in their own thread, so no thread ever waits for itself to stop.
+"""
+
+import json
+import logging
+import shutil
+import threading
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, tzinfo
+from enum import StrEnum
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from te_tengo_captura.agente import Agente
+from te_tengo_captura.agente_pc import AgentePc, enviar_revocacion_pendiente, leer_pc
+from te_tengo_captura.backend.pc import ClientePc
+from te_tengo_captura.captura.dispositivos import Dispositivo, listar_dispositivos
+from te_tengo_captura.estado import EstadoAgente, EstadoBandeja, Hogar, hora_local
+from te_tengo_captura.sistema import nombre_pc, sistema_operativo
+from te_tengo_captura.vinculacion.credenciales import (
+    AlmacenCredenciales,
+    AlmacenNoDisponibleError,
+    CredencialesPc,
+)
+from te_tengo_captura.vinculacion.maquina import Fase, HiloVinculacion, Vinculador
+from te_tengo_captura.vinculacion.oauth import ClienteOAuth, TokensPc
+from te_tengo_captura.vinculacion.qr import codigo_qr
+from te_tengo_captura.vinculacion.sesion import SesionPc, credenciales_de
+
+logger = logging.getLogger(__name__)
+
+INTERVALO_ESTADO_S = 1.0  # the window's countdowns move every second
+DIAS_SIN_CONEXION = 90  # CA-28.7
+ARCHIVO_CONTACTO = "ultimo_contacto.json"
+ARCHIVO_QUITADA = "quitada.json"
+REVOCACION_REINTENTO_S = 30.0
+# What a removed PC deletes from its data folder: the outbox and the capture state belong to the
+# identity that left (the cameras' folders arrive with US-29).
+ESTADO_DE_LA_IDENTIDAD = ("envios.sqlite3", "clips", "estado_captura.json", "pc.json", "camaras")
+
+
+class Pantalla(StrEnum):
+    VINCULAR = "vincular"
+    VINCULADA = "vinculada"
+    RECHAZADA = "rechazada"
+    QUITADA = "quitada"
+    PRINCIPAL = "main"
+
+
+@dataclass(frozen=True, slots=True)
+class EstadoVentana:
+    """What the window, the tray icon and the system notices get every second."""
+
+    pantalla: Pantalla
+    bandeja: EstadoBandeja
+    agente: EstadoAgente | None
+    datos: dict[str, Any] = field(default_factory=dict)
+    quitada: bool = False  # removed from the app (D-31.2): a system notice when hidden
+
+    def a_json(self) -> dict[str, Any]:
+        return self.datos
+
+
+class Coordinador:
+    def __init__(
+        self,
+        version: str,
+        api_url: str,
+        directorio_datos: Path,
+        almacen: AlmacenCredenciales,
+        instalacion: Callable[[Callable[[str], None]], Agente] | None = None,
+        olvidar_instalacion: Callable[[], None] = lambda: None,
+        transporte: httpx.BaseTransport | None = None,
+        canal_pc: bool = True,
+        listar: Callable[[], list[Dispositivo]] = listar_dispositivos,
+        reloj: Callable[[], float] = time.time,
+        zona: tzinfo | None = None,
+    ) -> None:
+        self.version = version
+        self._api_url = api_url
+        self._directorio = directorio_datos
+        self._almacen = almacen
+        self._instalacion = instalacion
+        self._olvidar_instalacion = olvidar_instalacion
+        self._transporte = transporte
+        self._canal_pc = canal_pc
+        self._listar = listar
+        self._reloj = reloj
+        self._zona = zona
+        self._oauth = ClienteOAuth(api_url, transporte)
+        self._candado = threading.RLock()
+        self._candado_bandera = threading.Lock()  # never held while threads are joined
+        self.agente: Agente | None = None
+        self.pc: AgentePc | None = None
+        self._vinculador: Vinculador | None = None
+        self._hilo_vinculacion: HiloVinculacion | None = None
+        self._pantalla: Pantalla | None = None  # VINCULADA or QUITADA over the current mode
+        self._quitada: dict[str, str] = {}
+        self._re90 = False
+        self._desvinculando = False
+        self._tamano: tuple[float, int] | None = None
+        self._oyentes: list[Callable[[EstadoVentana], None]] = []
+        self._detenido = threading.Event()
+        self._hilo_estado = threading.Thread(target=self._notificar, name="estado", daemon=True)
+        self._hilo_revocacion = threading.Thread(
+            target=self._revocar_pendiente, name="revocacion", daemon=True
+        )
+
+    # ------------------------------------------------------------------ lifecycle
+
+    def iniciar(self) -> None:
+        self._directorio.mkdir(parents=True, exist_ok=True)
+        if self._instalacion is not None:
+            self.agente = self._instalacion(self._al_desvincular)
+            self.agente.iniciar()
+        else:
+            credenciales = self._leer_credenciales()
+            if credenciales is not None:
+                self._iniciar_pc(credenciales)
+            else:
+                self._iniciar_vinculacion()
+        self._hilo_revocacion.start()
+        self._hilo_estado.start()
+
+    def detener(self) -> None:
+        self._detenido.set()
+        with self._candado:
+            self._detener_modo()
+        self._oauth.cerrar()
+
+    def secretos(self) -> list[str]:
+        secretos: list[str] = []
+        if self.agente is not None:
+            secretos += self.agente.secretos()
+        if self.pc is not None:
+            secretos += self.pc.secretos()
+        return secretos
+
+    # ------------------------------------------------------------------ state
+
+    def suscribir(self, oyente: Callable[[EstadoVentana], None]) -> None:
+        """``oyente`` gets the state every second (window, tray); it runs in a worker thread."""
+        self._oyentes.append(oyente)
+
+    def publicar_estado(self) -> None:
+        estado = self.estado()
+        for oyente in list(self._oyentes):
+            try:
+                oyente(estado)
+            except Exception:
+                logger.exception("Error al mostrar el estado")
+
+    def estado(self) -> EstadoVentana:
+        with self._candado:
+            pantalla, agente, pc, vinculador = (
+                self._pantalla,
+                self.agente,
+                self.pc,
+                self._vinculador,
+            )
+        if pantalla is Pantalla.QUITADA:
+            datos = {"screen": "quitada", **self._quitada}
+            return EstadoVentana(
+                Pantalla.QUITADA,
+                EstadoBandeja("off", "se quitó de la vivienda"),
+                None,
+                datos,
+                quitada=True,
+            )
+        if agente is not None:
+            e = agente.estado()
+            return EstadoVentana(Pantalla.PRINCIPAL, e.bandeja, e, e.a_json())
+        if pc is not None:
+            e = pc.estado()
+            if pantalla is Pantalla.VINCULADA:
+                return EstadoVentana(
+                    Pantalla.VINCULADA,
+                    EstadoBandeja("warn", "falta elegir las cámaras en la app"),
+                    e,
+                    self._datos_vinculada(pc, e),
+                )
+            return EstadoVentana(
+                Pantalla.PRINCIPAL,
+                e.bandeja,
+                e,
+                {**e.a_json(), "unlink": True, "dataBytes": self._tamano_datos()},
+            )
+        if vinculador is not None and vinculador.fase is Fase.RECHAZADA:
+            return EstadoVentana(
+                Pantalla.RECHAZADA,
+                EstadoBandeja("off", "sin vincular"),
+                None,
+                {"screen": "rechazada"},
+            )
+        return EstadoVentana(
+            Pantalla.VINCULAR,
+            EstadoBandeja("off", "sin vincular"),
+            None,
+            self._datos_vincular(vinculador),
+        )
+
+    def _datos_vincular(self, vinculador: Vinculador | None) -> dict[str, Any]:
+        v = vinculador.estado() if vinculador is not None else None
+        qr = codigo_qr(v.url_completa) if v is not None and v.url_completa else None
+        return {
+            "screen": "vincular",
+            "pcname": nombre_pc(),
+            "pair": {
+                "fase": v.fase.value if v else Fase.PIDIENDO.value,
+                "code": v.codigo if v else None,
+                "url": v.url if v else None,
+                "qr": {"n": qr.modulos, "d": qr.ruta} if qr else None,
+                "left": v.segundos if v else 0,
+                "renewed": v.renovado if v else False,
+                "retry": v.reintento if v else 0,
+                "re90": self._re90,
+            },
+        }
+
+    def _datos_vinculada(self, pc: AgentePc, e: EstadoAgente) -> dict[str, Any]:
+        datos = pc.latido.pc
+        a_las = hora_local(datos.vinculada_en, self._zona) if datos is not None else ""
+        return {
+            **e.a_json(),
+            "screen": "vinculada",
+            "linkedBy": datos.vinculada_por if datos is not None else None,
+            "linkedAt": a_las,
+        }
+
+    # ------------------------------------------------------------------ readiness (splash)
+
+    def webcam_resuelta(self) -> bool:
+        agente = self.agente
+        if agente is not None:
+            latido = agente.latido
+            no_permitida = latido.en_linea is not None and not latido.captura_permitida()
+            return agente.captador.conectada is not None or no_permitida
+        pc = self.pc
+        return pc is None or pc.webcams_listadas
+
+    def conexion_resuelta(self) -> bool:
+        if self.agente is not None:
+            return self.agente.latido.en_linea is not None
+        if self.pc is not None:
+            return self.pc.latido.en_linea is not None
+        vinculador = self._vinculador
+        return vinculador is None or vinculador.fase is not Fase.PIDIENDO
+
+    # ------------------------------------------------------------------ bridge actions
+
+    def buscar_webcam(self) -> bool:
+        if self.agente is not None:
+            return self.agente.buscar_webcam()
+        if self.pc is not None:
+            return self.pc.buscar_webcams()
+        return False
+
+    def reintentar_ahora(self) -> bool:
+        if self.agente is not None:
+            return self.agente.reintentar_ahora()
+        if self.pc is not None:
+            return self.pc.reintentar_ahora()
+        vinculador, hilo = self._vinculador, self._hilo_vinculacion
+        if vinculador is not None and hilo is not None:
+            vinculador.reintentar_ahora()
+            hilo.despertar()
+        return False
+
+    def vista_previa_jpeg(self, clave: str) -> bytes | None:
+        return self.agente.vista_previa_jpeg(clave) if self.agente is not None else None
+
+    def otro_codigo(self) -> None:
+        """«Mostrar otro código» (D-28.5)."""
+        vinculador, hilo = self._vinculador, self._hilo_vinculacion
+        if vinculador is not None and hilo is not None:
+            vinculador.otro_codigo()
+            hilo.despertar()
+
+    def vincular_de_nuevo(self) -> None:
+        """«Vincular de nuevo» (D-31.2)."""
+        with self._candado:
+            if self._pantalla is Pantalla.QUITADA:
+                self._pantalla = None
+                self._borrar_archivo(ARCHIVO_QUITADA)
+                self._iniciar_vinculacion()
+
+    def ir_a_estado(self) -> None:
+        with self._candado:
+            if self._pantalla is Pantalla.VINCULADA:
+                self._pantalla = None
+
+    def desvincular(self, borrar_datos: bool) -> dict[str, bool]:
+        """«Desvincular esta PC» (CA-31.3, CA-31.6): ``avisada`` if the API heard it now."""
+        with self._candado_bandera:
+            pc = self.pc
+            if pc is None or self._desvinculando:
+                return {"ok": False, "avisada": False}
+            self._desvinculando = True
+        avisada = pc.desvincular(borrar_datos)
+        with self._candado:
+            self._detener_modo()
+            self._borrar_credenciales()
+            self._borrar_identidad()
+            if borrar_datos:
+                self.borrar_datos_locales()
+            self._pantalla = None
+            self._iniciar_vinculacion()
+            self._desvinculando = False
+        return {"ok": True, "avisada": avisada}
+
+    def borrar_datos_locales(self) -> None:
+        """«Borrar también los datos guardados en esta PC» (CA-31.6): movements, video and clips
+        of the data folder (the outbox's pending clips until US-38 adds the rest)."""
+        shutil.rmtree(self._directorio / "clips", ignore_errors=True)
+
+    # ------------------------------------------------------------------ moves
+
+    def _al_desvincular(self, motivo: str) -> None:
+        """The PC left the household (any worker thread): handled in a thread of its own."""
+        with self._candado_bandera:
+            if self._desvinculando:
+                return
+            self._desvinculando = True
+        threading.Thread(
+            target=self._quitar, args=(motivo,), name="desvincular", daemon=True
+        ).start()
+
+    def _quitar(self, motivo: str) -> None:
+        with self._candado:
+            hogar = self._hogar_actual()
+            sin_contacto = self._dias_sin_contacto()
+            self._detener_modo()
+            self._borrar_credenciales()
+            self._borrar_identidad()
+            if motivo == "invalid_grant" and sin_contacto >= DIAS_SIN_CONEXION:
+                logger.warning(
+                    "Esta PC estuvo %d días sin conexión: hay que vincularla", sin_contacto
+                )
+                self._re90 = True
+                self._pantalla = None
+                self._iniciar_vinculacion()
+            else:
+                self._quitada = {
+                    "who": hogar.nombre_adulto_mayor,
+                    "at": hora_local(datetime.fromtimestamp(self._reloj(), UTC), self._zona),
+                }
+                self._guardar_json(ARCHIVO_QUITADA, self._quitada)
+                self._pantalla = Pantalla.QUITADA
+            self._desvinculando = False
+        self.publicar_estado()
+
+    def _vinculada(self, tokens: TokensPc) -> None:
+        """The owner approved the link in the app (the pairing thread)."""
+        credenciales = credenciales_de(tokens, self._reloj())
+        try:
+            self._almacen.guardar(credenciales)
+        except AlmacenNoDisponibleError as error:
+            logger.error("No se pudieron guardar los tokens de la PC (%s)", error)
+        with self._candado:
+            self._vinculador, self._hilo_vinculacion = None, None
+            self._re90 = False
+            self._iniciar_pc(credenciales)
+            self._pantalla = Pantalla.VINCULADA
+        self.publicar_estado()
+
+    def _iniciar_pc(self, credenciales: CredencialesPc) -> None:
+        sesion = SesionPc(self._oauth, self._almacen, credenciales, self._al_desvincular)
+        cliente = ClientePc(self._api_url, sesion, self._transporte)
+        self.pc = AgentePc(
+            self._api_url,
+            sesion,
+            cliente,
+            self._oauth,
+            self._almacen,
+            self._directorio,
+            self.version,
+            listar=self._listar,
+            canal=self._canal_pc,
+            zona=self._zona,
+            al_contactar=self._contacto,
+        )
+        self.pc.iniciar()
+
+    def _iniciar_vinculacion(self) -> None:
+        quitada = self._leer_json(ARCHIVO_QUITADA)
+        if quitada and self._pantalla is None and not self._re90:
+            self._quitada = {str(k): str(v) for k, v in quitada.items()}
+            self._pantalla = Pantalla.QUITADA
+            return
+        self._vinculador = Vinculador(
+            self._oauth, nombre_pc(), sistema_operativo(), self.version, self._vinculada
+        )
+        self._hilo_vinculacion = HiloVinculacion(self._vinculador)
+        self._hilo_vinculacion.iniciar()
+
+    def _detener_modo(self) -> None:
+        agente, pc, hilo = self.agente, self.pc, self._hilo_vinculacion
+        self.agente, self.pc, self._vinculador, self._hilo_vinculacion = None, None, None, None
+        if agente is not None:
+            agente.detener()
+        if pc is not None:
+            pc.detener()
+        if hilo is not None:
+            hilo.detener()
+
+    # ------------------------------------------------------------------ storage
+
+    def _leer_credenciales(self) -> CredencialesPc | None:
+        try:
+            return self._almacen.leer()
+        except AlmacenNoDisponibleError as error:
+            logger.error("El almacén de credenciales del sistema no está disponible (%s)", error)
+            return None
+
+    def _borrar_credenciales(self) -> None:
+        try:
+            self._almacen.borrar()
+        except AlmacenNoDisponibleError as error:
+            logger.error("No se pudieron borrar las credenciales de la PC (%s)", error)
+        if self._instalacion is not None:
+            self._instalacion = None
+            try:
+                self._olvidar_instalacion()
+            except OSError as error:
+                logger.error("No se pudo borrar la credencial de instalación (%s)", error)
+
+    def _borrar_identidad(self) -> None:
+        for nombre in ESTADO_DE_LA_IDENTIDAD:
+            ruta = self._directorio / nombre
+            if ruta.is_dir():
+                shutil.rmtree(ruta, ignore_errors=True)
+            else:
+                ruta.unlink(missing_ok=True)
+
+    def _tamano_datos(self) -> int:
+        """Bytes in the data folder (for «Borrar también los datos… (3,2 GB)»), every 30 s."""
+        ahora = self._reloj()
+        if self._tamano is None or ahora - self._tamano[0] > 30:
+            total = 0
+            for ruta in self._directorio.rglob("*"):
+                try:
+                    if ruta.is_file():
+                        total += ruta.stat().st_size
+                except OSError:
+                    continue
+            self._tamano = (ahora, total)
+        return self._tamano[1]
+
+    def _hogar_actual(self) -> Hogar:
+        if self.agente is not None:
+            return self.agente.estado().hogar
+        if self.pc is not None:
+            return self.pc.hogar()
+        pc = leer_pc(self._directorio / "pc.json")
+        return Hogar(pc.nombre_adulto_mayor if pc is not None else "", "")
+
+    def _contacto(self) -> None:
+        self._guardar_json(ARCHIVO_CONTACTO, {"en": self._reloj()})
+
+    def _dias_sin_contacto(self) -> int:
+        datos = self._leer_json(ARCHIVO_CONTACTO)
+        if not datos:
+            return 0
+        try:
+            return int((self._reloj() - float(datos["en"])) // 86400)
+        except (KeyError, TypeError, ValueError):
+            return 0
+
+    def _leer_json(self, nombre: str) -> dict[str, Any] | None:
+        try:
+            datos = json.loads((self._directorio / nombre).read_text("utf-8"))
+        except (OSError, ValueError):
+            return None
+        return datos if isinstance(datos, dict) else None
+
+    def _guardar_json(self, nombre: str, datos: dict[str, Any]) -> None:
+        try:
+            self._directorio.mkdir(parents=True, exist_ok=True)
+            (self._directorio / nombre).write_text(json.dumps(datos), encoding="utf-8")
+        except OSError as error:
+            logger.warning("No se pudo guardar %s: %s", nombre, error)
+
+    def _borrar_archivo(self, nombre: str) -> None:
+        (self._directorio / nombre).unlink(missing_ok=True)
+
+    # ------------------------------------------------------------------ threads
+
+    def _notificar(self) -> None:
+        while not self._detenido.wait(INTERVALO_ESTADO_S):
+            self.publicar_estado()
+
+    def _revocar_pendiente(self) -> None:
+        while not self._detenido.is_set():
+            try:
+                if enviar_revocacion_pendiente(self._almacen, self._oauth):
+                    return
+            except AlmacenNoDisponibleError:
+                return
+            except Exception:
+                logger.exception("Error al enviar la desvinculación pendiente")
+            self._detenido.wait(REVOCACION_REINTENTO_S)

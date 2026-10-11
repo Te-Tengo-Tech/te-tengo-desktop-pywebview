@@ -7,7 +7,18 @@ JavaScript ones (camelCase) on purpose.
 
 import base64
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
+
+
+@dataclass(frozen=True, slots=True)
+class Acciones:
+    """The PC link's actions (US-28, US-31); no-ops for an installation."""
+
+    otro_codigo: Callable[[], None] = lambda: None
+    vincular_de_nuevo: Callable[[], None] = lambda: None
+    ir_a_estado: Callable[[], None] = lambda: None
+    desvincular: Callable[[bool], dict[str, bool]] = lambda _borrar: {"ok": False}
 
 
 class Puente:
@@ -18,12 +29,14 @@ class Puente:
         buscar_webcam: Callable[[], bool],
         reintentar_ahora: Callable[[], bool],
         vista_previa: Callable[[str], bytes | None] = lambda _clave: None,
+        acciones: Acciones | None = None,
     ) -> None:
         self._estado = estado
         self._ocultar = ocultar
         self._buscar_webcam = buscar_webcam
         self._reintentar_ahora = reintentar_ahora
         self._vista_previa = vista_previa
+        self._acciones = acciones or Acciones()
 
     def estado(self) -> dict[str, Any]:
         """The current state, for the first render (later ones are pushed by Python)."""
@@ -49,3 +62,19 @@ class Puente:
         """The newest frame of a camera as base64 JPEG, only for this window (CA-29.8)."""
         jpeg = self._vista_previa(str(clave))
         return {"jpeg": base64.b64encode(jpeg).decode("ascii") if jpeg else None}
+
+    def otroCodigo(self) -> None:  # noqa: N802 (JavaScript name)
+        """«Mostrar otro código» after «No reconozco esta PC» (D-28.5)."""
+        self._acciones.otro_codigo()
+
+    def vincularDeNuevo(self) -> None:  # noqa: N802 (JavaScript name)
+        """«Vincular de nuevo» after the PC was removed from the app (D-31.2)."""
+        self._acciones.vincular_de_nuevo()
+
+    def irAEstado(self) -> None:  # noqa: N802 (JavaScript name)
+        """«Ir a Estado» from «Esta PC quedó vinculada…» (D-28.4)."""
+        self._acciones.ir_a_estado()
+
+    def desvincular(self, borrar_datos: bool) -> dict[str, bool]:
+        """«Desvincular esta PC», optionally deleting the data saved on it (CA-31.3, CA-31.6)."""
+        return self._acciones.desvincular(bool(borrar_datos))

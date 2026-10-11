@@ -7,8 +7,9 @@ from PIL import Image
 
 from te_tengo_captura.bandeja.avisos import Avisos
 from te_tengo_captura.bandeja.iconos import CORAL, MORADO, PUNTOS, icono, poligono
-from te_tengo_captura.estado import EstadoAgente, Notificacion
-from tests.captura.estados import camara
+from te_tengo_captura.coordinador import EstadoVentana, Pantalla
+from te_tengo_captura.estado import EstadoBandeja, Notificacion
+from tests.captura.estados import camara, ventana
 from tests.captura.estados import estado as estado_de
 from tests.captura.ui.pystray_falso import PystrayFalso
 
@@ -16,8 +17,8 @@ PAUSA = datetime(2026, 10, 7, 20, 0, tzinfo=UTC)
 VIVO = datetime(2026, 10, 7, 19, 0, tzinfo=UTC)
 
 
-def estado(**cambios: Any) -> EstadoAgente:
-    return estado_de(camara(**cambios))
+def estado(**cambios: Any) -> EstadoVentana:
+    return ventana(estado_de(camara(**cambios)))
 
 
 def _rgb(hexadecimal: str) -> tuple[int, int, int]:
@@ -191,3 +192,28 @@ def test_en_macos_la_bandeja_se_actualiza_en_el_hilo_principal(
         accion()  # type: ignore[operator]
     assert icono_.title.startswith("Te Tengo Captura · cuidando")
     assert icono_.notificaciones == [("t", "x")]
+
+
+def test_avisos_antes_de_vincular_y_al_quitar_la_pc() -> None:
+    avisos: list[Notificacion] = []
+    a = Avisos(avisos.append)
+    sin_vincular = EstadoVentana(
+        Pantalla.VINCULAR, EstadoBandeja("off", "sin vincular"), None, {"screen": "vincular"}
+    )
+    a.ventana_oculta(sin_vincular)
+    assert avisos[-1].texto == "Ábrelo junto al reloj para vincular esta PC."
+    quitada = EstadoVentana(
+        Pantalla.QUITADA,
+        EstadoBandeja("off", "se quitó de la vivienda"),
+        None,
+        {"screen": "quitada", "who": "Rosa Huamán", "at": "11:20"},
+        quitada=True,
+    )
+    a.estado(estado())
+    a.estado(quitada)
+    a.estado(quitada)  # once
+    assert avisos[-1] == Notificacion(
+        "Esta PC se quitó de la vivienda",
+        "La familia la quitó a las 11:20. Ábrela para vincularla de nuevo.",
+    )
+    assert len(avisos) == 2

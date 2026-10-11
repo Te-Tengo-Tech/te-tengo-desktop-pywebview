@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 from datetime import tzinfo
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from te_tengo_captura.estado import (
     CamaraEntradas,
@@ -13,6 +13,12 @@ from te_tengo_captura.estado import (
     Webcam,
     derivar,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from te_tengo_captura.agente import Agente
+    from te_tengo_captura.coordinador import Coordinador, EstadoVentana
 
 HOGAR = Hogar("Rosa Huamán", "Jr. Los Pinos 482, San Miguel, Lima")
 PC = DatosPc("Sala-Rosa", "Windows 11 Home", "Te Tengo Captura 0.5.0", instalada_el="22/09/2026")
@@ -59,3 +65,26 @@ def estado(
     *camaras: CamaraEntradas, zona: tzinfo | None = None, pc: DatosPc = PC, **cambios: Any
 ) -> EstadoAgente:
     return derivar(entradas(*camaras, **cambios), HOGAR, pc, "0.5.0", zona)
+
+
+def ventana(e: EstadoAgente) -> "EstadoVentana":
+    """The coordinator's state for a PC whose cameras run (the «Estado» tab)."""
+    from te_tengo_captura.coordinador import EstadoVentana, Pantalla
+
+    return EstadoVentana(Pantalla.PRINCIPAL, e.bandeja, e, e.a_json())
+
+
+def coordinador_de(agente: "Agente", directorio: "Path") -> "Coordinador":
+    """An installation's agent run by the coordinator, as ``__main__`` does."""
+    from te_tengo_captura.backend.falso import URL_API
+    from te_tengo_captura.coordinador import Coordinador
+    from te_tengo_captura.vinculacion.credenciales import AlmacenCredenciales, LlaveroEnMemoria
+
+    return Coordinador(
+        agente.version,
+        URL_API,
+        directorio,
+        AlmacenCredenciales(LlaveroEnMemoria()),
+        instalacion=lambda _al_desvincular: agente,
+        canal_pc=False,
+    )

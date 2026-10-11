@@ -107,14 +107,33 @@ class OrdenTransmision(_Cuerpo):
 
     ``{"transmitir": true, "urlPublicacion", "usuario", "clave", "modo"?}`` starts publishing,
     ``{"transmitir": false}`` stops it, ``{"modo": …}`` alone changes the mode and
-    ``{"preparar": true}`` asks for the pre-warm (the app opened the camera screen). Unknown
+    ``{"preparar": true}`` asks for the pre-warm (the app opened the camera screen) and
+    ``{"desvincular": true}`` says the PC left the household (US-31). Unknown
     fields are ignored, so an agent that does not know a message does nothing with it.
     ``clave`` is the publish token: never logged.
     """
 
     transmitir: bool | None = None
     preparar: bool | None = None
+    desvincular: bool | None = None
     url_publicacion: str | None = None
     usuario: str | None = None
     clave: str | None = Field(default=None, repr=False)
     modo: ModoVista | None = None
+
+
+class PcDelAgente(_Cuerpo):
+    """``GET /api/agente/pc`` and the PC's heartbeat: its household and who approved it."""
+
+    pc_id: str
+    hogar_id: str
+    nombre: str
+    nombre_adulto_mayor: str
+    vinculada_en: datetime
+    vinculada_por: str | None = None
+    consentimiento_vigente: bool
+
+
+class SenalPc(_Cuerpo):
+    version_agente: str
+    sistema_operativo: str

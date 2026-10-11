@@ -12,7 +12,9 @@ from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.falso import URL_API, BackendFalso
 from te_tengo_captura.captura.fuentes import FuenteArchivo, FuenteVideo, FuenteWebcam
 from te_tengo_captura.captura.pose import EstimadorMediaPipe, ruta_modelo_predeterminada
+from te_tengo_captura.coordinador import Coordinador
 from te_tengo_captura.instancia import Instancia
+from te_tengo_captura.vinculacion.credenciales import AlmacenCredenciales, LlaveroEnMemoria
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,9 @@ def argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--config",
         type=Path,
         help=f"installation file (default: {config.ruta_predeterminada()})",
+    )
+    parser.add_argument(
+        "--api-url", help="URL of te-tengo-general-api for a linked PC (default: production)"
     )
     parser.add_argument(
         "--backend-falso",
@@ -54,13 +59,20 @@ def argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def construir_agente(args: argparse.Namespace, configuracion: config.Configuracion) -> Agente:
+def construir_agente(
+    args: argparse.Namespace,
+    configuracion: config.Configuracion,
+    al_desvincular: Callable[[str], None] | None = None,
+    falso: BackendFalso | None = None,
+) -> Agente:
+    """An installation's agent (the project team's ``config.toml``)."""
     if args.marca_tiempo:
         vista = configuracion.vista_en_vivo.model_copy(update={"marca_tiempo": True})
         configuracion = configuracion.model_copy(update={"vista_en_vivo": vista})
     credencial = configuracion.credencial_instalacion.get_secret_value()
-    if args.backend_falso:
+    if falso is None and args.backend_falso:
         falso = BackendFalso(credencial=credencial)
+    if falso is not None:
         cliente = ClienteBackend(
             URL_API,
             credencial,
@@ -87,11 +99,58 @@ def construir_agente(args: argparse.Namespace, configuracion: config.Configuraci
         estimador,
         args.datos or rutas.datos(),
         __version__,
-        vista_en_vivo=not args.backend_falso,
+        vista_en_vivo=falso is None,
+        al_desvincular=al_desvincular,
     )
 
 
-def ejecutar_aplicacion(agente: Agente, instancia_abrir: dict[str, Callable[[], None]]) -> None:
+def _nada() -> None:
+    pass
+
+
+def construir(
+    args: argparse.Namespace, configuracion: config.Configuracion | config.AjustesPc
+) -> Coordinador:
+    """The installation, or a PC that links with a code (US-28) when there is no credential."""
+    modelo = args.modelo or ruta_modelo_predeterminada()
+    if not modelo.is_file():  # fail at once, as before, instead of when a camera starts
+        raise FileNotFoundError(f"No existe el modelo {modelo}. Descárgalo con: make modelo")
+    falso = BackendFalso(credencial="", aprobar_tras=3) if args.backend_falso else None
+    fabrica: Callable[[Callable[[str], None]], Agente] | None = None
+    olvidar: Callable[[], None] = _nada
+    if isinstance(configuracion, config.Configuracion):
+        instalacion = configuracion
+        if falso is not None:
+            falso.credencial = instalacion.credencial_instalacion.get_secret_value()
+        ruta = args.config or config.ruta_predeterminada()
+
+        def instalar(al_desvincular: Callable[[str], None]) -> Agente:
+            return construir_agente(args, instalacion, al_desvincular, falso)
+
+        def olvidar_credencial() -> None:
+            if falso is None:  # a demo never edits the example file
+                config.olvidar_credencial(ruta)
+
+        fabrica, olvidar = instalar, olvidar_credencial
+        api_url = instalacion.api_url
+    else:
+        api_url = args.api_url or configuracion.api_url
+    return Coordinador(
+        __version__,
+        URL_API if falso is not None else api_url,
+        args.datos or rutas.datos(),
+        # The demo never touches the OS credential store.
+        AlmacenCredenciales(LlaveroEnMemoria() if falso is not None else None),
+        instalacion=fabrica,
+        olvidar_instalacion=olvidar,
+        transporte=falso.transporte() if falso is not None else None,
+        canal_pc=falso is None,
+    )
+
+
+def ejecutar_aplicacion(
+    agente: Coordinador, instancia_abrir: dict[str, Callable[[], None]]
+) -> None:
     from te_tengo_captura.ui.aplicacion import Aplicacion
 
     aplicacion = Aplicacion(agente)
@@ -118,8 +177,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     try:
         configuracion = config.cargar(args.config)
-        secretos.append(lambda: [configuracion.credencial_instalacion.get_secret_value()])
-        agente = construir_agente(args, configuracion)
+        if isinstance(configuracion, config.Configuracion):
+            credencial = configuracion.credencial_instalacion.get_secret_value()
+            secretos.append(lambda: [credencial])
+        agente = construir(args, configuracion)
         secretos.append(agente.secretos)
     except (config.ConfiguracionInvalidaError, FileNotFoundError) as error:
         logger.error("%s", error)

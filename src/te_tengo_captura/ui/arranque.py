@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from te_tengo_captura.agente import Agente
+from te_tengo_captura.coordinador import Coordinador
 from te_tengo_captura.ui.ventana import FONDO_ARRANQUE, WEB
 
 ANCHO, ALTO = 480, 300
@@ -34,17 +34,12 @@ class Paso:
     limite_s: float = LIMITE_PASO_S
 
 
-def pasos(agente: Agente) -> list[Paso]:
-    def webcam_resuelta() -> bool:
-        # Opened (or failed to open), or not opened because capture is not allowed.
-        latido = agente.latido
-        no_permitida = latido.en_linea is not None and not latido.captura_permitida()
-        return agente.captador.conectada is not None or no_permitida
-
+def pasos(agente: Coordinador) -> list[Paso]:
+    """The webcams opened (or failed to, or are not allowed yet), then Te Tengo answered."""
     return [
         Paso(22, 0, lambda: True, desde_s=0.08),
-        Paso(54, 1, webcam_resuelta, desde_s=0.72),
-        Paso(86, 2, lambda: agente.latido.en_linea is not None, desde_s=1.34),
+        Paso(54, 1, agente.webcam_resuelta, desde_s=0.72),
+        Paso(86, 2, agente.conexion_resuelta, desde_s=1.34),
         Paso(100, 2, lambda: True, desde_s=1.82),
     ]
 

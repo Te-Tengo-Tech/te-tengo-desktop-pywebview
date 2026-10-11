@@ -99,4 +99,63 @@ assert.match(boot, /Abriendo las cámaras…/);
 assert.match(boot, /Versión 0\.5\.0/);
 assert.match(boot, /aria-valuenow="34"/);
 assert.match(boot, /class="sp-mark"/);
+// Vincular esta PC (D-28.1): QR, the code letter by letter, countdown; offline; 90 days.
+const vincular = ui.win(E.vincular, U(), '');
+assert.match(vincular, /Vincula esta PC con tu celular/);
+assert.match(vincular, /Abre la app Te Tengo<\/span>/);
+assert.match(vincular, /Ajustes.*PCs y cámaras.*Agregar PC/);
+assert.match(vincular, /Escanea este código/);
+assert.match(vincular, /Esta PC: <b>Sala-Rosa<\/b>/);
+assert.match(vincular, /<svg class="qr" viewBox="-2 -2 \d+ \d+" role="img" aria-label="Código QR para vincular esta PC"/);
+assert.match(vincular, /class="qr-logo"/);
+assert.match(vincular, /O escribe este código en la app:/);
+assert.match(vincular, /<span aria-hidden="true">KQWT-MXHD<\/span><span class="sr">K Q W T, guion, M X H D<\/span>/);
+assert.match(vincular, /app\.tetengo\.reqsai\.tech\/vincular/);
+assert.match(vincular, /Vence en <span class="mono" id="pair-left">9:41<\/span>/);
+assert.match(vincular, /Esperando aprobación en el celular…/);
+assert.match(vincular, /¿Error en el celular\?/);
+assert.doesNotMatch(vincular, /class="tabbar"/);
+const renovado = ui.win(E.renovado, U(), '');
+assert.match(renovado, /Código nuevo · el anterior venció/);
+assert.match(renovado, /class="pair-left low"/);
+const sinInternet = ui.win(E.sinInternet, U(), '');
+assert.match(sinInternet, /Conecta esta PC a internet\. Reintentamos en <span class="mono" id="retry" data-r="pr">0:25<\/span>\./);
+assert.match(sinInternet, /El código aparece con conexión/);
+assert.doesNotMatch(sinInternet, /class="qr"/);
+assert.match(ui.win(E.noventa, U(), ''), /Más de 90 días sin conexión<\/b><span>Vincúlala de nuevo\./);
+assert.equal(ui.structure(E.vincular), ui.structure(Object.assign({}, E.vincular, {pair: Object.assign({}, E.vincular.pair, {left: 100})})));
+
+// Vinculada (D-28.4), rechazada (D-28.5), quitada (D-31.2).
+const vinculada = ui.win(E.vinculada, U(), '');
+assert.match(vinculada, /Vinculada a la casa de Rosa Huamán/);
+assert.match(vinculada, /Aprobó Carmen a las <span class="mono">10:31<\/span> · <b>Sala-Rosa<\/b>/);
+assert.match(vinculada, /Ahora elige las cámaras en la app<\/b>/);
+assert.match(vinculada, /Detectamos 3 cámaras/);
+assert.match(vinculada, /Falta el consentimiento de Rosa/);
+assert.match(vinculada, /data-act="toEstado"/);
+const rechazada = ui.win(E.rechazada, U(), '');
+assert.match(rechazada, /No se vinculó esta PC/);
+assert.match(rechazada, /Alguien eligió «No reconozco esta PC» en la app\./);
+assert.match(rechazada, /data-act="otherCode">.*Mostrar otro código/);
+const quitada = ui.win(E.quitada, U(), '');
+assert.match(quitada, /Se quitó de la casa de Rosa Huamán/);
+assert.match(quitada, /La familia la quitó desde la app a las <span class="mono">11:20<\/span>\.<\/p>/);
+assert.match(quitada, /data-act="pairAgain">.*Vincular de nuevo/);
+
+// A linked PC: «Desvincular esta PC» in «Cámaras» and its dialog (CA-31.4, CA-31.6).
+const pcCamaras = ui.win(E.pcPrincipal, U({tab:'camaras'}), '');
+assert.match(pcCamaras, /Esta PC: Sala-Rosa/);
+assert.match(pcCamaras, /Vinculada por Carmen el 23\/09\/2026/);
+assert.match(pcCamaras, /data-act="unlinkAsk">.*Desvincular<\/button>/);
+assert.match(pcCamaras, /Sin usar/);
+assert.doesNotMatch(ui.win(E.tres, U({tab:'camaras'}), ''), /unlinkAsk/);  // an installation
+const dialogo = ui.win(E.pcPrincipal, U({tab:'camaras', dlg:'unlink'}), '');
+assert.match(dialogo, /role="dialog" aria-modal="true"/);
+assert.match(dialogo, /¿Desvincular esta PC\?/);
+assert.match(dialogo, /La familia recibirá un aviso\./);
+assert.match(dialogo, /Borrar también los datos de esta PC \(3,2 GB\)/);
+assert.match(dialogo, /Movimientos, video y clips\.<\/span>/);
+assert.match(dialogo, /data-act="dlgClose">Cancelar/);
+assert.match(dialogo, /data-act="unlinkDo">.*Desvincular<\/button>/);
+assert.equal(ui.transition(E.vinculada, E.pcPrincipal), null);
 console.log('ok');

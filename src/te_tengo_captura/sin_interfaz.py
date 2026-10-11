@@ -12,8 +12,7 @@ import threading
 from collections.abc import Callable
 from types import FrameType
 
-from te_tengo_captura.agente import Agente
-from te_tengo_captura.estado import EstadoAgente
+from te_tengo_captura.coordinador import Coordinador, EstadoVentana
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +25,19 @@ class RegistroDeEstado:
     def __init__(self) -> None:
         self._anterior: str | None = None
 
-    def __call__(self, estado: EstadoAgente) -> None:
-        situacion = estado.situacion.value
+    def __call__(self, estado: EstadoVentana) -> None:
+        agente = estado.agente
+        situacion = (
+            agente.situacion.value
+            if agente is not None and estado.pantalla.value == "main"
+            else estado.pantalla.value
+        )
         if situacion != self._anterior:
             self._anterior = situacion
             logger.info("Estado del agente: %s", situacion)
 
 
-def ejecutar(agente: Agente, detener: threading.Event | None = None) -> None:
+def ejecutar(agente: Coordinador, detener: threading.Event | None = None) -> None:
     """Starts the agent and blocks until ``detener`` is set, Ctrl+C or SIGTERM."""
     parar = detener or threading.Event()
     anteriores = _atender_senales(parar)

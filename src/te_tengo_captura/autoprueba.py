@@ -2,7 +2,9 @@
 
 Used as the smoke test of the packaged app in CI: the MediaPipe model loads and runs, a clip is
 encoded, the live view encodes H.264 and has its RTSP muxer and WebSocket client, pywebview and
-pystray import, and the web assets are present.
+pystray import, the web assets are present, the OS credential store is reachable through keyring
+(not on Linux CI, which has no Secret Service), the PC link's QR is drawn and the webcam listing
+loads.
 """
 
 import logging
@@ -79,12 +81,30 @@ def _interfaz() -> None:
     icono("ok")
 
 
+def _vinculacion() -> None:
+    import sys
+
+    from te_tengo_captura.captura.dispositivos import listar_dispositivos
+    from te_tengo_captura.vinculacion.qr import codigo_qr
+
+    if codigo_qr("https://app.tetengo.reqsai.tech/vincular?codigo=KQWT-MXHD").modulos < 21:
+        raise RuntimeError("el QR no se generó")
+    if sys.platform in ("win32", "darwin"):
+        import keyring
+
+        nombre = type(keyring.get_keyring()).__module__
+        if "fail" in nombre or "null" in nombre:
+            raise RuntimeError(f"sin almacén de credenciales del sistema ({nombre})")
+    listar_dispositivos()  # no webcam in CI: an empty list, but the OS libraries load
+
+
 def ejecutar(ruta_modelo: Path) -> int:
     pruebas: list[tuple[str, Callable[[], None]]] = [
         ("modelo de pose", lambda: _modelo(ruta_modelo)),
         ("clip MP4", _clip),
         ("vista en vivo", _vista_en_vivo),
         ("interfaz", _interfaz),
+        ("vinculación", _vinculacion),
     ]
     fallidas = 0
     for nombre, prueba in pruebas:

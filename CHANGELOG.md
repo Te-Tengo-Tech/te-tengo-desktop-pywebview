@@ -4,6 +4,15 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+### Added
+- **PC link** (US-28, US-31): a new PC needs no `config.toml`. It shows «Vincula esta PC con tu celular» with a QR and an 8-letter code with its countdown, renews the code when it expires, and polls the API with the OAuth device grant (RFC 8628: `slow_down`, `expired_token`, `access_denied` «No reconozco esta PC»). Once approved it keeps its access token and rotating refresh token in the OS credential store (Windows Credential Manager, macOS Keychain; `keyring`), renews them silently, sends the PC's heartbeat every 30 s and keeps a control channel with its own token. Removed from the app (`{"desvincular":true}`, `401 PC_DESVINCULADA`, `invalid_grant`), it stops at once, deletes its credentials and says «Se quitó de la casa de …»; after 90 days offline it asks for a new link. «Desvincular» in «Cámaras» asks first, optionally deletes the data saved on the PC (CA-31.6) and tells the API, or revokes the token when internet returns.
+- `--api-url`, and a `config.toml` with only `api_url`, `[vista_en_vivo]` or `[clasificacion]` for a linked PC.
+- Webcams are listed by the operating system's unique id (AVFoundation `uniqueID` on macOS, the DirectShow device path on Windows, `/dev/v4l/by-id` on Linux), mapped to OpenCV's index when opened; `scripts/listar_camaras.py` prints them.
+- `--autoprueba` also checks the credential store, the QR and the webcam listing.
+
+### Changed
+- An installation removed from the app («PC de la casa») stops capturing, deletes `credencial_instalacion` from `config.toml` and shows the link code (contract: "deletes its credentials").
+
 ### Changed
 - The window follows the synthesized desktop prototype and the Te Tengo brand kit: cream background, violet and coral, Poppins (bundled, SIL OFL) and the two-figures symbol in the app icon, the tray icon and the splash. It has two tabs, «Estado» and «Cámaras». «Estado» says the state once («Te Tengo cuida la sala · Todo funciona bien.»), with one row per camera and «Datos de la instalación» folded; it no longer says that video is sent. The copy follows the reduced prototype (docs repo `b83deb9`: about a third less text). «Cámaras» lists the webcams with their room and connection and a preview of the real image that is only seen on this PC (kept in memory while the window asks for it, never written nor sent).
 - Someone watching the live view is now visible on the PC (prototype screens 08 and 09): the summary says «Un familiar está viendo la sala en vivo», the tray dot turns violet and, with the window closed, a system notice says so. The contract does not name the viewer.

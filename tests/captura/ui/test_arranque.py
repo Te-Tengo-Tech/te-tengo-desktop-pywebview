@@ -6,6 +6,7 @@ import pytest
 from te_tengo_captura.ui import arranque
 from te_tengo_captura.ui.arranque import DURACION_MINIMA_S, Paso, VentanaArranque, recorrer
 from te_tengo_captura.ui.ventana import WEB
+from tests.captura.estados import coordinador_de
 from tests.captura.test_agente import Escenario
 from tests.captura.ui.webview_falso import WebviewFalso
 
@@ -71,7 +72,9 @@ def test_un_paso_que_no_termina_no_bloquea_el_arranque() -> None:
 
 def test_pasos_reales_del_agente(tmp_path: Path, configuracion: object) -> None:
     e = Escenario(tmp_path, configuracion)  # type: ignore[arg-type]
-    pasos = arranque.pasos(e.agente)
+    coordinador = coordinador_de(e.agente, tmp_path)
+    coordinador.agente = e.agente
+    pasos = arranque.pasos(coordinador)
     assert [(p.porcentaje, p.indice_texto, p.desde_s) for p in pasos] == [
         (22, 0, 0.08),
         (54, 1, 0.72),
