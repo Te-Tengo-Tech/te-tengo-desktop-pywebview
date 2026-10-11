@@ -72,8 +72,8 @@ def test_aviso_al_cerrar_solo_la_primera_vez() -> None:
     a.ventana_oculta(estado())
     assert avisos == [
         Notificacion(
-            "Te Tengo Captura sigue funcionando en segundo plano",
-            "Sigue cuidando la sala. Ábrelo desde su ícono, junto al reloj.",
+            "Sigue funcionando en segundo plano",
+            "Cuida la sala. Ábrelo junto al reloj.",
         )
     ]
 
@@ -101,7 +101,7 @@ def test_aviso_de_vista_en_vivo_con_la_ventana_cerrada() -> None:
     assert avisos == [
         Notificacion(
             "Un familiar está viendo la sala en vivo",
-            "No se graba y queda en el registro de la familia.",
+            "No se graba · queda registrado.",
         )
     ]
 

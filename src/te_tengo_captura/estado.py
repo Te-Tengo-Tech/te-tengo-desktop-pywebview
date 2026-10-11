@@ -27,7 +27,7 @@ from html import escape
 from typing import Any
 
 QUIEN_MIRA = "Un familiar"  # core.js osToast fallback: the contract does not say who watches
-QUIEN_PAUSA = "La familia"  # core.js health fallback (``S.pauseBy||'La familia'``)
+QUIEN_PAUSA = "la familia"  # core.js health fallback (``S.pauseBy||'la familia'``)
 
 
 class Situacion(StrEnum):
@@ -307,9 +307,8 @@ def _aviso(
             "none",
             "none",
             "cam",
-            "No encontramos cámaras en esta PC",
-            "Conecta una webcam por USB. Luego la familia elige su habitación desde la app "
-            "Te Tengo.",
+            "No encontramos cámaras",
+            "Conecta una webcam por USB.",
             ir_a_camaras,
         )
     if s is Situacion.FALTA_ELEGIR:
@@ -319,40 +318,20 @@ def _aviso(
             "none",
             "mobile",
             "Falta elegir las cámaras en la app",
-            f"Detectamos {n} {'cámara' if n == 1 else 'cámaras'}. Elígelas desde la app Te Tengo, "
-            "en tu celular. Mientras tanto, esta PC no cuida ninguna habitación.",
+            f"Detectamos {n} {'cámara' if n == 1 else 'cámaras'}. Mientras tanto, no cuida "
+            "ninguna habitación.",
             ir_a_camaras,
         )
     buscar = Accion("rescan", "Buscar de nuevo", "refresh")
     if s is Situacion.WEBCAM_DESCONECTADA:
         perdidas = [c for c in camaras if not c.webcam_conectada]
-        if len(camaras) == 1:
-            return Aviso(
-                "warn lost",
-                "off",
-                "videoOff",
-                escape(f"La cámara {del_habitacion(perdidas[0].nombre_habitacion)} no responde"),
-                "Revisa que el cable USB esté bien conectado a la PC.",
-                buscar,
-            )
         funcionan = len(camaras) - len(perdidas)
-        if len(perdidas) == 1:
-            titulo = (
-                f"{funcionan} de {len(camaras)} cámaras funcionan · "
-                f"{perdidas[0].nombre_habitacion} no responde"
-            )
-            detalle = (
-                f"Revisa el cable USB de la {perdidas[0].dispositivo}. "
-                "Las demás cámaras siguen cuidando."
-            )
-        else:
-            titulo = (
-                f"{funcionan} de {len(camaras)} cámaras funcionan · "
-                f"{lista_y([c.nombre_habitacion for c in perdidas])} no responden"
-            )
-            detalle = "Revisa que el cable USB esté bien conectado a la PC." + (
-                " Las demás cámaras siguen cuidando." if funcionan else ""
-            )
+        titulo = f"{lista_y([c.nombre_habitacion for c in perdidas])} " + (
+            "no responde" if len(perdidas) == 1 else "no responden"
+        )
+        detalle = "Revisa el cable USB" + (
+            f" · {funcionan} de {len(camaras)} cámaras funcionan" if len(camaras) > 1 else "."
+        )
         return Aviso("warn lost", "off", "videoOff", escape(titulo), escape(detalle), buscar)
     if s is Situacion.SIN_INTERNET:
         return Aviso(
@@ -360,7 +339,7 @@ def _aviso(
             "off",
             "wifiOff",
             "Sin internet",
-            "Las cámaras siguen cuidando y los avisos esperan. Volvemos a intentar en "
+            "Las cámaras siguen cuidando; los avisos esperan. Reintento en "
             f"{_mono(str(e.segundos_para_reintento), 'retry')} s.",
             Accion("retryNow", "Reintentar ahora", "refresh"),
         )
@@ -370,8 +349,7 @@ def _aviso(
             "consent",
             "doc",
             escape(f"Falta el consentimiento de {hogar.primer_nombre}"),
-            "La familia debe registrarlo en la app Te Tengo. Mientras tanto, las cámaras no se "
-            "usan.",
+            "Hasta registrarlo en la app, las cámaras no se usan.",
             None,
         )
     if s is Situacion.EN_PAUSA:
@@ -381,7 +359,7 @@ def _aviso(
         )
         otras = [c.nombre_habitacion for c in camaras if c.pausada_hasta is None]
         siguen = (
-            f"{lista_y(otras)} {'siguen' if len(otras) > 1 else 'sigue'} cuidando. "
+            f"{lista_y(otras)} {'siguen' if len(otras) > 1 else 'sigue'} cuidando · "
             if otras
             else ""
         )
@@ -393,7 +371,9 @@ def _aviso(
             + " está en pausa hasta las "
             + _mono(pausas.get(pausada.clave, "")),
             escape(
-                siguen + f"{QUIEN_PAUSA} la pausó desde la app Te Tengo; vuelve sola a esa hora."
+                siguen + f"la pausó {QUIEN_PAUSA} desde la app"
+                if siguen
+                else mayuscula(f"la pausó {QUIEN_PAUSA} desde la app")
             ),
             None,
         )
@@ -406,16 +386,14 @@ def _aviso(
             escape(f"{QUIEN_MIRA} está viendo {de_habitacion(viendo.nombre_habitacion)} en vivo"),
             "Desde las "
             + _mono(en_vivo.get(viendo.clave, ""))
-            + ". No se graba y queda en el registro de la familia.",
+            + " · no se graba · queda registrado",
             None,
         )
     if len(camaras) == 1:
-        titulo = f"Te Tengo está cuidando {de_habitacion(habitaciones[0])}"
-        detalle = "Todo funciona bien."
+        titulo = f"Te Tengo cuida {de_habitacion(habitaciones[0])}"
     else:
-        titulo = f"Te Tengo está cuidando {len(camaras)} habitaciones"
-        detalle = f"{lista_y(habitaciones)} · Todo funciona bien."
-    return Aviso("ok", "send", "check", escape(titulo), escape(detalle), None)
+        titulo = f"Te Tengo cuida {len(camaras)} habitaciones"
+    return Aviso("ok", "send", "check", escape(titulo), "Todo funciona bien.", None)
 
 
 def _estado_camara(c: CamaraEntradas, e: Entradas, pausa: str | None) -> EstadoCamara:
@@ -424,14 +402,12 @@ def _estado_camara(c: CamaraEntradas, e: Entradas, pausa: str | None) -> EstadoC
     if not e.consentimiento:
         return EstadoCamara("consent", "Detenida", "Falta el consentimiento", "doc")
     if c.pausada_hasta is not None:
-        return EstadoCamara(
-            "pause", "En pausa", f"Hasta las {_mono(pausa or '')} · desde la app", "pause"
-        )
+        return EstadoCamara("pause", "En pausa", f"Hasta las {_mono(pausa or '')}", "pause")
     if c.en_vivo_desde is not None:
-        return EstadoCamara("live", "En vivo", escape(f"{QUIEN_MIRA} está mirando"), "eye")
+        return EstadoCamara("live", "En vivo", escape(f"{QUIEN_MIRA} mira"), "eye")
     if e.en_linea is False:
-        return EstadoCamara("warn", "Sin internet", "Detecta igual; los avisos esperan", "wifiOff")
-    return EstadoCamara("send", "En línea", "Todo funciona bien", "check")
+        return EstadoCamara("warn", "Sin internet", "Los avisos esperan", "wifiOff")
+    return EstadoCamara("send", "En línea", "", "check")
 
 
 def _bandeja(s: Situacion, e: Entradas, pausas: dict[str, str]) -> EstadoBandeja:
@@ -490,32 +466,29 @@ def derivar(
 
 # ------------------------------------------------------------------ system notifications
 
-_ABRELO = "Ábrelo desde su ícono, junto al reloj."
+_ABRELO = "Ábrelo junto al reloj."
 
 
 def aviso_al_cerrar(estado: EstadoAgente) -> Notificacion:
     """``osToast(S, 'closed')``: the window was closed or minimized for the first time."""
     s, camaras = estado.situacion, estado.entradas.camaras
     if s in (Situacion.SIN_CAMARAS, Situacion.FALTA_ELEGIR):
-        texto = (
-            "Falta elegir las cámaras desde la app Te Tengo, en tu celular. "
-            "Esta PC se actualiza sola."
-        )
+        texto = "Falta elegir las cámaras en la app."
     elif s is Situacion.WEBCAM_DESCONECTADA:
         perdida = next(c for c in camaras if not c.webcam_conectada)
         texto = (
             f"La cámara {del_habitacion(perdida.nombre_habitacion)} está desconectada: revisa el "
-            f"cable USB. {_ABRELO}"
+            "cable USB."
         )
     elif s is Situacion.SIN_INTERNET:
-        texto = "Las cámaras siguen cuidando y seguirá intentando conectarse a internet. " + _ABRELO
+        texto = "Sin internet: las cámaras siguen cuidando."
     elif s is Situacion.SIN_CONSENTIMIENTO:
-        texto = "Empezará cuando la familia registre el consentimiento en la app Te Tengo."
+        texto = "Empieza cuando la familia registre el consentimiento."
     elif s is Situacion.EN_PAUSA:
         pausada = next(c for c in camaras if c.pausada_hasta is not None)
         texto = (
-            f"{mayuscula(de_habitacion(pausada.nombre_habitacion))} está en pausa hasta las "
-            f"{estado.pausas.get(pausada.clave, '')}. {_ABRELO}"
+            f"{mayuscula(de_habitacion(pausada.nombre_habitacion))} en pausa hasta las "
+            f"{estado.pausas.get(pausada.clave, '')}."
         )
     else:
         cuida = (
@@ -523,15 +496,15 @@ def aviso_al_cerrar(estado: EstadoAgente) -> Notificacion:
             if len(camaras) == 1
             else f"{len(camaras)} habitaciones"
         )
-        texto = f"Sigue cuidando {cuida}. {_ABRELO}"
-    return Notificacion("Te Tengo Captura sigue funcionando en segundo plano", texto)
+        texto = f"Cuida {cuida}. {_ABRELO}"
+    return Notificacion("Sigue funcionando en segundo plano", texto)
 
 
 def aviso_camara_desconectada(habitacion: str) -> Notificacion:
     """``osToast(S, 'lost')``: a camera stopped answering while the window was closed."""
     return Notificacion(
         f"La cámara {del_habitacion(habitacion)} no responde",
-        "Revisa que el cable USB esté bien conectado a la PC.",
+        "Revisa el cable USB.",
     )
 
 
@@ -539,5 +512,5 @@ def aviso_en_vivo(habitacion: str) -> Notificacion:
     """``osToast(S, 'live')``: someone started watching while the window was closed."""
     return Notificacion(
         f"{QUIEN_MIRA} está viendo {de_habitacion(habitacion)} en vivo",
-        "No se graba y queda en el registro de la familia.",
+        "No se graba · queda registrado.",
     )

@@ -124,8 +124,8 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     assert not estado.visible
     assert bandeja.notificaciones == [
         (
-            "Te Tengo Captura sigue funcionando en segundo plano",
-            "Sigue cuidando la sala. Ábrelo desde su ícono, junto al reloj.",
+            "Sigue funcionando en segundo plano",
+            "Cuida la sala. Ábrelo junto al reloj.",
         )
     ]
     assert bandeja.menu is not None

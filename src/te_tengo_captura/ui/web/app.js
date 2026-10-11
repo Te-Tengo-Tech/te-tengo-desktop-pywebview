@@ -177,7 +177,7 @@
     const st = c.st;
     return '<li class="crow'+(st.k==='off'?' lost':'')+'"><span class="thumb art'+(st.k!=='send'&&st.k!=='live'?' dim':'')+'">'+roomSVG(c.room)+'</span>'+
       '<span class="crow-id"><b>'+esc(c.room)+'</b><span>'+ic('usb')+esc(c.device)+'</span></span>'+
-      '<span class="cam-st"><span class="st '+st.k+'">'+ic(st.icono)+'</span><span class="grow"><b class="stx '+st.k+'">'+esc(st.titulo)+'</b><span class="t-meta">'+st.detalle_html+'</span></span></span></li>';
+      '<span class="cam-st"><span class="st '+st.k+'">'+ic(st.icono)+'</span><span class="grow"><b class="stx '+st.k+'">'+esc(st.titulo)+'</b>'+(st.detalle_html ? '<span class="t-meta">'+st.detalle_html+'</span>' : '')+'</span></span></li>';
   }
   function instData(E){
     const pc = E.pc;
@@ -192,7 +192,7 @@
     return '<header class="cam-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Vivienda de '+esc(E.home.who)+'</h1><p class="t-meta mt4">'+ic('home')+esc(E.home.addr)+'</p></div></header>'+
       health(E)+list+
       '<div class="card instcard">'+det(U, 'inst', '', ic('lock')+'Datos de la instalación', instData(E))+'</div>'+
-      '<p class="scr-foot">'+ic('mobile')+'<span class="ft">Las cámaras, las pausas, el consentimiento y las alertas se gestionan en la app Te Tengo.</span><span class="sep"></span>'+ic('power')+'<span>Se inicia con Windows</span></p>';
+      '<p class="scr-foot">'+ic('mobile')+'<span class="ft">Cámaras, pausas, consentimiento y alertas: en la app</span><span class="sep"></span>'+ic('power')+'<span>Se inicia con Windows</span></p>';
   }
 
   /* ---------- Cámaras: las webcams de esta PC y su vista previa local ---------- */
@@ -205,31 +205,29 @@
   }
   function selDev(E, U){ return E.devices.find(d => d.id===U.sel) || E.devices[0] || null; }
   function camInfo(E, U, d){
-    if(!d.connected) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('videoOff')+'<h2 class="t-h2">La cámara no responde: revisa el cable USB</h2>'+
-      '<p class="t-small">'+(d.room ? esc(d.room)+' sigue asignada a esta cámara y no pasa a otra. ' : '')+'Conéctala de nuevo y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
-    if(d.busy) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('warn')+'<h2 class="t-h2">Otro programa está usando esta cámara</h2>'+
+    if(!d.connected) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('videoOff')+'<h2 class="t-h2">No responde: revisa el cable USB</h2>'+
+      '<p class="t-small">'+(d.room ? esc(d.room)+' sigue asignada a esta cámara. ' : '')+'Conéctala y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
+    if(d.busy) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('warn')+'<h2 class="t-h2">Otro programa usa esta cámara</h2>'+
       '<p class="t-small">Ciérralo y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
-    const by = d.room ? (d.by==='pc' ? 'Elegida desde esta PC' : d.by==='app' ? 'La eligió la familia en la app' : 'El nombre se cambia en la app Te Tengo') : 'Falta elegir su habitación en la app';
+    const by = d.room ? (d.by==='pc' ? 'Elegida en esta PC' : d.by==='app' ? 'La eligió la familia en la app' : 'Se cambia en la app') : 'Se elige en la app';
     return '<div class="cpane info"><figure class="pv2 art" id="pv" data-clave="'+esc(d.id)+'">'+roomSVG(d.room || '')+'<img class="pv-img" id="pv-img" alt="" hidden>'+
-      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'La vista previa solo se ve en esta PC</span></figure>'+
+      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></figure>'+
       '<dl class="cinfo"><div><dt>Habitación</dt><dd><b>'+(d.room ? esc(d.room) : 'Sin usar')+'</b><span>'+by+'</span></dd></div>'+
       '<div><dt>Conexión</dt><dd><b class="ok">'+ic('check')+'Conectada</b><span>'+(d.new ? 'Nueva · por USB' : 'Por USB')+'</span></dd></div></dl>'+
-      '<p class="help-l">'+ic('eye')+'Usa la vista previa para revisar que la cámara vea bien la habitación.</p>'+
-      '<p class="help-l">'+ic('mobile')+'La habitación de cada cámara se elige desde la app Te Tengo, en tu celular.</p>'+
-      (E.cams.length >= 3 ? '<p class="help-l">'+ic('info')+'Cada cámara usa más la PC. Si la detección se vuelve lenta, conecta algunas cámaras a otra PC.</p>' : '')+'</div>';
+      '<p class="help-l">'+ic('eye')+'Usa la vista previa para revisar el encuadre.</p>'+
+      (E.cams.length >= 3 ? '<p class="help-l">'+ic('info')+'Si la detección va lenta, pasa alguna cámara a otra PC.</p>' : '')+'</div>';
   }
   function panelCamaras(E, U){
     const devs = E.devices, any = E.cams.length;
-    const meta = !devs.length ? 'Las habitaciones se eligen desde la app Te Tengo, en tu celular.'
-      : any ? 'Cada cámara con su habitación. Las habitaciones se eligen desde la app Te Tengo, en tu celular.'
-      : 'Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'. Elígelas desde la app Te Tengo, en tu celular.';
+    const meta = !devs.length || any ? 'Las habitaciones se eligen en la app.'
+      : 'Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'. Elígelas en la app.';
     const head = '<header class="p-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Cámaras de esta PC</h1><p class="t-meta">'+meta+'</p></div></header>';
-    if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">No encontramos cámaras en esta PC</h2>'+
-      '<p class="t-small">Conecta una webcam por USB y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>';
+    if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">No encontramos cámaras</h2>'+
+      '<p class="t-small">Conecta una webcam por USB.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>';
     const sel = selDev(E, U);
     const rows = devs.map(d => '<button class="cpick'+(!d.connected?' lost':'')+'" role="radio" aria-checked="'+(d===sel)+'" tabindex="'+(d===sel?0:-1)+'" data-act="selCam" data-arg="'+esc(d.id)+'">'+
       '<span class="thumb art'+(!d.connected||d.busy?' dim':'')+'">'+roomSVG(d.room || '')+'</span><span class="grow"><b>'+esc(d.name)+'</b>'+devTag(d)+'</span></button>').join('');
-    return head+'<div class="camgrid"><div class="clist"><p class="grp-l" id="g-cams">Cámaras conectadas a esta PC</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
+    return head+'<div class="camgrid"><div class="clist"><p class="grp-l" id="g-cams">Cámaras conectadas</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
       '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>'+camInfo(E, U, sel)+'</div>';
   }
 
@@ -257,12 +255,12 @@
     for(const c of E.cams){
       const p = before[c.id]; if(!p) continue;
       if(p.st.k==='off' && c.st.k!=='off') return {kind:'ok', icon:'usb', text:'La '+c.device+' volvió a responder.'};
-      if(!p.pause && c.pause) return {kind:'ok', icon:'pause', text:'La familia pausó la cámara de '+ROOM_ART(c.room)+' desde la app hasta las '+c.pause+'.'};
-      if(p.pause && !c.pause && c.st.k!=='off') return {kind:'ok', icon:'check', text:'La pausa terminó. Te Tengo vuelve a cuidar '+ROOM_ART(c.room)+'.'};
-      if(p.room!==c.room) return {kind:'ok', icon:'check', text:'La familia cambió el nombre de la habitación en la app: «'+c.room+'».'};
+      if(!p.pause && c.pause) return {kind:'ok', icon:'pause', text:'La familia pausó '+ROOM_ART(c.room)+' hasta las '+c.pause+'.'};
+      if(p.pause && !c.pause && c.st.k!=='off') return {kind:'ok', icon:'check', text:'Pausa terminada: vuelve a cuidar '+ROOM_ART(c.room)+'.'};
+      if(p.room!==c.room) return {kind:'ok', icon:'check', text:'Habitación renombrada en la app: «'+c.room+'».'};
     }
-    if(!prev.online && E.online) return {kind:'ok', icon:'check', text:'Volvió internet. Se enviaron los avisos pendientes.'};
-    if(!prev.consent && E.consent) return {kind:'ok', icon:'check', text:'La familia registró el consentimiento en la app Te Tengo.'};
+    if(!prev.online && E.online) return {kind:'ok', icon:'check', text:'Volvió internet. Avisos enviados.'};
+    if(!prev.consent && E.consent) return {kind:'ok', icon:'check', text:'Consentimiento registrado en la app.'};
     return null;
   }
   /* What forces a full render; the countdown in the summary is only patched in place. */
@@ -351,13 +349,13 @@
     toCams(){ U.tab = 'camaras'; render(); const t = $('tab-camaras'); if(t) t.focus({preventScroll:true}); },
     selCam(el){ U.sel = el.dataset.arg; previewSrc = null; render(); },
     retryNow(){
-      call('reintentarAhora').then(r => { if(r && !r.ok) toast('warn', 'wifiOff', 'Aún sin internet. Seguimos intentando.'); });
+      call('reintentarAhora').then(r => { if(r && !r.ok) toast('warn', 'wifiOff', 'Aún sin internet.'); });
     },
     rescan(el){
       el.classList.add('loading'); el.innerHTML = '<span class="spin"></span>Buscando cámaras conectadas…';
       call('buscarWebcam').then(r => {
-        if(r && !r.ok){ const d = E.devices.find(x => !x.connected) || E.devices[0]; toast('warn', 'videoOff', d ? 'No encontramos la '+d.name+'. Revisa el cable USB.' : 'No encontramos cámaras en esta PC'); }
-        else { const n = E.devices.length; toast('ok', 'check', 'Encontramos '+n+(n===1?' cámara conectada.':' cámaras conectadas.')); }
+        if(r && !r.ok){ const d = E.devices.find(x => !x.connected) || E.devices[0]; toast('warn', 'videoOff', d ? 'No encontramos la '+d.name+'. Revisa el cable USB.' : 'No encontramos cámaras'); }
+        else { const n = E.devices.length; toast('ok', 'check', n+(n===1?' cámara conectada.':' cámaras conectadas.')); }
       });
     }
   };

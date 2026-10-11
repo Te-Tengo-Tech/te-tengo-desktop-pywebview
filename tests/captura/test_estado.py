@@ -61,8 +61,8 @@ def test_prioridad(camaras: tuple, cambios: dict[str, Any], situacion: Situacion
         (
             (camara(),),
             {},
-            ("ok", "send", "check", "Te Tengo está cuidando la sala", "Todo funciona bien.", None),
-            ("send", "En línea", "Todo funciona bien", "check"),
+            ("ok", "send", "check", "Te Tengo cuida la sala", "Todo funciona bien.", None),
+            ("send", "En línea", "", "check"),
             ("ok", "cuidando la sala"),
         ),
         (
@@ -72,11 +72,11 @@ def test_prioridad(camaras: tuple, cambios: dict[str, Any], situacion: Situacion
                 "ok",
                 "send",
                 "check",
-                "Te Tengo está cuidando 3 habitaciones",
-                "Sala, Dormitorio y Pasillo · Todo funciona bien.",
+                "Te Tengo cuida 3 habitaciones",
+                "Todo funciona bien.",
                 None,
             ),
-            ("send", "En línea", "Todo funciona bien", "check"),
+            ("send", "En línea", "", "check"),
             ("ok", "cuidando 3 habitaciones"),
         ),
         (
@@ -86,11 +86,11 @@ def test_prioridad(camaras: tuple, cambios: dict[str, Any], situacion: Situacion
                 "warn lost",
                 "off",
                 "videoOff",
-                "2 de 3 cámaras funcionan · Pasillo no responde",
-                "Revisa el cable USB de la USB2.0 PC Camera. Las demás cámaras siguen cuidando.",
+                "Pasillo no responde",
+                "Revisa el cable USB · 2 de 3 cámaras funcionan",
                 ("rescan", "Buscar de nuevo", "refresh"),
             ),
-            ("send", "En línea", "Todo funciona bien", "check"),
+            ("send", "En línea", "", "check"),
             ("warn", "una cámara no responde"),
         ),
         (
@@ -100,8 +100,8 @@ def test_prioridad(camaras: tuple, cambios: dict[str, Any], situacion: Situacion
                 "warn lost",
                 "off",
                 "videoOff",
-                "La cámara de la sala no responde",
-                "Revisa que el cable USB esté bien conectado a la PC.",
+                "Sala no responde",
+                "Revisa el cable USB.",
                 ("rescan", "Buscar de nuevo", "refresh"),
             ),
             ("off", "Desconectada", "Revisa el cable USB", "videoOff"),
@@ -115,10 +115,10 @@ def test_prioridad(camaras: tuple, cambios: dict[str, Any], situacion: Situacion
                 "off",
                 "wifiOff",
                 "Sin internet",
-                'Las cámaras siguen cuidando y los avisos esperan. Volvemos a intentar en <span class="mono" id="retry">8</span> s.',
+                'Las cámaras siguen cuidando; los avisos esperan. Reintento en <span class="mono" id="retry">8</span> s.',
                 ("retryNow", "Reintentar ahora", "refresh"),
             ),
-            ("warn", "Sin internet", "Detecta igual; los avisos esperan", "wifiOff"),
+            ("warn", "Sin internet", "Los avisos esperan", "wifiOff"),
             ("warn", "sin internet, reintentando"),
         ),
         (
@@ -129,7 +129,7 @@ def test_prioridad(camaras: tuple, cambios: dict[str, Any], situacion: Situacion
                 "consent",
                 "doc",
                 "Falta el consentimiento de Rosa",
-                "La familia debe registrarlo en la app Te Tengo. Mientras tanto, las cámaras no se usan.",
+                "Hasta registrarlo en la app, las cámaras no se usan.",
                 None,
             ),
             ("consent", "Detenida", "Falta el consentimiento", "doc"),
@@ -143,15 +143,10 @@ def test_prioridad(camaras: tuple, cambios: dict[str, Any], situacion: Situacion
                 "pause",
                 "pause",
                 'La sala está en pausa hasta las <span class="mono">11:42</span>',
-                "Dormitorio y Pasillo siguen cuidando. La familia la pausó desde la app Te Tengo; vuelve sola a esa hora.",
+                "Dormitorio y Pasillo siguen cuidando · la pausó la familia desde la app",
                 None,
             ),
-            (
-                "pause",
-                "En pausa",
-                'Hasta las <span class="mono">11:42</span> · desde la app',
-                "pause",
-            ),
+            ("pause", "En pausa", 'Hasta las <span class="mono">11:42</span>', "pause"),
             ("idle", "la sala en pausa hasta las 11:42"),
         ),
         (
@@ -162,10 +157,10 @@ def test_prioridad(camaras: tuple, cambios: dict[str, Any], situacion: Situacion
                 "live",
                 "eye",
                 "Un familiar está viendo la sala en vivo",
-                'Desde las <span class="mono">10:42</span>. No se graba y queda en el registro de la familia.',
+                'Desde las <span class="mono">10:42</span> · no se graba · queda registrado',
                 None,
             ),
-            ("live", "En vivo", "Un familiar está mirando", "eye"),
+            ("live", "En vivo", "Un familiar mira", "eye"),
             ("live", "Un familiar está viendo en vivo"),
         ),
     ],
@@ -197,8 +192,7 @@ def test_pc_vinculada_sin_camaras_elegidas() -> None:
     )
     assert e.aviso.titulo_html == "Falta elegir las cámaras en la app"
     assert e.aviso.detalle_html == (
-        "Detectamos 3 cámaras. Elígelas desde la app Te Tengo, en tu celular. "
-        "Mientras tanto, esta PC no cuida ninguna habitación."
+        "Detectamos 3 cámaras. Mientras tanto, no cuida ninguna habitación."
     )
     assert e.aviso.accion is not None
     assert e.aviso.accion.act == "toCams"
@@ -211,12 +205,8 @@ def test_varias_camaras_perdidas_y_nombres_con_html() -> None:
         camara("Pasillo", webcam_conectada=False),
         camara("Dormitorio"),
     )
-    assert e.aviso.titulo_html == (
-        "1 de 3 cámaras funcionan · Sala &lt;b&gt; y Pasillo no responden"
-    )
-    assert e.aviso.detalle_html == (
-        "Revisa que el cable USB esté bien conectado a la PC. Las demás cámaras siguen cuidando."
-    )
+    assert e.aviso.titulo_html == "Sala &lt;b&gt; y Pasillo no responden"
+    assert e.aviso.detalle_html == "Revisa el cable USB · 1 de 3 cámaras funcionan"
 
 
 def test_palabras_de_la_casa() -> None:
@@ -278,33 +268,33 @@ def test_json_para_la_interfaz() -> None:
 @pytest.mark.parametrize(
     ("camaras", "cambios", "texto"),
     [
-        ((camara(),), {}, "Sigue cuidando la sala. Ábrelo desde su ícono, junto al reloj."),
-        (TRES, {}, "Sigue cuidando 3 habitaciones. Ábrelo desde su ícono, junto al reloj."),
+        ((camara(),), {}, "Cuida la sala. Ábrelo junto al reloj."),
+        (TRES, {}, "Cuida 3 habitaciones. Ábrelo junto al reloj."),
         (
             (camara(pausada_hasta=PAUSA),),
             {},
-            "La sala está en pausa hasta las 11:42. Ábrelo desde su ícono, junto al reloj.",
+            "La sala en pausa hasta las 11:42.",
         ),
         (
             (camara(),),
             {"consentimiento": False},
-            "Empezará cuando la familia registre el consentimiento en la app Te Tengo.",
+            "Empieza cuando la familia registre el consentimiento.",
         ),
         (
             (camara(),),
             {"en_linea": False},
-            "Las cámaras siguen cuidando y seguirá intentando conectarse a internet. Ábrelo desde su ícono, junto al reloj.",
+            "Sin internet: las cámaras siguen cuidando.",
         ),
         (
             (camara("Pasillo", webcam_conectada=False),),
             {},
-            "La cámara del pasillo está desconectada: revisa el cable USB. Ábrelo desde su ícono, junto al reloj.",
+            "La cámara del pasillo está desconectada: revisa el cable USB.",
         ),
     ],
 )
 def test_aviso_al_cerrar(camaras: tuple, cambios: dict[str, Any], texto: str) -> None:  # type: ignore[type-arg]
     aviso = aviso_al_cerrar(estado(*camaras, zona=LIMA, **cambios))
-    assert aviso.titulo == "Te Tengo Captura sigue funcionando en segundo plano"
+    assert aviso.titulo == "Sigue funcionando en segundo plano"
     assert aviso.texto == texto
 
 
@@ -312,12 +302,12 @@ def test_avisos_de_camara_y_de_vista_en_vivo() -> None:
     perdida = aviso_camara_desconectada("Pasillo")
     assert (perdida.titulo, perdida.texto) == (
         "La cámara del pasillo no responde",
-        "Revisa que el cable USB esté bien conectado a la PC.",
+        "Revisa el cable USB.",
     )
     vivo = aviso_en_vivo("Dormitorio")
     assert (vivo.titulo, vivo.texto) == (
         "Un familiar está viendo el dormitorio en vivo",
-        "No se graba y queda en el registro de la familia.",
+        "No se graba · queda registrado.",
     )
 
 

@@ -154,10 +154,10 @@ function takenRooms(S, id){
 function camStatus(S, c){
   if(isLost(S, c.id)) return {k:'off', t:'Desconectada', s:'Revisa el cable USB', i:'videoOff'};
   if(!S.consent) return {k:'consent', t:'Detenida', s:'Falta el consentimiento', i:'doc'};
-  if(pausedRoom(S)===c.room) return {k:'pause', t:'En pausa', s:'Hasta las <span class="mono">'+S.pause+'</span> · desde la app', i:'pause'};
-  if(S.live && S.live.room===c.room) return {k:'live', t:'En vivo', s:esc(S.live.who)+' está mirando', i:'eye'};
-  if(!S.online) return {k:'warn', t:'Sin internet', s:'Detecta igual; los avisos esperan', i:'wifiOff'};
-  return {k:'send', t:'En línea', s:'Todo funciona bien', i:'check'};
+  if(pausedRoom(S)===c.room) return {k:'pause', t:'En pausa', s:'Hasta las <span class="mono">'+S.pause+'</span>', i:'pause'};
+  if(S.live && S.live.room===c.room) return {k:'live', t:'En vivo', s:esc(S.live.who)+' mira', i:'eye'};
+  if(!S.online) return {k:'warn', t:'Sin internet', s:'Los avisos esperan', i:'wifiOff'};
+  return {k:'send', t:'En línea', s:'', i:'check'};
 }
 
 /* ---------- ilustración de habitación (sin personas) ---------- */
@@ -269,14 +269,14 @@ function pairCard(S){
   const off = (icon, t, s) => '<div class="card pair-card pair-off" role="status"><span class="ci lg aviso dash">'+ic(icon)+'</span><h2 class="t-h2">'+t+'</h2>'+
     '<p class="t-small">'+s+' Reintentamos en <span class="mono" id="retry" data-fmt="ms">'+mmss(S.retry)+'</span>.</p>'+
     '<button class="btn btn-secondary btn-sm" data-act="retryNow">'+ic('refresh')+'Reintentar ahora</button></div>';
-  if(!S.online) return off('wifiOff', 'Sin internet', 'Conecta esta PC a internet para vincularla.');
-  if(!S.server) return off('cloud', 'No pudimos conectar con Te Tengo', 'Puede ser un problema nuestro: no tienes que hacer nada.');
+  if(!S.online) return off('wifiOff', 'Sin internet', 'Conecta esta PC a internet.');
+  if(!S.server) return off('cloud', 'Te Tengo no responde', 'No tienes que hacer nada.');
   const code = CODES[p.code % CODES.length];
   const spoken = code.replace('-', '').split('').join(' ').replace(/^(\S \S \S \S) /, '$1, guion, ');
   return '<div class="card pair-card'+(p.fresh?' fresh':'')+'">'+
     (p.renewed ? '<p class="renew">'+ic('refresh')+'Código nuevo · el anterior venció</p>' : '')+
     '<div class="qrwrap">'+qrSVG(code)+'<span class="qr-logo" aria-hidden="true">'+LOGO+'</span></div>'+
-    '<p class="t-meta">¿No puedes escanearlo? Escribe este código en la app:</p>'+
+    '<p class="t-meta">O escribe este código en la app:</p>'+
     '<p class="code-big"><span aria-hidden="true">'+code+'</span><span class="sr">'+spoken+'</span></p>'+
     '<p class="pair-url">'+URL_V+'</p>'+
     '<p class="pair-left'+(p.left<=60?' low':'')+'">'+ic('clock')+'Vence en <span class="mono" id="pair-left">'+mmss(p.left)+'</span></p>'+
@@ -285,36 +285,36 @@ function pairCard(S){
 function scrVincular(S, enter){
   const ok = S.online && S.server;
   return sec('pair', enter,
-    (S.pair.re90 ? '<div class="notice warn band90" role="status">'+ic('clock')+'<div><b>Esta PC estuvo más de 90 días sin conexión</b><span>Vuelve a vincularla con tu celular.</span></div></div>' : '')+
+    (S.pair.re90 ? '<div class="notice warn band90" role="status">'+ic('clock')+'<div><b>Más de 90 días sin conexión</b><span>Vincúlala de nuevo.</span></div></div>' : '')+
     '<div class="pair-grid"><div class="pair-l">'+
       '<h1 class="t-title" id="scr-h" tabindex="-1">Vincula esta PC con tu celular</h1>'+
-      '<ol class="steps2"><li><span class="n">1</span><span>Abre la app Te Tengo en tu celular</span></li>'+
+      '<ol class="steps2"><li><span class="n">1</span><span>Abre la app Te Tengo</span></li>'+
       '<li><span class="n">2</span><span class="path">Ajustes'+ic('chevR')+'PCs y cámaras'+ic('chevR')+'Agregar PC</span></li>'+
       '<li><span class="n">3</span><span>Escanea este código</span></li></ol>'+
-      '<p class="pcname"><span class="ci">'+ic('monitor')+'</span><span>Esta PC se llama <b>'+PC.name+'</b></span></p>'+
-      det(S, 'help', 'phelp', ic('mobile')+'¿El celular muestra un error?',
-        '<ul class="helplist"><li><b>«Este código ya venció o ya se usó»</b>Escanea otra vez: esta PC ya muestra un código nuevo.</li>'+
-        '<li><b>«Demasiados intentos»</b>Espera hasta la hora que indica el celular y vuelve a intentarlo. Esta PC seguirá mostrando un código válido.</li></ul>')+
+      '<p class="pcname"><span class="ci">'+ic('monitor')+'</span><span>Esta PC: <b>'+PC.name+'</b></span></p>'+
+      det(S, 'help', 'phelp', ic('mobile')+'¿Error en el celular?',
+        '<ul class="helplist"><li><b>«Este código ya venció o ya se usó»</b>Escanea el código nuevo.</li>'+
+        '<li><b>«Demasiados intentos»</b>Espera la hora que indica el celular.</li></ul>')+
     '</div>'+pairCard(S)+'</div>'+
-    '<div class="pair-foot">'+(ok ? '<p class="wait2" role="status"><span class="spin"></span>Esperando la aprobación en el celular…</p>'
-                                   : '<p class="wait2 stop"><span class="spin"></span>El código aparece cuando haya conexión</p>')+'</div>');
+    '<div class="pair-foot">'+(ok ? '<p class="wait2" role="status"><span class="spin"></span>Esperando aprobación en el celular…</p>'
+                                   : '<p class="wait2 stop"><span class="spin"></span>El código aparece con conexión</p>')+'</div>');
 }
 /* la PC informa las webcams que detectó; la familia las asigna desde la app */
 function foundList(S){
   const devs = connected(S);
-  if(!devs.length) return '<div class="notice warn">'+ic('cam')+'<div><b>No encontramos cámaras en esta PC</b><span>Conecta una webcam por USB y pulsa Buscar de nuevo.</span></div></div>';
-  return '<div class="found"><p class="found-h">'+ic('usb')+'<b>Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'</b><span>La familia las ve en la app con su nombre.</span></p>'+
+  if(!devs.length) return '<div class="notice warn">'+ic('cam')+'<div><b>No encontramos cámaras</b><span>Conecta una webcam por USB.</span></div></div>';
+  return '<div class="found"><p class="found-h">'+ic('usb')+'<b>Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'</b></p>'+
     '<ul class="found-l">'+devs.map(id => '<li><span class="thumb art'+(isLost(S, id)?' dim':'')+'">'+roomSVG(DEVS[id].view)+'</span><span class="grow"><b>'+esc(DEVS[id].name)+'</b>'+devTag(S, id)+'</span></li>').join('')+'</ul></div>';
 }
 function scrVinculada(S, enter){
   const kept = S.cams.length;
   return sec('', enter, '<div class="result linked"><span class="ok-badge">'+ic('check')+'</span>'+
-    '<h1 class="t-title" id="scr-h" tabindex="-1">Esta PC quedó vinculada a la casa de '+HOME.who+'</h1>'+
-    '<p class="t-lead">Aprobada por '+PC.by+' desde su celular a las <span class="mono">'+PC.at+'</span> · Esta PC: <b>'+PC.name+'</b></p>'+
-    (kept ? '<div class="notice ok next">'+ic('check')+'<div><b>Las cámaras siguen en su habitación</b><span>'+listY(S.cams.map(c => esc(c.room)))+'. Se cambian desde la app Te Tengo, en tu celular.</span></div></div>'
-          : '<div class="notice info next">'+ic('mobile')+'<div><b>Listo. Ahora elige las cámaras desde la app Te Tengo, en tu celular.</b><span class="path">Ajustes'+ic('chevR')+'PCs y cámaras'+ic('chevR')+PC.name+' · esta PC se actualiza sola.</span></div></div>')+
+    '<h1 class="t-title" id="scr-h" tabindex="-1">Vinculada a la casa de '+HOME.who+'</h1>'+
+    '<p class="t-lead">Aprobó '+PC.by+' a las <span class="mono">'+PC.at+'</span> · <b>'+PC.name+'</b></p>'+
+    (kept ? '<div class="notice ok next">'+ic('check')+'<div><b>Las cámaras siguen en su habitación</b><span>'+listY(S.cams.map(c => esc(c.room)))+' · se cambian en la app</span></div></div>'
+          : '<div class="notice info next">'+ic('mobile')+'<div><b>Ahora elige las cámaras en la app</b><span class="path">Ajustes'+ic('chevR')+'PCs y cámaras'+ic('chevR')+PC.name+'</span></div></div>')+
     foundList(S)+
-    (!S.consent ? '<div class="notice warn">'+ic('doc')+'<div><b>Falta el consentimiento de '+HOME.first+'</b><span>Las cámaras no enviarán nada hasta que la familia lo registre en la app.</span></div></div>' : '')+
+    (!S.consent ? '<div class="notice warn">'+ic('doc')+'<div><b>Falta el consentimiento de '+HOME.first+'</b><span>Hasta registrarlo en la app, las cámaras no se usan.</span></div></div>' : '')+
     '<div class="actions"><button class="btn btn-primary btn-lg" data-act="toEstado">'+ic('pulse')+'Ir a Estado</button>'+
     (kept ? '' : '<button class="btn btn-ghost" data-act="toHere">'+ic('cam')+'Elegir aquí (si estás instalando)</button>')+'</div></div>');
 }
@@ -326,8 +326,8 @@ function scrRechazada(S, enter){
 }
 function scrQuitada(S, enter){
   return sec('', enter, '<div class="result"><span class="ci lg pausa">'+ic('unlink')+'</span>'+
-    '<h1 class="t-title" id="scr-h" tabindex="-1">Esta PC se quitó de la casa de '+HOME.who+'</h1>'+
-    '<p class="t-lead">'+PC.by+' la quitó desde la app a las <span class="mono">11:20</span>. Ya no usa las cámaras.</p>'+
+    '<h1 class="t-title" id="scr-h" tabindex="-1">Se quitó de la casa de '+HOME.who+'</h1>'+
+    '<p class="t-lead">'+PC.by+' la quitó desde la app a las <span class="mono">11:20</span>.</p>'+
     '<div class="actions"><button class="btn btn-primary btn-lg" data-act="pairAgain">'+ic('link')+'Vincular de nuevo</button></div></div>');
 }
 
@@ -349,31 +349,31 @@ function scrMain(S, enter){
 function health(S){
   const H = (cls, k, icon, t, s, extra) => '<div class="health '+cls+'" role="status"><span class="st '+k+'">'+ic(icon)+'</span><div class="grow"><b>'+t+'</b><span>'+s+'</span></div>'+(extra||'')+'</div>';
   const cams = S.cams, rooms = cams.map(c => c.room);
-  if(!connected(S).length) return H('none', 'none', 'cam', 'No encontramos cámaras en esta PC', 'Conecta una webcam por USB. Luego la familia elige su habitación desde la app Te Tengo.', '<button class="btn btn-secondary btn-sm" data-act="toCams">'+ic('cam')+'Ir a Cámaras</button>');
+  if(!connected(S).length) return H('none', 'none', 'cam', 'No encontramos cámaras', 'Conecta una webcam por USB.', '<button class="btn btn-secondary btn-sm" data-act="toCams">'+ic('cam')+'Ir a Cámaras</button>');
   if(!cams.length){ const n = connected(S).length;
-    return H('none', 'none', 'mobile', 'Falta elegir las cámaras en la app', 'Detectamos '+n+(n===1?' cámara':' cámaras')+'. Elígelas desde la app Te Tengo, en tu celular. Mientras tanto, esta PC no cuida ninguna habitación.', '<button class="btn btn-secondary btn-sm" data-act="toCams">'+ic('cam')+'Ir a Cámaras</button>'); }
+    return H('none', 'none', 'mobile', 'Falta elegir las cámaras en la app', 'Detectamos '+n+(n===1?' cámara':' cámaras')+'. Mientras tanto, no cuida ninguna habitación.', '<button class="btn btn-secondary btn-sm" data-act="toCams">'+ic('cam')+'Ir a Cámaras</button>'); }
   const lost = cams.find(c => isLost(S, c.id));
-  if(lost) return H('warn lost', 'off', 'videoOff', (cams.length-1)+' de '+cams.length+' cámaras funcionan · '+esc(lost.room)+' no responde', 'Revisa el cable USB de la '+DEVS[lost.id].name+'. Las demás cámaras siguen cuidando.',
+  if(lost) return H('warn lost', 'off', 'videoOff', esc(lost.room)+' no responde', 'Revisa el cable USB · '+(cams.length-1)+' de '+cams.length+' cámaras funcionan',
     '<button class="btn btn-secondary btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button>');
-  if(!S.online) return H('offline', 'off', 'wifiOff', 'Sin internet', 'Las cámaras siguen cuidando y los avisos esperan. Volvemos a intentar en <span class="mono" id="retry">'+S.retry+'</span> s.',
+  if(!S.online) return H('offline', 'off', 'wifiOff', 'Sin internet', 'Las cámaras siguen cuidando; los avisos esperan. Reintento en <span class="mono" id="retry">'+S.retry+'</span> s.',
     '<button class="btn btn-secondary btn-sm" data-act="retryNow">'+ic('refresh')+'Reintentar ahora</button>');
-  if(!S.consent) return H('warn', 'consent', 'doc', 'Falta el consentimiento de '+HOME.first, 'La familia debe registrarlo en la app Te Tengo. Mientras tanto, las cámaras no se usan.');
+  if(!S.consent) return H('warn', 'consent', 'doc', 'Falta el consentimiento de '+HOME.first, 'Hasta registrarlo en la app, las cámaras no se usan.');
   const pr = pausedRoom(S);
   if(pr){ const others = rooms.filter(r => r!==pr);
-    return H('idle', 'pause', 'pause', cap1(deRoomD(pr))+' está en pausa hasta las <span class="mono">'+S.pause+'</span>', (others.length ? listY(others)+(others.length>1?' siguen':' sigue')+' cuidando. ' : '')+esc(S.pauseBy||'La familia')+' la pausó desde la app Te Tengo; vuelve sola a esa hora.'); }
-  if(S.live) return H('live', 'live', 'eye', esc(S.live.who)+' está viendo '+deRoomD(S.live.room)+' en vivo', 'Desde las <span class="mono">'+S.live.since+'</span>. No se graba y queda en el registro de la familia.');
-  return H('ok', 'send', 'check', cams.length===1 ? 'Te Tengo está cuidando '+deRoomD(rooms[0]) : 'Te Tengo está cuidando '+cams.length+' habitaciones', (cams.length>1 ? listY(rooms)+' · ' : '')+'Todo funciona bien.');
+    return H('idle', 'pause', 'pause', cap1(deRoomD(pr))+' está en pausa hasta las <span class="mono">'+S.pause+'</span>', (others.length ? listY(others)+(others.length>1?' siguen':' sigue')+' cuidando · ' : '')+'la pausó '+esc(S.pauseBy||'la familia')+' desde la app'); }
+  if(S.live) return H('live', 'live', 'eye', esc(S.live.who)+' está viendo '+deRoomD(S.live.room)+' en vivo', 'Desde las <span class="mono">'+S.live.since+'</span> · no se graba · queda registrado');
+  return H('ok', 'send', 'check', cams.length===1 ? 'Te Tengo cuida '+deRoomD(rooms[0]) : 'Te Tengo cuida '+cams.length+' habitaciones', 'Todo funciona bien.');
 }
 function camRowE(S, c){
   const st = camStatus(S, c), D = DEVS[c.id];
   return '<li class="crow'+(st.k==='off'?' lost':'')+'"><span class="thumb art'+(st.k!=='send'&&st.k!=='live'?' dim':'')+'">'+roomSVG(D.view)+'</span>'+
     '<span class="crow-id"><b>'+esc(c.room)+'</b><span>'+ic('usb')+esc(D.name)+'</span></span>'+
-    '<span class="cam-st"><span class="st '+st.k+'">'+ic(st.i)+'</span><span class="grow"><b class="stx '+st.k+'">'+st.t+'</b><span class="t-meta">'+st.s+'</span></span></span></li>';
+    '<span class="cam-st"><span class="st '+st.k+'">'+ic(st.i)+'</span><span class="grow"><b class="stx '+st.k+'">'+st.t+'</b>'+(st.s?'<span class="t-meta">'+st.s+'</span>':'')+'</span></span></li>';
 }
 /* la app pide la vista previa de una cámara para elegir su habitación: se avisa en la PC, como la vista en vivo */
 function peekNotice(S, here){
   if(!S.peek || !connected(S).includes(S.peek)) return '';
-  return '<div class="notice info peek-n" role="status"><span class="led" aria-hidden="true"></span><div><b>'+(here ? PC.by+' está viendo esta cámara para elegirla' : PC.by+' está viendo la '+esc(DEVS[S.peek].name)+' para elegirla')+'</b><span>No se graba y queda en el registro de la familia.</span></div></div>';
+  return '<div class="notice info peek-n" role="status"><span class="led" aria-hidden="true"></span><div><b>'+(here ? PC.by+' mira esta cámara para elegirla' : PC.by+' mira la '+esc(DEVS[S.peek].name)+' para elegirla')+'</b><span>No se graba · queda registrado</span></div></div>';
 }
 function panelEstado(S){
   const list = S.cams.length ? '<ul class="crows" aria-label="Cámaras de esta PC">'+S.cams.map(c => camRowE(S, c)).join('')+'</ul>' : '';
@@ -382,7 +382,7 @@ function panelEstado(S){
     '<div class="card instcard">'+det(S, 'inst', '', ic('lock')+'Datos de la instalación',
       '<dl class="conf-kv"><div><dt>Esta PC</dt><dd>'+PC.name+'</dd></div><div><dt>Sistema</dt><dd>'+PC.os+'</dd></div>'+
       '<div><dt>Vinculada</dt><dd>Por '+PC.by+' el '+PC.on+'</dd></div><div><dt>Programa</dt><dd>'+PC.app+'</dd></div></dl>')+'</div>'+
-    '<p class="scr-foot">'+ic('mobile')+'<span class="ft">Las cámaras, las pausas, el consentimiento y las alertas se gestionan en la app Te Tengo.</span><span class="sep"></span>'+ic('power')+'<span>Se inicia con Windows</span></p>';
+    '<p class="scr-foot">'+ic('mobile')+'<span class="ft">Cámaras, pausas, consentimiento y alertas: en la app</span><span class="sep"></span>'+ic('power')+'<span>Se inicia con Windows</span></p>';
 }
 
 /* ---------- Cámaras: elegir cámaras y habitaciones, con vista previa local ---------- */
@@ -396,7 +396,7 @@ function devTag(S, id){
 }
 function thisPc(){
   return '<div class="thispc"><span class="ci">'+ic('monitor')+'</span><span class="grow"><b>Esta PC: '+PC.name+'</b><span>Vinculada por '+PC.by+' el '+PC.on+'</span></span>'+
-    '<button class="btn btn-danger-ghost btn-xs" data-act="unlinkAsk">'+ic('unlink')+'Desvincular esta PC</button></div>';
+    '<button class="btn btn-danger-ghost btn-xs" data-act="unlinkAsk">'+ic('unlink')+'Desvincular</button></div>';
 }
 function selDev(S){ const d = connected(S); return d.includes(S.pick.sel) ? S.pick.sel : d[0]; }
 function pickState(S, id){
@@ -409,9 +409,9 @@ function pickState(S, id){
 function camPane(S, id){
   const D = DEVS[id], pk = S.pick, ps = pickState(S, id), r = ps.r;
   if(S.scan) return '<div class="cpane"><div class="pane-scan" role="status"><span class="spin"></span>Buscando cámaras conectadas…</div></div>';
-  if(isLost(S, id)) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('videoOff')+'<h2 class="t-h2">La cámara no responde: revisa el cable USB</h2>'+
-    '<p class="t-small">'+(r ? esc(r)+' sigue asignada a esta cámara y no pasa a otra. ' : '')+'Conéctala de nuevo y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
-  if(isBusy(S, id)) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('warn')+'<h2 class="t-h2">Otro programa está usando esta cámara</h2>'+
+  if(isLost(S, id)) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('videoOff')+'<h2 class="t-h2">No responde: revisa el cable USB</h2>'+
+    '<p class="t-small">'+(r ? esc(r)+' sigue asignada a esta cámara. ' : '')+'Conéctala y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
+  if(isBusy(S, id)) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('warn')+'<h2 class="t-h2">Otro programa usa esta cámara</h2>'+
     '<p class="t-small">Ciérralo y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
   const taken = takenRooms(S, id);
   const chips = ROOMS.map(x => {
@@ -419,51 +419,49 @@ function camPane(S, id){
     const on = !ps.otherOn && ps.room===x;
     return '<button class="chip2'+(on?' sel':'')+'" aria-pressed="'+on+'" data-act="pickRoom" data-arg="'+x+'">'+(on?ic('check'):'')+x+'</button>';
   }).join('') + '<button class="chip2'+(ps.otherOn?' sel':'')+'" aria-pressed="'+ps.otherOn+'" data-act="pickOther">'+(ps.otherOn?ic('check'):'')+'Otra…</button>';
-  const errs = {empty:'Escribe el nombre de la habitación.', bath:'Por privacidad, Te Tengo no admite cámaras en el baño.',
-    dup:'Ya hay una cámara en la habitación '+esc(pk.errRoom||'')+' (PC '+esc(pk.errPc||PC.name)+'). Por ahora, cada habitación usa una sola cámara.'};
+  const errs = {empty:'Escribe el nombre de la habitación.', bath:'Por privacidad, no se admiten cámaras en el baño.',
+    dup:esc(pk.errRoom||'')+' ya tiene cámara (PC '+esc(pk.errPc||PC.name)+'). Una cámara por habitación.'};
   const err = pk.err ? errs[pk.err] : '';
   const changed = r ? (ps.room && norm(ps.room)!==norm(r)) : (ps.otherOn || !!ps.room);
   const primary = r ? '<button class="btn btn-primary" data-act="useCam"'+(changed?'':' disabled')+'>'+ic('check')+'Guardar cambio</button>'
                     : '<button class="btn btn-primary" data-act="useCam"'+(changed?'':' disabled')+'>'+ic('check')+'Usar esta cámara</button>';
-  return '<div class="cpane"><figure class="pv2 art">'+roomSVG(D.view)+'<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(D.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'La vista previa solo se ve en esta PC</span></figure>'+
-    (S.adv.on ? '<p class="devid">'+ic('usb')+'<span>Identificador del dispositivo:</span><span class="code">'+esc(D.uid)+'</span></p>' : '')+
+  return '<div class="cpane"><figure class="pv2 art">'+roomSVG(D.view)+'<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(D.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></figure>'+
+    (S.adv.on ? '<p class="devid">'+ic('usb')+'<span>Identificador:</span><span class="code">'+esc(D.uid)+'</span></p>' : '')+
     '<span class="rooms-l" id="rooms-l">¿En qué habitación está?</span><div class="chips2" role="group" aria-labelledby="rooms-l">'+chips+'</div>'+
     (ps.otherOn ? '<div class="other-row field'+(err?' err':'')+'"><label class="sr" for="room-other">Nombre de la habitación</label><input class="input" id="room-other" value="'+esc(ps.otherVal)+'" placeholder="Por ejemplo, Sala comedor" autocomplete="off"'+(err?' aria-invalid="true" aria-describedby="room-err"':'')+'></div>' : '')+
     (err ? '<p class="field-msg err-msg" id="room-err" role="alert">'+ic('warn')+'<span>'+err+'</span></p>' : '')+
-    '<p class="help-l">'+ic('info')+'Por privacidad, Te Tengo no admite cámaras en el baño.</p>'+
+    '<p class="help-l">'+ic('info')+'Por privacidad, no se admiten cámaras en el baño.</p>'+
     '<div class="pane-actions">'+(r ? '<button class="btn btn-danger-ghost btn-sm" data-act="unuse">Dejar de usar</button>' : '')+primary+'</div></div>';
 }
 /* vista informativa de una cámara: vista previa para revisar el encuadre, habitación (elegida en la app) y conexión */
 function camInfo(S, id){
   const D = DEVS[id], c = S.cams.find(x => x.id===id);
   if(S.scan || isLost(S, id) || isBusy(S, id)) return camPane(S, id);
-  const by = c ? (c.by==='pc' ? 'Elegida desde esta PC' : 'La eligió '+PC.by+' en la app') : 'Falta elegir su habitación en la app';
-  return '<div class="cpane info"><figure class="pv2 art">'+roomSVG(D.view)+'<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(D.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'La vista previa solo se ve en esta PC</span></figure>'+
+  const by = c ? (c.by==='pc' ? 'Elegida en esta PC' : 'La eligió '+PC.by+' en la app') : 'Se elige en la app';
+  return '<div class="cpane info"><figure class="pv2 art">'+roomSVG(D.view)+'<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(D.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></figure>'+
     peekNotice(S, true)+
     '<dl class="cinfo"><div><dt>Habitación</dt><dd><b>'+(c ? esc(c.room) : 'Sin usar')+'</b><span>'+by+'</span></dd></div>'+
     '<div><dt>Conexión</dt><dd><b class="ok">'+ic('check')+'Conectada</b><span>'+(id==='d4' ? 'Nueva · por USB' : 'Por USB')+'</span></dd></div></dl>'+
-    (S.adv.on ? '<p class="devid">'+ic('usb')+'<span>Identificador del dispositivo:</span><span class="code">'+esc(D.uid)+'</span></p>' : '')+
-    '<p class="help-l">'+ic('eye')+'Usa la vista previa para revisar que la cámara vea bien la habitación.</p>'+
-    '<p class="help-l">'+ic('mobile')+'La habitación de cada cámara se elige desde la app Te Tengo, en tu celular.</p>'+
-    (S.cams.length >= 3 ? '<p class="help-l">'+ic('info')+'Cada cámara usa más la PC. Si la detección se vuelve lenta, conecta algunas cámaras a otra PC.</p>' : '')+
+    (S.adv.on ? '<p class="devid">'+ic('usb')+'<span>Identificador:</span><span class="code">'+esc(D.uid)+'</span></p>' : '')+
+    '<p class="help-l">'+ic('eye')+'Usa la vista previa para revisar el encuadre.</p>'+
+    (S.cams.length >= 3 ? '<p class="help-l">'+ic('info')+'Si la detección va lenta, pasa alguna cámara a otra PC.</p>' : '')+
     '<div class="pane-actions start"><button class="btn btn-ghost btn-sm" data-act="hereOn">'+ic('cam')+'Elegir aquí (si estás instalando)</button></div></div>';
 }
 function panelCamaras(S){
   const devs = connected(S), any = S.cams.length, here = S.here && devs.length;
-  const meta = here ? 'Elige cada cámara, mira su vista previa y di en qué habitación está. La familia lo verá en la app.'
-    : !devs.length ? 'Las habitaciones se eligen desde la app Te Tengo, en tu celular.'
-    : any ? 'Cada cámara con su habitación. Las habitaciones se eligen desde la app Te Tengo, en tu celular.'
-    : 'Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'. Elígelas desde la app Te Tengo, en tu celular.';
+  const meta = here ? 'Elige la habitación de cada cámara. La familia lo verá en la app.'
+    : !devs.length || any ? 'Las habitaciones se eligen en la app.'
+    : 'Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'. Elígelas en la app.';
   const head = '<header class="p-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">'+(here?'Elegir aquí, si estás instalando':'Cámaras de esta PC')+'</h1>'+
     '<p class="t-meta">'+meta+'</p></div>'+(here ? '<button class="btn btn-secondary btn-sm" data-act="hereOff">'+ic('back')+'Volver</button>' : '')+'</header>';
-  if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">No encontramos cámaras en esta PC</h2>'+
-    '<p class="t-small">Conecta una webcam por USB y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc();
+  if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">No encontramos cámaras</h2>'+
+    '<p class="t-small">Conecta una webcam por USB.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc();
   const sel = selDev(S);
-  const peekRow = id => !here && S.peek===id ? '<span class="peek"><span class="led" aria-hidden="true"></span><span>'+PC.by+' está viendo esta cámara para elegirla · No se graba</span></span>' : '';
+  const peekRow = id => !here && S.peek===id ? '<span class="peek"><span class="led" aria-hidden="true"></span><span>'+PC.by+' la mira para elegirla · No se graba</span></span>' : '';
   const rows = devs.map(id => '<button class="cpick'+(isLost(S,id)?' lost':'')+(!here && S.peek===id?' peeking':'')+'" role="radio" aria-checked="'+(id===sel)+'" tabindex="'+(id===sel?0:-1)+'" data-act="selCam" data-arg="'+id+'">'+
     '<span class="thumb art'+(isLost(S,id)||isBusy(S,id)?' dim':'')+'">'+roomSVG(DEVS[id].view)+'</span><span class="grow"><b>'+esc(DEVS[id].name)+'</b>'+devTag(S, id)+'</span>'+peekRow(id)+'</button>').join('');
-  const many = here && S.cams.length >= 3 ? '<p class="many">'+ic('info')+'<span>Cada cámara usa más la PC. Si la detección se vuelve lenta, conecta algunas cámaras a otra PC.</span></p>' : '';
-  return head+'<div class="camgrid"><div class="clist"><p class="grp-l" id="g-cams">Cámaras conectadas a esta PC</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
+  const many = here && S.cams.length >= 3 ? '<p class="many">'+ic('info')+'<span>Si la detección va lenta, pasa alguna cámara a otra PC.</span></p>' : '';
+  return head+'<div class="camgrid"><div class="clist"><p class="grp-l" id="g-cams">Cámaras conectadas</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
     '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+many+thisPc()+'</div>'+(here ? camPane(S, sel) : camInfo(S, sel))+'</div>';
 }
 
@@ -473,13 +471,13 @@ const LOG = {
   Sala:[
     {t:'10:38:02', k:'programa', tone:'', i:'monitor', m:'Se abrió la cámara de la Sala (Webcam USB HD)', x:'INFO camara abierta id=USB\\VID_0C45&PID_6366 nombre="Webcam USB HD" 1280x720@8fps'},
     {t:'10:38:04', k:'persona', tone:'persona', i:'person', m:'Persona detectada en la Sala', x:'INFO pose persona=1 puntos=33 visibilidad_media=0.81'},
-    {t:'10:39:10', k:'evento', tone:'inestable', i:'warn', m:'Movimiento inestable: se balanceó y recuperó el equilibrio', x:'WARN clasificador evento=inestable theta=31.5 recuperado=1'},
+    {t:'10:39:10', k:'evento', tone:'inestable', i:'warn', m:'Inestable: recuperó el equilibrio', x:'WARN clasificador evento=inestable theta=31.5 recuperado=1'},
     {t:'10:40:30', k:'descarte', tone:'aviso', i:'eyeOff', m:'Imagen descartada: no se ven los tobillos', x:'DEBUG calidad descartada=1 motivo=tobillos_no_visibles vis_tobillo=0.38 min=0.5'},
     {t:'10:41:50', k:'persona', tone:'persona', i:'person', m:'Persona detectada en la Sala', x:'INFO pose persona=1 puntos=33 visibilidad_media=0.84'},
-    {t:'10:41:51', k:'evento', tone:'inestable', i:'arrowDown', m:'Bajó rápido la cadera (descenso por encima del umbral)', x:'INFO clasificador M1=1 v_cadera=0.034 umbral_v=0.01'},
-    {t:'10:41:51', k:'evento', tone:'caida', i:'warn', m:'Posible caída: esperando que quede en el suelo (1,48 s)', x:'INFO clasificador fase=INICIO_CAIDA v=0.034 theta=38.2 P=0.84 M1=1 M2=1 M3=0', ms:482},
-    {t:'10:41:52', k:'evento', tone:'caida', i:'warn', m:'Caída: quedó en el suelo. Aviso enviado a la familia', x:'WARN clasificador fase=CAIDA en_suelo=1 evento=caida aviso=encolado'},
-    {t:'10:42:22', k:'evento', tone:'caida', i:'warn', m:'Caída confirmada: sigue en el suelo después de 30 s', x:'WARN clasificador fase=CAIDA_CONFIRMADA t_suelo=30.0'},
+    {t:'10:41:51', k:'evento', tone:'inestable', i:'arrowDown', m:'La cadera bajó rápido (sobre el umbral)', x:'INFO clasificador M1=1 v_cadera=0.034 umbral_v=0.01'},
+    {t:'10:41:51', k:'evento', tone:'caida', i:'warn', m:'Posible caída: ventana de 1,48 s', x:'INFO clasificador fase=INICIO_CAIDA v=0.034 theta=38.2 P=0.84 M1=1 M2=1 M3=0', ms:482},
+    {t:'10:41:52', k:'evento', tone:'caida', i:'warn', m:'Caída: en el suelo. Aviso enviado', x:'WARN clasificador fase=CAIDA en_suelo=1 evento=caida aviso=encolado'},
+    {t:'10:42:22', k:'evento', tone:'caida', i:'warn', m:'Caída confirmada: 30 s en el suelo', x:'WARN clasificador fase=CAIDA_CONFIRMADA t_suelo=30.0'},
     {t:'10:43:05', k:'evento', tone:'calma', i:'arrowUp', m:'Se levantó', x:'INFO clasificador fase=DE_PIE evento=se_levanto'},
     {t:'10:44:10', k:'descarte', tone:'aviso', i:'eyeOff', m:'Imagen descartada: no se ven los tobillos', x:'DEBUG calidad descartada=1 motivo=tobillos_no_visibles vis_tobillo=0.41 min=0.5'}
   ],
@@ -496,21 +494,21 @@ const LOG_LIVE = [
   {k:'persona', tone:'persona', i:'person', m:'Persona detectada en la Sala', x:'INFO pose persona=1 puntos=33 visibilidad_media=0.80'}
 ];
 const LOG_FALL = [
-  {k:'evento', tone:'inestable', i:'arrowDown', m:'Bajó rápido la cadera (descenso por encima del umbral)', x:'INFO clasificador M1=1 v_cadera=0.034 umbral_v=0.01'},
-  {k:'evento', tone:'caida', i:'warn', m:'Posible caída: esperando que quede en el suelo (1,48 s)', x:'INFO clasificador fase=INICIO_CAIDA v=0.034 theta=38.2 P=0.84 M1=1 M2=1 M3=0'},
-  {k:'evento', tone:'caida', i:'warn', m:'Caída: quedó en el suelo. Aviso enviado a la familia', x:'WARN clasificador fase=CAIDA en_suelo=1 evento=caida aviso=encolado'},
-  {k:'evento', tone:'caida', i:'warn', m:'Caída confirmada: sigue en el suelo después de 30 s', x:'WARN clasificador fase=CAIDA_CONFIRMADA t_suelo=30.0'},
+  {k:'evento', tone:'inestable', i:'arrowDown', m:'La cadera bajó rápido (sobre el umbral)', x:'INFO clasificador M1=1 v_cadera=0.034 umbral_v=0.01'},
+  {k:'evento', tone:'caida', i:'warn', m:'Posible caída: ventana de 1,48 s', x:'INFO clasificador fase=INICIO_CAIDA v=0.034 theta=38.2 P=0.84 M1=1 M2=1 M3=0'},
+  {k:'evento', tone:'caida', i:'warn', m:'Caída: en el suelo. Aviso enviado', x:'WARN clasificador fase=CAIDA en_suelo=1 evento=caida aviso=encolado'},
+  {k:'evento', tone:'caida', i:'warn', m:'Caída confirmada: 30 s en el suelo', x:'WARN clasificador fase=CAIDA_CONFIRMADA t_suelo=30.0'},
   {k:'evento', tone:'calma', i:'arrowUp', m:'Se levantó', x:'INFO clasificador fase=DE_PIE evento=se_levanto'}
 ];
-const LOG_NET = {k:'conexion', tone:'aviso', i:'wifiOff', m:'Sin internet. Los avisos esperan en la cola', x:'WARN conexion estado=sin_red cola_avisos=0 reintento=8s'};
-const LOG_NET_OK = {k:'conexion', tone:'calma', i:'wifi', m:'Volvió internet. Se enviaron los avisos pendientes', x:'INFO conexion estado=en_linea cola_avisos=0'};
+const LOG_NET = {k:'conexion', tone:'aviso', i:'wifiOff', m:'Sin internet: avisos en cola', x:'WARN conexion estado=sin_red cola_avisos=0 reintento=8s'};
+const LOG_NET_OK = {k:'conexion', tone:'calma', i:'wifi', m:'Volvió internet: avisos enviados', x:'INFO conexion estado=en_linea cola_avisos=0'};
 const LOG_K = [['persona','person','Personas'], ['evento','warn','Eventos'], ['descarte','eyeOff','Descartadas'], ['conexion','wifi','Conexión'], ['programa','monitor','Programa']];
 function logAll(S, cam){ return (LOG[cam]||[]).map((l, i) => Object.assign({id:cam+'-'+i}, l)).concat((S.log.extra[cam]||[]).map((l, i) => Object.assign({id:cam+'-x'+i}, l))); }
 function techLine(l){ return '2026-09-23T'+l.t+'.'+String(l.ms!=null?l.ms:(Number(l.t.slice(-2))*37+111)%1000).padStart(3,'0')+'-05:00 '+l.x; }
 function logLine(S, l){
   const open = S.log.open===l.id, isNew = S.log.fresh===l.id;
   return '<div class="lline '+(l.tone||'')+(isNew?' new':'')+'"><time>'+l.t+'</time><span class="li">'+ic(l.i)+'</span><span class="msg">'+l.m+'</span>'+
-    '<button class="tech-btn" aria-expanded="'+open+'" aria-controls="tx-'+l.id+'" data-act="techToggle" data-arg="'+l.id+'">Ver línea técnica'+ic('chevDown')+'</button></div>'+
+    '<button class="tech-btn" aria-expanded="'+open+'" aria-controls="tx-'+l.id+'" data-act="techToggle" data-arg="'+l.id+'" aria-label="Ver línea técnica">Técnica'+ic('chevDown')+'</button></div>'+
     (open ? '<div class="ltech" id="tx-'+l.id+'"><span class="code">'+esc(techLine(l))+'</span><button class="btn btn-ghost btn-xs" data-act="copyTech" data-arg="'+l.id+'">'+ic('copy')+'Copiar</button></div>' : '');
 }
 function logRows(S){
@@ -521,9 +519,9 @@ function logRows(S){
   const pin = pausedRoom(S)===cam ? '<div class="lline pin"><time>'+hm(T('10:42:00'))+'</time><span class="li">'+ic('pause')+'</span><span class="msg">Cámara en pausa hasta las <span class="mono">'+S.pause+'</span></span><span></span></div>' : '';
   const lost = S.lost && roomOf(S, 'd3')===cam ? '<div class="lline aviso pin"><time>10:42</time><span class="li">'+ic('videoOff')+'</span><span class="msg">Cámara desconectada: revisa el cable USB</span><span></span></div>' : '';
   let body;
-  if(!all.length) body = '<div class="logempty">'+ic('terminal')+'<b>Aún no pasa nada en esta cámara</b><span class="t-meta">Las líneas aparecen aquí apenas el programa detecta algo.</span></div>';
+  if(!all.length) body = '<div class="logempty">'+ic('terminal')+'<b>Aún no pasa nada en esta cámara</b></div>';
   else if(!vis.length && q) body = '<div class="logempty">'+ic('search')+'<b>No hay líneas con «'+esc(lg.q)+'»</b></div>';
-  else if(!vis.length) body = '<div class="logempty">'+ic('list')+'<b>No hay líneas de ese tipo</b><span class="t-meta">Activa otro filtro para ver más.</span></div>';
+  else if(!vis.length) body = '<div class="logempty">'+ic('list')+'<b>No hay líneas de ese tipo</b></div>';
   else body = vis.map(l => logLine(S, l)).join('');
   return pin + lost + body;
 }
@@ -541,10 +539,10 @@ function logView(S){
 /* ---------- medidores ---------- */
 function meterReason(S){
   const cam = S.adv.cam;
-  if(S.lost && roomOf(S, 'd3')===cam) return {t:'Cámara desconectada', s:'Revisa el cable USB. Los medidores vuelven solos al conectarla.', i:'videoOff', c:'aviso dash'};
-  if(pausedRoom(S)===cam) return {t:'En pausa hasta las '+S.pause, s:'La familia la pausó desde la app. Los medidores vuelven solos al terminar la pausa.', i:'pause', c:'pausa'};
+  if(S.lost && roomOf(S, 'd3')===cam) return {t:'Cámara desconectada', s:'Revisa el cable USB.', i:'videoOff', c:'aviso dash'};
+  if(pausedRoom(S)===cam) return {t:'En pausa hasta las '+S.pause, s:'La pausaron desde la app.', i:'pause', c:'pausa'};
   if(!S.consent) return {t:'Cámara detenida', s:'Falta el consentimiento de '+HOME.first+'.', i:'doc', c:'aviso'};
-  if(cam!=='Sala' || !S.m.person) return {t:'Sin persona en la imagen', s:'Los medidores vuelven solos cuando la cámara vea a alguien.', i:'person', c:'pausa'};
+  if(cam!=='Sala' || !S.m.person) return {t:'Sin persona en la imagen', s:'Vuelven cuando la cámara vea a alguien.', i:'person', c:'pausa'};
   return null;
 }
 const PHASES = [['De pie',''], ['Posible caída','inestable'], ['En el suelo','caida'], ['Caída confirmada','caida']];
@@ -558,7 +556,7 @@ function metersInner(S){
     ? '<div class="mcard mnote" role="status"><span class="ci '+off.c+'">'+ic(off.i)+'</span><div><b>'+off.t+'</b><span>'+off.s+'</span></div></div>'
     : '<div class="mcard"><h3>'+ic('gauge')+'Rendimiento</h3><span class="mval">'+num(m.fps, 1)+'<small>fps</small></span><p class="msub">Objetivo: 8 fps</p>'+
         '<div class="mkv"><div><span>Uso del procesador</span><b>'+Math.round(m.cpu)+' %</b></div><div><span>Demora del análisis</span><b>'+num(m.lat, 2)+' s</b></div></div></div>'+
-      '<div class="mcard"><h3>'+ic('person')+'Persona</h3><p class="mperson"><span class="ci calma">'+ic('check')+'</span>Sí, se ve a una persona</p><p class="msub mt8">Una sola persona en la imagen</p></div>'+
+      '<div class="mcard"><h3>'+ic('person')+'Persona</h3><p class="mperson"><span class="ci calma">'+ic('check')+'</span>Sí, una persona</p></div>'+
       '<div class="mcard"><h3>'+ic('clock')+'Temporizadores</h3>'+
         '<p class="timer">Ventana de caída <b>'+num(m.win, 2)+' s</b></p><div class="tbar"><i style="transform:scaleX('+(m.win/1.48).toFixed(3)+')"></i></div>'+
         '<p class="timer mt8">En el suelo <b>'+Math.round(m.ground)+' de 30 s</b></p><div class="tbar"><i style="transform:scaleX('+(m.ground/30).toFixed(3)+')"></i></div></div>';
@@ -571,8 +569,8 @@ function metersInner(S){
     meas('Inclinación del tronco (M2)', Math.round(m.m2)+'°', '', 'Avisa por debajo de 45°', m.m2 < 45, (90-m.m2)/90*100, 50)+
     meas('Forma del cuerpo, ancho/alto (M3)', num(m.m3, 2), '', 'Avisa desde 1', m.m3 >= 1, m.m3/2*100, 50)+
     '<div class="mcard mphase"><h3>'+ic('pulse')+'Fase</h3><div class="phs">'+PHASES.map((p, i) => (i?ic('chevR'):'')+'<span class="ph'+(i===ph?' cur '+p[1]:'')+'"'+(i===ph?' aria-current="step"':'')+'>'+(i===ph?ic('check'):'')+p[0]+'</span>').join('')+'</div>'+
-      '<p class="msub mt8">Avisa si queda en el suelo después de la ventana de 1,48 s; la caída se confirma a los 30 s.</p></div>'+
-    '<div class="mside"><div class="mcard"><h3>'+ic('person')+'Puntos del cuerpo</h3><div class="pbars">'+bars+'</div><p class="plow">Visibilidad de 0 a 1 · mínimo 0,5 (la raya)</p></div>'+
+      '<p class="msub mt8">Avisa si sigue en el suelo tras 1,48 s; confirma a los 30 s.</p></div>'+
+    '<div class="mside"><div class="mcard"><h3>'+ic('person')+'Puntos del cuerpo</h3><div class="pbars">'+bars+'</div><p class="plow">Visibilidad 0–1 · mínimo 0,5</p></div>'+
       '<div class="mcard" style="flex:1;display:flex;flex-direction:column"><h3>'+ic('eye')+'Esqueleto</h3><div class="mskel">'+
         (off ? '' : floorSVG(skelG(pose, fx, 132, '#2B1D4E', .95), 240, 150, 134))+'<span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></div></div></div>';
 }
@@ -593,8 +591,8 @@ function actView(S){
   const av = w => w==='pc' ? '<span class="av pc">'+ic('monitor')+'</span>' : '<span class="av">'+w+'</span>';
   const body = rows.length ? days.map(d => '<h3 class="actday">'+d+'</h3>'+rows.filter(a => a.d===d).map(a =>
       '<div class="arow">'+av(a.who)+'<span>'+a.m+'</span><span class="when">'+(a.pend?'<span class="ptag">'+ic('clock')+'Pendiente de enviar</span>':'')+'<span class="mono">'+a.t+'</span></span></div>').join('')).join('')
-    : '<div class="actempty">'+ic('list')+'<b>Aún no hay actividad registrada</b><span class="t-meta">Aquí verás quién vinculó la PC, cambió una cámara o cómo se guardan los datos.</span></div>';
-  return '<div class="advhead">'+seg+'</div><div class="actlist" id="actlist">'+body+'</div><p class="actfoot">'+ic('lock')+'Nadie puede editar ni borrar esta lista. Lo que se hace en esta PC se anota como «Desde esta PC».</p>';
+    : '<div class="actempty">'+ic('list')+'<b>Aún no hay actividad</b><span class="t-meta">Aquí verás quién cambió qué y cuándo.</span></div>';
+  return '<div class="advhead">'+seg+'</div><div class="actlist" id="actlist">'+body+'</div><p class="actfoot">'+ic('lock')+'Nadie puede editar ni borrar esta lista.</p>';
 }
 
 /* ---------- almacenamiento en esta PC ---------- */
@@ -613,9 +611,9 @@ function retPills(S, key, cur, dis, label){
 function storageView(S){
   const st = S.store, n = storeNums(S), capv = capGB(S), used = n.mov+n.vid+n.clip, pct = v => (v/capv*100).toFixed(2);
   let band = '';
-  if(st.state==='full') band = '<div class="notice warn stband" role="alert">'+ic('folder')+'<div><b>No podemos guardar en la carpeta elegida</b><span>Revisa que el disco tenga espacio o elige otra carpeta. La detección y los avisos siguen funcionando.</span></div><button class="btn btn-secondary btn-sm" data-act="folderChange">Elegir otra carpeta</button></div>';
+  if(st.state==='full') band = '<div class="notice warn stband" role="alert">'+ic('folder')+'<div><b>No podemos guardar en la carpeta</b><span>Revisa el espacio del disco. Detección y avisos siguen.</span></div><button class="btn btn-secondary btn-sm" data-act="folderChange">Elegir otra carpeta</button></div>';
   else if(st.state==='near') band = '<div class="notice warn stband" role="status">'+ic('drive')+'<div><b>Queda poco espacio: '+num(used, 1)+' GB de '+capv+' GB</b><span>Pronto borraremos el video más antiguo.</span></div></div>';
-  else if(st.state==='limit') band = '<div class="notice info stband" role="status">'+ic('trash')+'<div><b>Borramos el video del 01/10 para liberar espacio</b><span>La detección sigue funcionando.</span></div></div>';
+  else if(st.state==='limit') band = '<div class="notice info stband" role="status">'+ic('trash')+'<div><b>Borramos el video del 01/10 para liberar espacio</b><span>La detección sigue.</span></div></div>';
   const mc = S.moveConsent;
   const trow = (icon, id, name, sub, on, act, key, cur, dis, why) => '<div class="trow"><div class="trow-h"><span class="ci">'+ic(icon)+'</span><span class="grow"><b id="'+id+'">'+name+'</b><span>'+sub+'</span></span>'+sw(on, act, id, dis)+'</div>'+
     retPills(S, key, cur, dis || !on, 'Cuánto tiempo guardar: '+name)+(why?'<p class="why">'+ic('lock')+'<span>'+why+'</span></p>':'')+'</div>';
@@ -624,17 +622,17 @@ function storageView(S){
       '<div class="ubar" role="img" aria-label="Movimientos '+num(n.mov,1)+' GB, video '+num(n.vid,1)+' GB, clips '+num(n.clip,1)+' GB de '+capv+' GB"><i class="u-mov" style="width:'+pct(n.mov)+'%"></i><i class="u-vid" style="width:'+pct(n.vid)+'%"></i><i class="u-clip" style="width:'+pct(n.clip)+'%"></i></div>'+
       '<p class="ulg"><span><i class="u-mov"></i>Movimientos <b>'+num(n.mov,1)+' GB</b></span><span><i class="u-vid"></i>Video <b>'+num(n.vid,1)+' GB</b></span><span><i class="u-clip"></i>Clips <b>'+num(n.clip,1)+' GB</b></span><span>Libre <b>'+num(Math.max(0, capv-used),1)+' GB</b></span></p></div>'+
     '<div class="stcard"><h3>Carpeta</h3><div class="folder"><span class="code" title="'+esc(st.path?STORE.path2:STORE.path)+'">'+esc(st.path?STORE.path2:STORE.path)+'</span><button class="btn btn-secondary btn-xs" data-act="folderChange"'+(st.state==='moving'?' disabled':'')+'>'+ic('folder')+'Cambiar carpeta</button></div>'+
-      (st.state==='moving' ? '<div class="moving" role="status">Moviendo '+num(used,1)+' GB… La detección sigue funcionando.<div class="tbar"><i style="transform:scaleX(.45)"></i></div></div>' : '')+'</div>'+
-    '<div class="stcard"><p class="irow"><span class="ci calma">'+ic('lock')+'</span><span><b>Datos cifrados</b>Los datos de esta carpeta están cifrados. Solo Te Tengo Captura puede leerlos.</span></p></div>'+
-    '<div class="stcard"><p class="irow"><span class="ci">'+ic('cloud')+'</span><span><b>En la nube</b>'+(mc?'Movimientos en la nube: 30 días · lo eligió Carmen en la app.':'Movimientos en la nube: desactivado.')+' Nunca guardamos video en la nube.</span></p></div>'+
+      (st.state==='moving' ? '<div class="moving" role="status">Moviendo '+num(used,1)+' GB… La detección sigue.<div class="tbar"><i style="transform:scaleX(.45)"></i></div></div>' : '')+'</div>'+
+    '<div class="stcard"><p class="irow"><span class="ci calma">'+ic('lock')+'</span><span><b>Datos cifrados</b>Solo Te Tengo Captura puede leerlos.</span></p></div>'+
+    '<div class="stcard"><p class="irow"><span class="ci">'+ic('cloud')+'</span><span><b>En la nube</b>'+(mc?'Movimientos: 30 días (lo eligió Carmen).':'Movimientos: desactivado.')+' Video: nunca.</span></p></div>'+
   '</div><div class="stcol">'+
-    '<div class="stcard"><h3>Qué se guarda en esta PC</h3>'+
-      trow('person', 'st-mov', 'Movimientos (puntos del cuerpo)', 'Sin imagen ni video', mc && st.moves, 'stMov', 'mov', st.retMov, !mc, mc ? '' : 'Requiere el permiso de '+HOME.first+' para guardar movimientos. Se registra en la app Te Tengo.')+
-      trow('cam', 'st-vid', 'Video continuo', 'Solo en esta PC · nunca se sube', st.video, 'stVid', 'vid', st.retVid, false, '')+
-      trow('play', 'st-clip', 'Clips de los avisos', 'Los 12 segundos de cada aviso', st.clips, 'stClip', 'clip', st.retClip, false, '')+'</div>'+
+    '<div class="stcard"><h3>Qué se guarda aquí</h3>'+
+      trow('person', 'st-mov', 'Movimientos (puntos del cuerpo)', 'Sin imagen ni video', mc && st.moves, 'stMov', 'mov', st.retMov, !mc, mc ? '' : 'Requiere el permiso de '+HOME.first+' (se registra en la app).')+
+      trow('cam', 'st-vid', 'Video continuo', 'Nunca se sube', st.video, 'stVid', 'vid', st.retVid, false, '')+
+      trow('play', 'st-clip', 'Clips de los avisos', '12 s por aviso', st.clips, 'stClip', 'clip', st.retClip, false, '')+'</div>'+
     '<div class="stcard"><h3>Límite de espacio</h3>'+retPills(S, 'cap', st.cap, false, 'Límite de espacio')+
       (st.capOther ? '<div class="cap-other"><label class="sr" for="cap-val">Límite en GB</label><input class="input mono" id="cap-val" inputmode="numeric" value="'+esc(st.capVal)+'" placeholder="75"><span class="t-meta">GB</span></div>' : '')+
-      '<p class="capnote">Al llegar al límite, borramos primero el video más antiguo y luego los movimientos más antiguos. La detección nunca se detiene.</p></div>'+
+      '<p class="capnote">Al llegar, borramos lo más antiguo: primero video, luego movimientos.</p></div>'+
   '</div></div></div>';
 }
 
@@ -647,9 +645,9 @@ function panelAvanzado(S){
   const seg = '<div class="seg2" role="tablist" aria-label="Avanzado">'+advSubs(S).map(x => '<button role="tab" id="sub-'+x[0]+'" aria-selected="'+(x[0]===sub)+'" tabindex="'+(x[0]===sub?0:-1)+'" data-act="advSub" data-arg="'+x[0]+'">'+(S.adv.on?'':ic(x[1]))+x[2]+'</button>').join('')+'</div>';
   const btns = '<div class="advbtns"><button class="btn btn-secondary btn-sm" data-act="replayOpen">'+ic('replay')+'Ver qué pasó</button>'+(a.on ? '<button class="btn btn-secondary btn-sm" data-act="diagOpen">'+ic('download')+'Exportar diagnóstico</button>' : '')+'</div>';
   const mode = a.on
-    ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">Modo avanzado</b> · Nada de esto sale de esta PC.</span>'+
+    ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">Modo avanzado</b> · Nada sale de esta PC.</span>'+
         (camSel && rooms.length ? '<span class="cam-l" id="cam-l">Cámara</span><div class="seg2 sm" role="radiogroup" aria-labelledby="cam-l">'+rooms.map(r => '<button role="radio" aria-checked="'+(r===a.cam)+'" data-act="advCam" data-arg="'+esc(r)+'">'+esc(r)+'</button>').join('')+'</div>' : '')+'</div>'
-    : '<div class="card advcard"><span class="ci lg">'+ic('sliders')+'</span><div class="grow"><b id="adv-l">Modo avanzado</b><span>Muestra, cámara por cámara, lo que detecta el programa y por qué avisa o no avisa. Sirve para revisar la instalación. Nada de esto sale de esta PC.</span></div>'+sw(false, 'advToggle', 'adv-l')+'</div>';
+    : '<div class="card advcard"><span class="ci lg">'+ic('sliders')+'</span><div class="grow"><b id="adv-l">Modo avanzado</b><span>Qué detecta cada cámara y por qué avisa. Nada sale de esta PC.</span></div>'+sw(false, 'advToggle', 'adv-l')+'</div>';
   const body = sub==='registro' ? logView(S) : sub==='medidores' ? metersView(S) : sub==='almacenamiento' ? storageView(S) : actView(S);
   return '<h1 class="sr" id="scr-h" tabindex="-1">Avanzado</h1><div class="advhead">'+seg+btns+'</div>'+mode+'<div class="advbody" role="tabpanel" aria-labelledby="sub-'+sub+'">'+body+'</div>';
 }
@@ -709,20 +707,20 @@ function rpForm(S){
     '<label class="label" for="rp-hour">Hora</label><input class="input mono" id="rp-hour" value="'+esc(r.hour)+'" inputmode="numeric" maxlength="5" autocomplete="off"'+(dis?' disabled':'')+'>'+
     '<div class="qchips">'+[['Hace 15 min','10:27'], ['Hace 1 hora','09:42'], ['Hoy 07:00','07:00']].map(q => '<button data-act="rpQuick" data-arg="'+q[1]+'"'+(dis?' disabled':'')+'>'+q[0]+'</button>').join('')+'</div>'+
     '<button class="btn btn-primary btn-sm" data-act="rpGo"'+(dis?' disabled':'')+'>'+ic('replay')+'Ver</button>'+
-    '<p class="t-meta">'+(dis ? 'No hay movimientos guardados.' : 'Hay movimientos guardados en esta PC desde el 24/08/2026.')+'</p>'+
-    '<div class="vtoggle mt12"><span><b id="rp-vl">Ver sobre el video guardado</b><span>'+(vOk ? 'El video nunca sale de esta PC.' : 'No se guardó video de ese momento.')+'</span></span>'+sw(r.video && vOk, 'rpVideo', 'rp-vl', !vOk || dis, true)+'</div></div>';
+    '<p class="t-meta">'+(dis ? 'No hay movimientos guardados.' : 'Datos desde el 24/08/2026.')+'</p>'+
+    '<div class="vtoggle mt12"><span><b id="rp-vl">Sobre el video guardado</b><span>'+(vOk ? 'Nunca sale de esta PC.' : 'No hay video de ese momento.')+'</span></span>'+sw(r.video && vOk, 'rpVideo', 'rp-vl', !vOk || dis, true)+'</div></div>';
 }
 function panelReplay(S){
   const r = S.rp, day = (RP_DAYS.find(d => d[0]===r.day) || RP_DAYS[0])[2];
   const head = '<div class="rp-head"><button class="back" data-act="replayClose">'+ic('back')+'Volver</button><h1 class="t-title" id="scr-h" tabindex="-1">Ver qué pasó</h1>'+
     '<span class="t-meta" id="rp-title">'+esc(r.cam)+' · '+(r.state==='old' ? 'lunes 01/09' : day)+'</span></div>';
   let main;
-  if(!S.moveConsent) main = '<div class="rp-main"><div class="card rp-block"><div class="notice warn">'+ic('lock')+'<div><b>Para ver qué pasó, '+HOME.first+' debe aceptar que se guarden sus movimientos.</b><span>Se registra en la app Te Tengo, en Privacidad › Guardar movimientos.</span></div></div></div></div>';
+  if(!S.moveConsent) main = '<div class="rp-main"><div class="card rp-block"><div class="notice warn">'+ic('lock')+'<div><b>Falta el permiso de '+HOME.first+' para guardar movimientos</b><span>Se registra en la app: Privacidad › Guardar movimientos.</span></div></div></div></div>';
   else if(r.state==='old') main = '<div class="rp-main"><div class="card rp-block"><div class="notice info">'+ic('clock')+'<div><b>Ya no hay movimientos de ese momento.</b><span>Hay datos desde el 24/08/2026. Elige otra fecha.</span></div></div></div></div>';
   else {
     const p = rpPose(S, r.t), evs = rpEvents(S).filter(e => { const w = rpWin(S); return e.t >= w[0] && e.t <= w[1]; });
-    const strip = r.video && S.store.videoStored ? '<p class="rp-strip video">'+ic('lock')+'Video guardado solo en esta PC · nunca se sube<span>· Queda en el registro de accesos</span></p>'
-      : '<p class="rp-strip">'+ic('eye')+'Solo puntos del cuerpo, nunca video<span>· Esta repetición queda en el registro de accesos</span></p>';
+    const strip = r.video && S.store.videoStored ? '<p class="rp-strip video">'+ic('lock')+'Video guardado solo en esta PC<span>· Queda en el registro de accesos</span></p>'
+      : '<p class="rp-strip">'+ic('eye')+'Solo puntos del cuerpo, nunca video<span>· Queda en el registro de accesos</span></p>';
     main = '<div class="rp-main">'+strip+
       '<div class="rp-canvas" id="rp-canvas">'+(r.video && S.store.videoStored ? '<div class="rp-vid">'+roomSVG(DEVS[S.cams.find(c => c.room===r.cam) ? S.cams.find(c => c.room===r.cam).id : 'd1'].view)+'</div>' : '')+
         '<div class="rp-fig" id="rp-fig">'+rpFig(S, r.t)+'</div><span class="rp-phase '+p.tone+'" id="rp-phase" aria-live="polite">'+ic(p.i)+p.label+'</span><span class="rp-clock" id="rp-clock">'+hms(r.t)+'</span></div>'+
@@ -733,7 +731,7 @@ function panelReplay(S){
         '<span class="rp-time mono" id="rp-time">'+hms(r.t)+'</span>'+
         '<button class="ibtn speed" data-act="rpSpeed" aria-label="Velocidad: '+spTxt(r.speed)+'" title="Cambiar la velocidad">'+spTxt(r.speed)+'</button>'+
         '<div class="seg2 sm" role="radiogroup" aria-label="Rango de la línea de tiempo"><button role="radio" aria-checked="'+(r.zoom==='10')+'" data-act="rpZoom" data-arg="10">10 min</button><button role="radio" aria-checked="'+(r.zoom==='60')+'" data-act="rpZoom" data-arg="60">1 h</button></div></div>'+
-      det(S, 'rpev', 'rp-ev', 'Eventos de este tramo ('+evs.length+')', evs.length ? evs.map(e => '<button class="evrow" data-act="rpSeek" data-arg="'+e.t+'"><time class="mono">'+hms(e.t)+'</time>'+markSVG(e.k)+'<span>'+e.l+' · '+esc(r.cam)+'</span></button>').join('') : '<p class="t-meta" style="padding:4px 0 8px">Sin eventos en este tramo.</p>')+'</div>';
+      det(S, 'rpev', 'rp-ev', 'Eventos ('+evs.length+')', evs.length ? evs.map(e => '<button class="evrow" data-act="rpSeek" data-arg="'+e.t+'"><time class="mono">'+hms(e.t)+'</time>'+markSVG(e.k)+'<span>'+e.l+' · '+esc(r.cam)+'</span></button>').join('') : '<p class="t-meta" style="padding:4px 0 8px">Sin eventos.</p>')+'</div>';
   }
   return head+'<div class="rp-grid">'+rpForm(S)+main+'</div>';
 }
@@ -746,26 +744,26 @@ function dialog(S){
   if(!S.dlg) return '';
   const rooms = S.cams.map(c => c.room), n = storeNums(S), total = n.mov+n.vid+n.clip;
   if(S.dlg==='unlink') return dlgBox('dlg-unlink', '<span class="ci lg caida">'+ic('unlink')+'</span>', '¿Desvincular esta PC?',
-    (rooms.length ? 'Dejaremos de detectar caídas en '+listY(rooms)+'. ' : '')+'Esta PC borrará su acceso y la familia recibirá un aviso.',
-    '<label class="checkrow"><input type="checkbox" id="unlink-wipe"'+(S.unlinkWipe?' checked':'')+'><span>Borrar también los datos guardados en esta PC ('+num(total, 1)+' GB)<span>Movimientos, video y clips de la carpeta de Te Tengo.</span></span></label>',
+    (rooms.length ? 'Se dejan de detectar caídas en '+listY(rooms)+'. ' : '')+'La familia recibirá un aviso.',
+    '<label class="checkrow"><input type="checkbox" id="unlink-wipe"'+(S.unlinkWipe?' checked':'')+'><span>Borrar también los datos de esta PC ('+num(total, 1)+' GB)<span>Movimientos, video y clips.</span></span></label>',
     '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-danger" data-act="unlinkDo">'+ic('unlink')+'Desvincular</button>');
   if(S.dlg==='video') return dlgBox('dlg-video', '<span class="ci lg">'+ic('cam')+'</span>', '¿Guardar video continuo en esta PC?',
-    'El video se guarda solo en esta PC, nunca se sube a la nube. 480p, 8 imágenes por segundo, en partes de 10 minutos. Puede ocupar mucho espacio.', '',
+    'Se queda en esta PC, nunca se sube. 480p a 8 fps, en partes de 10 min. Ocupa mucho espacio.', '',
     '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-primary" data-act="videoOn">Activar</button>');
-  if(S.dlg==='revoke') return dlgBox('dlg-revoke', '<span class="ci lg aviso">'+ic('person')+'</span>', '¿Borrar también los movimientos guardados en esta PC ('+num(STORE.mov, 1)+' GB)?',
-    HOME.fam.split(' ')[0]+' registró en la app que '+HOME.first+' ya no autoriza guardar sus movimientos. Ya no guardamos movimientos nuevos y los de la nube se están borrando. Las alertas siguen igual.', '',
+  if(S.dlg==='revoke') return dlgBox('dlg-revoke', '<span class="ci lg aviso">'+ic('person')+'</span>', '¿Borrar los movimientos de esta PC ('+num(STORE.mov, 1)+'&nbsp;GB)?',
+    HOME.first+' ya no autoriza guardarlos (lo registró '+HOME.fam.split(' ')[0]+'). No guardamos nuevos y los de la nube se borran. Las alertas siguen.', '',
     '<button class="btn btn-secondary" data-act="revokeKeep">Conservar</button><button class="btn btn-danger" data-act="revokeWipe">'+ic('trash')+'Borrar</button>');
   if(S.dlg==='diag'){
     const d = S.diag;
     const file = '<div class="filebox">'+ic('doc')+'<span class="code">'+(d.step==='done' ? DIAG.dir+'\\' : '')+DIAG.file+'</span>'+(d.step==='done' ? '<small>'+DIAG.size+'</small>' : '')+'</div>';
-    if(d.step==='busy') return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Crea un archivo para enviarlo al equipo de soporte.',
+    if(d.step==='busy') return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Un archivo para el equipo de soporte.',
       file+'<div class="prog" role="status"><div class="tbar"><i></i></div><p>Preparando el diagnóstico…</p></div>', '<button class="btn btn-secondary" data-act="diagCancel">Cancelar</button>');
-    if(d.step==='done') return dlgBox('dlg-diag', '<span class="ci lg calma">'+ic('check')+'</span>', 'Diagnóstico guardado · '+DIAG.size, 'Envíalo al equipo de soporte cuando te lo pidan.',
+    if(d.step==='done') return dlgBox('dlg-diag', '<span class="ci lg calma">'+ic('check')+'</span>', 'Diagnóstico guardado · '+DIAG.size, 'Envíalo a soporte cuando te lo pidan.',
       file, '<button class="btn btn-secondary" data-act="diagShow">'+ic('folder')+'Mostrar en la carpeta</button><button class="btn btn-primary" data-act="dlgClose">Listo</button>');
     const lists = '<div class="inc"><div class="yes"><h3>Incluye</h3><ul>'+['Registros del programa', 'Versión y sistema operativo', 'Cámaras y habitaciones', 'Umbrales de detección'].map(x => '<li>'+ic('check')+x+'</li>').join('')+'</ul></div>'+
       '<div class="no"><h3>No incluye</h3><ul>'+['Contraseñas ni accesos', 'Imágenes ni video', 'Puntos del cuerpo'].map(x => '<li>'+ic('x')+x+'</li>').join('')+'</ul></div></div>';
-    return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Crea un archivo para enviarlo al equipo de soporte.',
-      (d.step==='err' ? '<div class="notice err" role="alert">'+ic('warn')+'<div><b>No pudimos guardar el archivo en esa carpeta. Elige otra.</b><span>No se guardó ningún archivo.</span></div></div>' : lists)+file,
+    return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Un archivo para el equipo de soporte.',
+      (d.step==='err' ? '<div class="notice err" role="alert">'+ic('warn')+'<div><b>No pudimos guardar en esa carpeta</b><span>No quedó ningún archivo. Elige otra.</span></div></div>' : lists)+file,
       '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-primary" data-act="diagSave">'+ic('folder')+(d.step==='err'?'Elegir otra carpeta':'Elegir dónde guardar')+'</button>');
   }
   return '';
@@ -786,7 +784,7 @@ function desktopBoot(S){ return '<div class="desk corner" aria-label="Escritorio
 /* ---------- escritorio: barra de tareas, bandeja y avisos del sistema ---------- */
 function trayState(S){
   const peeking = S.peek && connected(S).includes(S.peek) && (S.screen==='main' || S.screen==='vinculada');
-  if(peeking) return {k:'live', label:PC.by+' está viendo una cámara para elegirla'};
+  if(peeking) return {k:'live', label:PC.by+' mira una cámara para elegirla'};
   if(!S.linked || PRE_SCREENS.includes(S.screen)) return S.screen==='vinculada' ? {k:'warn', label:'falta elegir las cámaras en la app'} : {k:'off', label:S.screen==='quitada' ? 'se quitó de la vivienda' : 'sin vincular'};
   if(!S.cams.length) return {k:'warn', label:'falta elegir las cámaras en la app'};
   if(S.cams.some(c => isLost(S, c.id))) return {k:'warn', label:'una cámara no responde'};
@@ -808,17 +806,17 @@ function taskbar(S, o){
 function osToast(S, kind){
   let t, sub, icon = '';
   const lostCam = S.cams.find(c => isLost(S, c.id));
-  if(kind==='lost'){ t = 'La cámara '+(lostCam ? delRoom(lostCam.room)+' ' : '')+'no responde'; sub = 'Revisa que el cable USB esté bien conectado a la PC.'; icon = 'videoOff'; }
-  else if(kind==='live'){ t = (S.live ? S.live.who : 'Un familiar')+' está viendo '+deRoomD(S.live ? S.live.room : 'Sala')+' en vivo'; sub = 'No se graba y queda en el registro de la familia.'; icon = 'eye'; }
-  else if(kind==='removed'){ t = 'Esta PC se quitó de la vivienda'; sub = PC.by+' la quitó desde la app a las 11:20. Ya no usa las cámaras. Ábrela para vincularla de nuevo.'; icon = 'unlink'; }
-  else { t = 'Te Tengo Captura sigue funcionando en segundo plano';
-    if(!S.linked || PRE_SCREENS.includes(S.screen)) sub = 'Ábrelo desde su ícono, junto al reloj, para vincular esta PC.';
-    else if(!S.cams.length) sub = 'Falta elegir las cámaras desde la app Te Tengo, en tu celular. Esta PC se actualiza sola.';
-    else if(lostCam) sub = 'La cámara '+delRoom(lostCam.room)+' está desconectada: revisa el cable USB. Ábrelo desde su ícono, junto al reloj.';
-    else if(!S.online) sub = 'Las cámaras siguen cuidando y seguirá intentando conectarse a internet. Ábrelo desde su ícono, junto al reloj.';
-    else if(!S.consent) sub = 'Empezará cuando la familia registre el consentimiento en la app Te Tengo.';
-    else if(S.pause) sub = cap1(deRoomD(pausedRoom(S)))+' está en pausa hasta las '+S.pause+'. Ábrelo desde su ícono, junto al reloj.';
-    else sub = 'Sigue cuidando '+(S.cams.length===1 ? deRoomD(S.cams[0].room) : S.cams.length+' habitaciones')+'. Ábrelo desde su ícono, junto al reloj.'; }
+  if(kind==='lost'){ t = 'La cámara '+(lostCam ? delRoom(lostCam.room)+' ' : '')+'no responde'; sub = 'Revisa el cable USB.'; icon = 'videoOff'; }
+  else if(kind==='live'){ t = (S.live ? S.live.who : 'Un familiar')+' está viendo '+deRoomD(S.live ? S.live.room : 'Sala')+' en vivo'; sub = 'No se graba · queda registrado.'; icon = 'eye'; }
+  else if(kind==='removed'){ t = 'Esta PC se quitó de la vivienda'; sub = PC.by+' la quitó a las 11:20. Ábrela para vincularla de nuevo.'; icon = 'unlink'; }
+  else { t = 'Sigue funcionando en segundo plano';
+    if(!S.linked || PRE_SCREENS.includes(S.screen)) sub = 'Ábrelo junto al reloj para vincular esta PC.';
+    else if(!S.cams.length) sub = 'Falta elegir las cámaras en la app.';
+    else if(lostCam) sub = 'La cámara '+delRoom(lostCam.room)+' está desconectada: revisa el cable USB.';
+    else if(!S.online) sub = 'Sin internet: las cámaras siguen cuidando.';
+    else if(!S.consent) sub = 'Empieza cuando la familia registre el consentimiento.';
+    else if(S.pause) sub = cap1(deRoomD(pausedRoom(S)))+' en pausa hasta las '+S.pause+'.';
+    else sub = 'Cuida '+(S.cams.length===1 ? deRoomD(S.cams[0].room) : S.cams.length+' habitaciones')+'. Ábrelo junto al reloj.'; }
   const cls = kind==='lost' ? ' warn' : kind==='live' ? ' live' : kind==='removed' ? ' removed' : '';
   return '<div class="os-toast'+cls+'" role="status"><div class="os-h">'+appIcon('xs')+'<span class="os-t">Te Tengo Captura</span><button class="os-x" data-act="toastClose" aria-label="Cerrar aviso">'+ic('x')+'</button></div>'+
     '<b>'+(icon ? ic(icon) : '')+t+'</b><p>'+sub+'</p></div>';
@@ -845,78 +843,78 @@ const G = {
   act:'Actividad', st:'Almacenamiento en esta PC', rp:'Ver qué pasó', dg:'Exportar diagnóstico'
 };
 const PRESETS = [
-  {g:G.boot, slug:'00-pantalla-de-arranque', name:'Pantalla de arranque', desc:'Ventana de inicio al encender la PC o abrir el programa: el símbolo se arma, abre las cámaras elegidas y se conecta con Te Tengo.', S:mk({screen:'arranque'})},
-  {g:G.est, slug:'01-enviando-video', name:'Todo funciona', desc:'Pestaña Estado: el estado en una sola franja y una fila por cámara (Sala, Dormitorio y Pasillo); los datos de la instalación quedan plegados.', S:mk({})},
-  {g:G.est, slug:'02-en-pausa', name:'Una cámara en pausa', desc:'Luis pausó la cámara de la Sala desde la app hasta las 11:42; Dormitorio y Pasillo siguen cuidando.', S:mk({pause:'11:42'})},
-  {g:G.est, slug:'03-esperando-consentimiento', name:'Esperando consentimiento', desc:'Sin el consentimiento registrado en la app, ninguna cámara se usa.', S:mk({consent:false})},
-  {g:G.est, slug:'04-sin-internet', name:'Sin internet, reintentando', desc:'Las cámaras siguen detectando en la PC; los avisos esperan y salen solos cuando vuelve la conexión.', S:mk({online:false, retry:8})},
-  {g:G.est, slug:'05-webcam-desconectada', name:'Una cámara no responde', desc:'La cámara del Pasillo dejó de responder: se pide revisar su cable USB. Las demás siguen cuidando.', S:mk({lost:true})},
-  {g:G.bg, slug:'06-aviso-al-cerrar', name:'Aviso al cerrar o minimizar', desc:'La ventana se cierra y el programa sigue en la bandeja, junto al reloj, con un punto de estado.', S:mk({screen:'cerrado'})},
-  {g:G.bg, slug:'07-aviso-webcam-desconectada', name:'Aviso: cámara desconectada', desc:'Con la ventana cerrada, un aviso de Windows indica qué cámara se desconectó; el punto de la bandeja pasa a ámbar.', S:mk({screen:'cerrado', lost:true, kind:'lost'})},
-  {g:G.live, slug:'08-viendo-en-vivo', name:'Un familiar ve en vivo', desc:'Mientras Carmen mira el Dormitorio desde la app, la ventana lo dice con su nombre, la habitación y la hora; el punto de la bandeja pasa a morado.', S:mk({live:{who:'Carmen', since:'10:42', room:'Dormitorio'}})},
-  {g:G.live, slug:'09-aviso-vista-en-vivo', name:'Aviso: un familiar ve en vivo', desc:'Con la ventana cerrada, un aviso de Windows indica quién empezó a mirar y qué habitación.', S:mk({screen:'cerrado', kind:'live', live:{who:'Carmen', since:'10:42', room:'Dormitorio'}})},
+  {g:G.boot, slug:'00-pantalla-de-arranque', name:'Pantalla de arranque', desc:'Al encender la PC: abre las cámaras y se conecta con Te Tengo.', S:mk({screen:'arranque'})},
+  {g:G.est, slug:'01-enviando-video', name:'Todo funciona', desc:'Una franja de estado y una fila por cámara.', S:mk({})},
+  {g:G.est, slug:'02-en-pausa', name:'Una cámara en pausa', desc:'Luis pausó la Sala desde la app hasta las 11:42; las demás siguen.', S:mk({pause:'11:42'})},
+  {g:G.est, slug:'03-esperando-consentimiento', name:'Esperando consentimiento', desc:'Sin consentimiento registrado, ninguna cámara se usa.', S:mk({consent:false})},
+  {g:G.est, slug:'04-sin-internet', name:'Sin internet, reintentando', desc:'Se sigue detectando; los avisos esperan la conexión.', S:mk({online:false, retry:8})},
+  {g:G.est, slug:'05-webcam-desconectada', name:'Una cámara no responde', desc:'El Pasillo no responde: revisar el cable USB.', S:mk({lost:true})},
+  {g:G.bg, slug:'06-aviso-al-cerrar', name:'Aviso al cerrar o minimizar', desc:'Al cerrar, sigue en la bandeja con un punto de estado.', S:mk({screen:'cerrado'})},
+  {g:G.bg, slug:'07-aviso-webcam-desconectada', name:'Aviso: cámara desconectada', desc:'Aviso de Windows con la cámara desconectada; punto ámbar.', S:mk({screen:'cerrado', lost:true, kind:'lost'})},
+  {g:G.live, slug:'08-viendo-en-vivo', name:'Un familiar ve en vivo', desc:'Carmen mira el Dormitorio: nombre, habitación y hora; punto morado.', S:mk({live:{who:'Carmen', since:'10:42', room:'Dormitorio'}})},
+  {g:G.live, slug:'09-aviso-vista-en-vivo', name:'Aviso: un familiar ve en vivo', desc:'Aviso de Windows: quién mira y qué habitación.', S:mk({screen:'cerrado', kind:'live', live:{who:'Carmen', since:'10:42', room:'Dormitorio'}})},
 
-  {g:G.vin, slug:'10-vincular-esta-pc', name:'Vincular esta PC', desc:'Primer arranque: código QR y código de 8 letras para la app, con la cuenta regresiva de 10 minutos; abajo, la espera de la aprobación.', S:mk(UNL)},
-  {g:G.vin, slug:'11-codigo-nuevo', name:'Código nuevo al vencer', desc:'El código venció sin aprobación: la PC muestra otro sola, sin que nadie lo pida, y lo anuncia.', S:mk(Object.assign({}, UNL, {pair:{code:1, left:600, renewed:true}}))},
-  {g:G.vin, slug:'12-errores-en-el-celular', name:'Ayuda: errores en el celular', desc:'Si el celular dice que el código venció, ya se usó o que hubo demasiados intentos, la PC explica qué hacer.', S:mk(Object.assign({}, UNL, {open:{help:true}}))},
-  {g:G.vin, slug:'13-vincular-sin-internet', name:'Sin internet al vincular', desc:'Sin conexión no hay código: se pide conectar la PC y se reintenta solo.', S:mk(Object.assign({}, UNL, {online:false, retry:25}))},
-  {g:G.vin, slug:'14-te-tengo-no-responde', name:'Te Tengo no responde', desc:'El servidor no está disponible: no hay nada que hacer en la casa; se reintenta solo.', S:mk(Object.assign({}, UNL, {server:false, retry:25}))},
-  {g:G.vin, slug:'15-volver-a-vincular', name:'Volver a vincular tras 90 días', desc:'La PC pasó 90 días o más sin conexión: pide vincularla de nuevo.', S:mk(Object.assign({}, UNL, {pair:{re90:true}}))},
-  {g:G.vin, slug:'16-vinculacion-rechazada', name:'Vinculación rechazada', desc:'En la app alguien eligió «No reconozco esta PC»: no se vincula y se puede mostrar otro código.', S:mk({screen:'rechazada', linked:false, cams:[]})},
-  {g:G.vin, slug:'17-pc-vinculada', name:'PC vinculada', desc:'Carmen aprobó desde su celular: la PC dice a qué vivienda quedó vinculada, lista las 3 webcams que detectó y pide elegir las cámaras desde la app. Para quien instala, «Elegir aquí».', S:mk({screen:'vinculada', cams:[]})},
-  {g:G.vin, slug:'18-vinculada-sin-consentimiento', name:'Vinculada sin consentimiento', desc:'Si falta el consentimiento de Rosa, las cámaras no enviarán nada hasta que la familia lo registre.', S:mk({screen:'vinculada', cams:[], consent:false})},
+  {g:G.vin, slug:'10-vincular-esta-pc', name:'Vincular esta PC', desc:'QR y código de 8 letras, con 10 minutos de vigencia.', S:mk(UNL)},
+  {g:G.vin, slug:'11-codigo-nuevo', name:'Código nuevo al vencer', desc:'El código venció: aparece otro solo.', S:mk(Object.assign({}, UNL, {pair:{code:1, left:600, renewed:true}}))},
+  {g:G.vin, slug:'12-errores-en-el-celular', name:'Ayuda: errores en el celular', desc:'Qué hacer si el celular muestra un error.', S:mk(Object.assign({}, UNL, {open:{help:true}}))},
+  {g:G.vin, slug:'13-vincular-sin-internet', name:'Sin internet al vincular', desc:'Sin conexión no hay código; se reintenta solo.', S:mk(Object.assign({}, UNL, {online:false, retry:25}))},
+  {g:G.vin, slug:'14-te-tengo-no-responde', name:'Te Tengo no responde', desc:'Servidor caído: nada que hacer en la casa; se reintenta solo.', S:mk(Object.assign({}, UNL, {server:false, retry:25}))},
+  {g:G.vin, slug:'15-volver-a-vincular', name:'Volver a vincular tras 90 días', desc:'Tras 90 días sin conexión, pide vincular de nuevo.', S:mk(Object.assign({}, UNL, {pair:{re90:true}}))},
+  {g:G.vin, slug:'16-vinculacion-rechazada', name:'Vinculación rechazada', desc:'«No reconozco esta PC» en la app: ofrece otro código.', S:mk({screen:'rechazada', linked:false, cams:[]})},
+  {g:G.vin, slug:'17-pc-vinculada', name:'PC vinculada', desc:'A qué casa quedó vinculada y qué webcams detectó.', S:mk({screen:'vinculada', cams:[]})},
+  {g:G.vin, slug:'18-vinculada-sin-consentimiento', name:'Vinculada sin consentimiento', desc:'Sin consentimiento, las cámaras esperan.', S:mk({screen:'vinculada', cams:[], consent:false})},
 
-  {g:G.cam, slug:'19-camaras-detectadas', name:'Cámaras detectadas', desc:'Recién vinculada: la pestaña Cámaras lista las webcams que la PC informó, todas «Sin usar», y dice que se eligen desde la app. La vista previa local sirve para revisar el encuadre.', S:mk({tab:'camaras', cams:[], pick:{sel:'d1'}})},
-  {g:G.cam, slug:'20-camaras-de-esta-pc', name:'Cámaras de esta PC', desc:'Tres cámaras con su habitación, elegida por Carmen en la app; desde la tercera cámara, una nota sobre la carga de la PC.', S:mk({tab:'camaras', pick:{sel:'d2'}})},
-  {g:G.cam, slug:'21-viendo-para-elegir', name:'Carmen mira una cámara para elegirla', desc:'Mientras Carmen pide la vista previa desde la app, la fila de esa cámara lo dice con una luz violeta («No se graba») y el punto de la bandeja pasa a morado.', S:mk({tab:'camaras', cams:[], peek:'d2', pick:{sel:'d2'}})},
-  {g:G.cam, slug:'22-camara-elegida-en-la-app', name:'La PC se actualiza sola', desc:'Carmen eligió una cámara en la app: la PC lo avisa dentro de la ventana y aparece la fila de la Sala en Estado.', S:mk({cams:[{id:'d1', room:'Sala', by:'app'}], toast:{kind:'ok', icon:'mobile', text:'Carmen eligió la Webcam USB HD para la Sala'}})},
-  {g:G.cam, slug:'23-camara-desconectada', name:'Cámara desconectada', desc:'La cámara del Pasillo se desconectó: queda punteada y su habitación no pasa a otra cámara.', S:mk({tab:'camaras', lost:true, pick:{sel:'d3'}})},
-  {g:G.cam, slug:'24-sin-camaras', name:'Sin cámaras conectadas', desc:'No hay ninguna webcam: se pide conectar una por USB y buscar de nuevo.', S:mk({tab:'camaras', cams:[], noCams:true})},
-  {g:G.cam, slug:'25-camara-ocupada', name:'Cámara ocupada por otro programa', desc:'Otro programa usa la Logitech C920: se pide cerrarlo y buscar de nuevo.', S:mk({tab:'camaras', cams:[{id:'d1', room:'Sala', by:'app'}], busy:true, pick:{sel:'d2'}})},
-  {g:G.cam, slug:'26-se-conecto-otra-webcam', name:'Se conectó otra webcam', desc:'Una webcam nueva aparece sin usar y la PC la informa a la app; las demás siguen en su habitación porque se reconocen por su identificador, no por el puerto.', S:mk({tab:'camaras', extra:true, pick:{sel:'d4'}})},
-  {g:G.cam, slug:'27-elegir-aqui', name:'Elegir aquí, si estás instalando', desc:'Opción secundaria para quien instala: el mismo selector, con sus reglas (una cámara por habitación, también entre PCs; nada de baño; nombre obligatorio). Aquí, una habitación escrita a mano que ya tiene cámara.', S:mk({tab:'camaras', here:true, cams:[{id:'d1', room:'Sala', by:'app'}, {id:'d2', room:'Dormitorio', by:'app'}], pick:{sel:'d3', otherOn:true, other:'sala', err:'dup', errRoom:'Sala', errPc:'Sala-Rosa'}})},
-  {g:G.cam, slug:'28-falta-elegir-camaras', name:'Estado: falta elegir las cámaras en la app', desc:'Vinculada pero sin cámaras asignadas: Estado dice cuántas detectó y que se eligen desde la app; la PC se actualiza sola.', S:mk({cams:[]})},
+  {g:G.cam, slug:'19-camaras-detectadas', name:'Cámaras detectadas', desc:'Webcams «Sin usar»; se asignan en la app.', S:mk({tab:'camaras', cams:[], pick:{sel:'d1'}})},
+  {g:G.cam, slug:'20-camaras-de-esta-pc', name:'Cámaras de esta PC', desc:'Tres cámaras con su habitación, elegida en la app.', S:mk({tab:'camaras', pick:{sel:'d2'}})},
+  {g:G.cam, slug:'21-viendo-para-elegir', name:'Carmen mira una cámara para elegirla', desc:'Carmen pide la vista previa: luz violeta «No se graba».', S:mk({tab:'camaras', cams:[], peek:'d2', pick:{sel:'d2'}})},
+  {g:G.cam, slug:'22-camara-elegida-en-la-app', name:'La PC se actualiza sola', desc:'Carmen eligió una cámara: aviso y fila nueva en Estado.', S:mk({cams:[{id:'d1', room:'Sala', by:'app'}], toast:{kind:'ok', icon:'mobile', text:'Carmen eligió la Webcam USB HD para la Sala'}})},
+  {g:G.cam, slug:'23-camara-desconectada', name:'Cámara desconectada', desc:'Punteada; su habitación no pasa a otra cámara.', S:mk({tab:'camaras', lost:true, pick:{sel:'d3'}})},
+  {g:G.cam, slug:'24-sin-camaras', name:'Sin cámaras conectadas', desc:'Conectar una webcam y buscar de nuevo.', S:mk({tab:'camaras', cams:[], noCams:true})},
+  {g:G.cam, slug:'25-camara-ocupada', name:'Cámara ocupada por otro programa', desc:'Otro programa usa la Logitech C920: cerrarlo.', S:mk({tab:'camaras', cams:[{id:'d1', room:'Sala', by:'app'}], busy:true, pick:{sel:'d2'}})},
+  {g:G.cam, slug:'26-se-conecto-otra-webcam', name:'Se conectó otra webcam', desc:'Aparece «Nueva · Sin usar»; las demás se reconocen por su identificador.', S:mk({tab:'camaras', extra:true, pick:{sel:'d4'}})},
+  {g:G.cam, slug:'27-elegir-aqui', name:'Elegir aquí, si estás instalando', desc:'Para quien instala: el selector con sus reglas. Aquí, una habitación repetida.', S:mk({tab:'camaras', here:true, cams:[{id:'d1', room:'Sala', by:'app'}, {id:'d2', room:'Dormitorio', by:'app'}], pick:{sel:'d3', otherOn:true, other:'sala', err:'dup', errRoom:'Sala', errPc:'Sala-Rosa'}})},
+  {g:G.cam, slug:'28-falta-elegir-camaras', name:'Estado: falta elegir las cámaras en la app', desc:'Vinculada sin cámaras asignadas: se eligen en la app.', S:mk({cams:[]})},
 
-  {g:G.unl, slug:'29-desvincular-esta-pc', name:'Desvincular esta PC', desc:'Confirmación con las habitaciones que dejan de tener detección; cancelar no cambia nada. Borrar los datos de la PC es opcional.', S:mk({tab:'camaras', pick:{sel:'d1'}, dlg:'unlink'})},
-  {g:G.unl, slug:'30-pc-quitada-desde-el-celular', name:'Quitada desde el celular', desc:'Carmen quitó la PC desde la app: deja de capturar, borra su acceso y ofrece vincularla de nuevo.', S:mk({screen:'quitada', linked:false, cams:[]})},
-  {g:G.unl, slug:'31-aviso-pc-quitada', name:'Aviso: PC quitada', desc:'Con la ventana cerrada, un aviso de Windows dice que la PC se quitó de la vivienda.', S:mk({screen:'cerrado', kind:'removed', linked:false, cams:[]})},
+  {g:G.unl, slug:'29-desvincular-esta-pc', name:'Desvincular esta PC', desc:'Confirma qué habitaciones pierden detección; borrar datos es opcional.', S:mk({tab:'camaras', pick:{sel:'d1'}, dlg:'unlink'})},
+  {g:G.unl, slug:'30-pc-quitada-desde-el-celular', name:'Quitada desde el celular', desc:'Carmen la quitó desde la app: ofrece vincular de nuevo.', S:mk({screen:'quitada', linked:false, cams:[]})},
+  {g:G.unl, slug:'31-aviso-pc-quitada', name:'Aviso: PC quitada', desc:'Aviso de Windows: la PC se quitó de la vivienda.', S:mk({screen:'cerrado', kind:'removed', linked:false, cams:[]})},
 
-  {g:G.adv, slug:'32-modo-avanzado-apagado', name:'Modo avanzado apagado', desc:'Viene apagado: explica qué muestra y que nada sale de la PC. Actividad y Almacenamiento se ven siempre.', S:mk({tab:'avanzado'})},
-  {g:G.adv, slug:'33-registro-en-vivo', name:'Registro en vivo', desc:'Cámara por cámara, lo que detecta el programa en lenguaje sencillo, con ícono, color y filtros por tipo.', S:mk(ADV('registro'))},
-  {g:G.adv, slug:'34-ver-linea-tecnica', name:'Ver línea técnica', desc:'Cada línea muestra su texto técnico solo si se pide, con «Copiar».', S:mk(ADV('registro', {log:Object.assign(baseState().log, {open:'Sala-6'})}))},
-  {g:G.adv, slug:'35-registro-en-pausa', name:'Registro en pausa', desc:'Al pausar, las líneas nuevas esperan y se cuentan; «Seguir» las muestra.', S:mk(ADV('registro', {log:Object.assign(baseState().log, {paused:true, cut:8})}))},
-  {g:G.adv, slug:'36-registro-sin-resultados', name:'Búsqueda sin resultados', desc:'La búsqueda no encontró líneas: se dice qué se buscó.', S:mk(ADV('registro', {log:Object.assign(baseState().log, {q:'escalera'})}))},
-  {g:G.adv, slug:'37-medidores', name:'Medidores', desc:'Rendimiento, persona, puntos del cuerpo, las tres medidas frente a su umbral, la fase y el esqueleto, que solo se ve en la PC.', S:mk(ADV('medidores'))},
-  {g:G.adv, slug:'38-medidores-posible-caida', name:'Medidores: posible caída', desc:'Durante una caída, dos medidas pasan su umbral y corre la ventana de 1,48 s.', S:mk(ADV('medidores', {m:Object.assign(baseState().m, {phase:1, m1:.034, m2:38.2, m3:.84, win:.62, pose:'falling', vis:{Nariz:.9, Hombros:.86, Caderas:.74, Tobillos:.55}})}))},
-  {g:G.adv, slug:'39-medidores-sin-persona', name:'Medidores sin persona', desc:'Sin nadie frente a la cámara, los medidores no muestran valores y dicen por qué.', S:mk(ADV('medidores', {adv:{cam:'Dormitorio'}}))},
-  {g:G.adv, slug:'40-medidores-camara-en-pausa', name:'Medidores con la cámara en pausa', desc:'Con la cámara en pausa desde la app, los medidores lo dicen con la hora en que vuelve.', S:mk(ADV('medidores', {pause:'11:42'}))},
+  {g:G.adv, slug:'32-modo-avanzado-apagado', name:'Modo avanzado apagado', desc:'Apagado por defecto. Actividad y Almacenamiento siempre visibles.', S:mk({tab:'avanzado'})},
+  {g:G.adv, slug:'33-registro-en-vivo', name:'Registro en vivo', desc:'Lo que detecta cada cámara, con ícono, color y filtros.', S:mk(ADV('registro'))},
+  {g:G.adv, slug:'34-ver-linea-tecnica', name:'Ver línea técnica', desc:'La línea técnica, solo si se pide, con «Copiar».', S:mk(ADV('registro', {log:Object.assign(baseState().log, {open:'Sala-6'})}))},
+  {g:G.adv, slug:'35-registro-en-pausa', name:'Registro en pausa', desc:'Las líneas nuevas esperan y se cuentan.', S:mk(ADV('registro', {log:Object.assign(baseState().log, {paused:true, cut:8})}))},
+  {g:G.adv, slug:'36-registro-sin-resultados', name:'Búsqueda sin resultados', desc:'La búsqueda no encontró líneas.', S:mk(ADV('registro', {log:Object.assign(baseState().log, {q:'escalera'})}))},
+  {g:G.adv, slug:'37-medidores', name:'Medidores', desc:'Rendimiento, medidas frente a su umbral, fase y esqueleto local.', S:mk(ADV('medidores'))},
+  {g:G.adv, slug:'38-medidores-posible-caida', name:'Medidores: posible caída', desc:'Dos medidas pasan su umbral; corre la ventana de 1,48 s.', S:mk(ADV('medidores', {m:Object.assign(baseState().m, {phase:1, m1:.034, m2:38.2, m3:.84, win:.62, pose:'falling', vis:{Nariz:.9, Hombros:.86, Caderas:.74, Tobillos:.55}})}))},
+  {g:G.adv, slug:'39-medidores-sin-persona', name:'Medidores sin persona', desc:'Sin nadie en la imagen, sin valores y con el motivo.', S:mk(ADV('medidores', {adv:{cam:'Dormitorio'}}))},
+  {g:G.adv, slug:'40-medidores-camara-en-pausa', name:'Medidores con la cámara en pausa', desc:'En pausa: dice a qué hora vuelve.', S:mk(ADV('medidores', {pause:'11:42'}))},
 
-  {g:G.act, slug:'41-actividad', name:'Actividad', desc:'Quién cambió qué y cuándo, por día; lo hecho en la PC se anota «Desde esta PC». Nadie puede borrar filas.', S:mk(ADV('actividad', {acts:[{t:'10:42', m:'Desde esta PC: se activó el modo avanzado'}]}))},
-  {g:G.act, slug:'42-actividad-pendiente-de-enviar', name:'Actividad pendiente de enviar', desc:'Lo que se hizo sin internet queda marcado «Pendiente de enviar» hasta que vuelva la conexión.', S:mk(ADV('actividad', {online:false, acts:[{t:'10:42', m:'Desde esta PC: se activó el video continuo', pend:true}, {t:'10:42', m:'Desde esta PC: se activó el modo avanzado', pend:true}]}))},
-  {g:G.act, slug:'43-actividad-toda-la-casa', name:'Actividad de toda la casa', desc:'«Toda la casa» suma lo hecho en la app y en la otra PC.', S:mk(ADV('actividad', {actScope:'casa'}))},
-  {g:G.act, slug:'44-actividad-vacia', name:'Sin actividad', desc:'Todavía no hay cambios registrados.', S:mk(ADV('actividad', {adv:{on:false}, actsEmpty:true}))},
+  {g:G.act, slug:'41-actividad', name:'Actividad', desc:'Quién cambió qué y cuándo. Nadie puede borrar filas.', S:mk(ADV('actividad', {acts:[{t:'10:42', m:'Desde esta PC: se activó el modo avanzado'}]}))},
+  {g:G.act, slug:'42-actividad-pendiente-de-enviar', name:'Actividad pendiente de enviar', desc:'Sin internet, las filas quedan «Pendiente de enviar».', S:mk(ADV('actividad', {online:false, acts:[{t:'10:42', m:'Desde esta PC: se activó el video continuo', pend:true}, {t:'10:42', m:'Desde esta PC: se activó el modo avanzado', pend:true}]}))},
+  {g:G.act, slug:'43-actividad-toda-la-casa', name:'Actividad de toda la casa', desc:'Suma lo hecho en la app y en la otra PC.', S:mk(ADV('actividad', {actScope:'casa'}))},
+  {g:G.act, slug:'44-actividad-vacia', name:'Sin actividad', desc:'Todavía no hay cambios.', S:mk(ADV('actividad', {adv:{on:false}, actsEmpty:true}))},
 
-  {g:G.st, slug:'45-almacenamiento', name:'Almacenamiento', desc:'Uso por tipo, carpeta, qué se guarda y por cuánto tiempo («Nunca borrar» incluido), límite de espacio y cifrado. El video continuo viene apagado.', S:mk(ST())},
-  {g:G.st, slug:'46-activar-video-continuo', name:'Activar el video continuo', desc:'Antes de activarlo se explica que el video se queda en la PC y nunca se sube.', S:mk(ST({dlg:'video'}))},
-  {g:G.st, slug:'47-almacenamiento-con-video', name:'Con video guardado', desc:'Con el video continuo activo: 3,2 GB de 50 GB entre movimientos, video y clips.', S:mk(ST({store:{video:true, videoStored:true}}))},
-  {g:G.st, slug:'48-queda-poco-espacio', name:'Queda poco espacio', desc:'Al 90 % del límite, se avisa que pronto se borrará el video más antiguo.', S:mk(ST({store:{video:true, videoStored:true, state:'near'}}))},
-  {g:G.st, slug:'49-limite-alcanzado', name:'Límite alcanzado', desc:'Se borró el video más antiguo para liberar espacio; la detección no se detuvo.', S:mk(ST({store:{video:true, videoStored:true, state:'limit'}}))},
-  {g:G.st, slug:'50-disco-lleno', name:'Disco lleno o carpeta no disponible', desc:'No se puede guardar: se dice qué revisar y se ofrece otra carpeta. Detección y avisos siguen.', S:mk(ST({store:{video:true, videoStored:true, state:'full'}}))},
-  {g:G.st, slug:'51-moviendo-la-carpeta', name:'Cambiando de carpeta', desc:'Los datos se mueven a la carpeta nueva con la detección activa.', S:mk(ST({store:{state:'moving'}}))},
-  {g:G.st, slug:'52-sin-permiso-de-movimientos', name:'Sin permiso para guardar movimientos', desc:'Sin el permiso de Rosa, «Movimientos» queda desactivado con el motivo.', S:mk(ST({moveConsent:false, store:{movKept:false}}))},
-  {g:G.st, slug:'53-borrar-movimientos-de-esta-pc', name:'Permiso revocado: ¿borrar en esta PC?', desc:'Cuando Rosa deja de autorizar, la PC pregunta si también borra los movimientos guardados aquí.', S:mk(ST({moveConsent:false, dlg:'revoke'}))},
+  {g:G.st, slug:'45-almacenamiento', name:'Almacenamiento', desc:'Uso, carpeta, qué se guarda y por cuánto tiempo. Video apagado.', S:mk(ST())},
+  {g:G.st, slug:'46-activar-video-continuo', name:'Activar el video continuo', desc:'El video se queda en la PC y nunca se sube.', S:mk(ST({dlg:'video'}))},
+  {g:G.st, slug:'47-almacenamiento-con-video', name:'Con video guardado', desc:'Con video continuo: 3,2 GB de 50 GB.', S:mk(ST({store:{video:true, videoStored:true}}))},
+  {g:G.st, slug:'48-queda-poco-espacio', name:'Queda poco espacio', desc:'Al 90 % del límite, avisa que borrará el video más antiguo.', S:mk(ST({store:{video:true, videoStored:true, state:'near'}}))},
+  {g:G.st, slug:'49-limite-alcanzado', name:'Límite alcanzado', desc:'Se borró el video más antiguo; la detección sigue.', S:mk(ST({store:{video:true, videoStored:true, state:'limit'}}))},
+  {g:G.st, slug:'50-disco-lleno', name:'Disco lleno o carpeta no disponible', desc:'No se puede guardar: revisar el disco u otra carpeta.', S:mk(ST({store:{video:true, videoStored:true, state:'full'}}))},
+  {g:G.st, slug:'51-moviendo-la-carpeta', name:'Cambiando de carpeta', desc:'Los datos se mueven con la detección activa.', S:mk(ST({store:{state:'moving'}}))},
+  {g:G.st, slug:'52-sin-permiso-de-movimientos', name:'Sin permiso para guardar movimientos', desc:'Sin el permiso de Rosa, «Movimientos» queda desactivado.', S:mk(ST({moveConsent:false, store:{movKept:false}}))},
+  {g:G.st, slug:'53-borrar-movimientos-de-esta-pc', name:'Permiso revocado: ¿borrar en esta PC?', desc:'Rosa revocó el permiso: ¿borrar también aquí?', S:mk(ST({moveConsent:false, dlg:'revoke'}))},
 
-  {g:G.rp, slug:'54-ver-que-paso', name:'Ver qué pasó', desc:'Cámara, fecha y hora a la izquierda; el esqueleto animado con la línea de tiempo y los eventos marcados por forma, color y texto.', S:mk(RPL())},
-  {g:G.rp, slug:'55-ver-sobre-el-video', name:'Sobre el video guardado', desc:'Solo en la PC y solo si hay video de ese momento: el esqueleto sobre el video guardado, que nunca se sube.', S:mk(RPL({store:Object.assign(baseState().store, {video:true, videoStored:true}), rp:{video:true, t:T('10:42:10')}}))},
-  {g:G.rp, slug:'56-tramo-sin-datos', name:'Tramo sin datos', desc:'Vista de 1 hora: el tramo sin persona va rayado con su motivo y la reproducción lo salta.', S:mk(RPL({rp:{zoom:'60', w0:T('09:44:00'), t:T('10:35:00')}, toast:{kind:'warn', icon:'clock', text:'Sin datos de 10:20 a 10:35 · Sin persona en la imagen'}}))},
-  {g:G.rp, slug:'57-repeticion-sin-permiso', name:'Sin permiso de movimientos', desc:'Sin el permiso de Rosa no hay movimientos guardados que repetir.', S:mk(RPL({moveConsent:false}))},
-  {g:G.rp, slug:'58-fuera-del-plazo', name:'Fuera del plazo', desc:'Ya no hay movimientos de ese momento: se dice desde qué fecha hay datos.', S:mk(RPL({rp:{state:'old'}}))},
-  {g:G.rp, slug:'59-acceso-registrado', name:'Acceso registrado', desc:'Al cerrar la repetición, un aviso confirma que quedó en el registro de accesos de la familia.', S:mk({tab:'avanzado', toast:{kind:'ok', icon:'eye', text:'Acceso registrado'}})},
+  {g:G.rp, slug:'54-ver-que-paso', name:'Ver qué pasó', desc:'Esqueleto animado con línea de tiempo y eventos marcados.', S:mk(RPL())},
+  {g:G.rp, slug:'55-ver-sobre-el-video', name:'Sobre el video guardado', desc:'El esqueleto sobre el video guardado, que nunca se sube.', S:mk(RPL({store:Object.assign(baseState().store, {video:true, videoStored:true}), rp:{video:true, t:T('10:42:10')}}))},
+  {g:G.rp, slug:'56-tramo-sin-datos', name:'Tramo sin datos', desc:'Vista de 1 hora: el tramo sin persona va rayado y se salta.', S:mk(RPL({rp:{zoom:'60', w0:T('09:44:00'), t:T('10:35:00')}, toast:{kind:'warn', icon:'clock', text:'Sin datos de 10:20 a 10:35 · Sin persona en la imagen'}}))},
+  {g:G.rp, slug:'57-repeticion-sin-permiso', name:'Sin permiso de movimientos', desc:'Sin el permiso de Rosa no hay qué repetir.', S:mk(RPL({moveConsent:false}))},
+  {g:G.rp, slug:'58-fuera-del-plazo', name:'Fuera del plazo', desc:'Ya no hay datos de ese momento; dice desde cuándo hay.', S:mk(RPL({rp:{state:'old'}}))},
+  {g:G.rp, slug:'59-acceso-registrado', name:'Acceso registrado', desc:'Al cerrar, confirma que quedó en el registro de accesos.', S:mk({tab:'avanzado', toast:{kind:'ok', icon:'eye', text:'Acceso registrado'}})},
 
-  {g:G.dg, slug:'60-exportar-diagnostico', name:'Exportar diagnóstico', desc:'Qué incluye y qué no incluye el archivo, con su nombre, antes de elegir dónde guardarlo.', S:mk(DG('intro'))},
-  {g:G.dg, slug:'61-preparando-diagnostico', name:'Preparando el diagnóstico', desc:'Barra de progreso mientras se arma el archivo.', S:mk(DG('busy'))},
-  {g:G.dg, slug:'62-diagnostico-guardado', name:'Diagnóstico guardado', desc:'Nombre y tamaño del archivo, con «Mostrar en la carpeta».', S:mk(DG('done'))},
-  {g:G.dg, slug:'63-error-al-guardar', name:'Error al guardar', desc:'La carpeta no permite guardar: no queda ningún archivo a medias y se elige otra.', S:mk(DG('err'))}
+  {g:G.dg, slug:'60-exportar-diagnostico', name:'Exportar diagnóstico', desc:'Qué incluye y qué no, antes de guardar.', S:mk(DG('intro'))},
+  {g:G.dg, slug:'61-preparando-diagnostico', name:'Preparando el diagnóstico', desc:'Barra de progreso.', S:mk(DG('busy'))},
+  {g:G.dg, slug:'62-diagnostico-guardado', name:'Diagnóstico guardado', desc:'Nombre, tamaño y «Mostrar en la carpeta».', S:mk(DG('done'))},
+  {g:G.dg, slug:'63-error-al-guardar', name:'Error al guardar', desc:'No queda archivo a medias; se elige otra carpeta.', S:mk(DG('err'))}
 ];
 function renderPreset(p, o){ return p.S.screen==='cerrado' ? desktopCorner(p.S, p.S.kind) : p.S.screen==='arranque' ? desktopBoot(p.S) : win(p.S, o); }
 

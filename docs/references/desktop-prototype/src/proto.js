@@ -156,8 +156,8 @@
     hereOff(){ S.here = false; S.pick = {sel:selDev(S), room:null, otherOn:false, other:'', err:null}; render(true); },
     pairAgain(){ S.screen = 'vincular'; S.linked = false; newCode(); enterCls = 'enter'; render(true); },
     retryNow(){
-      if(S.screen==='vincular'){ S.retry = 25; toast('warn', S.online ? 'cloud' : 'wifiOff', S.online ? 'Te Tengo sigue sin responder. Seguimos intentando.' : 'Aún sin internet. Seguimos intentando.'); }
-      else { S.retry = 10; toast('warn', 'wifiOff', 'Aún sin internet. Seguimos intentando.'); }
+      if(S.screen==='vincular'){ S.retry = 25; toast('warn', S.online ? 'cloud' : 'wifiOff', S.online ? 'Te Tengo sigue sin responder.' : 'Aún sin internet.'); }
+      else { S.retry = 10; toast('warn', 'wifiOff', 'Aún sin internet.'); }
     },
     rescan(){
       if(S.tab==='camaras'){ S.scan = true; render(); }
@@ -166,7 +166,7 @@
         S.scan = false;
         if(S.lost) toast('warn', 'videoOff', 'No encontramos la '+DEVS.d3.name+'. Revisa el cable USB.');
         else if(S.busy) toast('warn', 'warn', 'Otro programa sigue usando la '+DEVS.d2.name+'.');
-        else toast('ok', 'check', 'Encontramos '+connected(S).length+' cámaras conectadas.');
+        else toast('ok', 'check', connected(S).length+' cámaras conectadas.');
       }, 900);
     },
     selCam(id){ S.pick = {sel:id, room:null, otherOn:false, other:'', err:null}; render(); },
@@ -181,14 +181,14 @@
       S.pick = {sel:id, room:null, otherOn:false, other:'', err:null};
       if(!S.cams.some(x => x.room===S.adv.cam)) S.adv.cam = S.cams[0].room;
       act('Desde esta PC: la cámara '+D.name+' pasó '+(was ? 'de '+was+' a ' : 'a ')+v.name);
-      toast('ok', 'check', 'La cámara '+D.name+' cuida ahora '+ROOM_ART(v.name));
+      toast('ok', 'check', D.name+' cuida ahora '+ROOM_ART(v.name));
     },
     unuse(){
       const id = selDev(S), c = S.cams.find(x => x.id===id); if(!c) return;
       S.cams = S.cams.filter(x => x.id!==id); S.pick = {sel:id, room:null, otherOn:false, other:'', err:null};
       if(S.cams.length && !S.cams.some(x => x.room===S.adv.cam)) S.adv.cam = S.cams[0].room;
       act('Desde esta PC: la cámara '+DEVS[id].name+' dejó de usarse en '+c.room);
-      toast('ok', 'check', 'La cámara '+DEVS[id].name+' ya no cuida '+ROOM_ART(c.room)+'.');
+      toast('ok', 'check', DEVS[id].name+' ya no cuida '+ROOM_ART(c.room)+'.');
     },
     unlinkAsk(){ S.unlinkWipe = false; openDlg('unlink'); },
     dlgClose(){ closeDlg(); },
@@ -197,13 +197,13 @@
       S.screen = 'vincular'; S.linked = false; S.cams = []; S.adv.on = false; S.replay = false; S.tab = 'estado'; S.here = false; S.peek = null; stopAssign(); newCode();
       if(wipe){ S.store.movKept = false; S.store.videoStored = false; }
       enterCls = 'enter';
-      toast('ok', 'unlink', wipe ? 'Esta PC se desvinculó y borró sus datos. La familia recibió un aviso.' : 'Esta PC se desvinculó. La familia recibió un aviso.');
+      toast('ok', 'unlink', wipe ? 'PC desvinculada y datos borrados. La familia recibió un aviso.' : 'PC desvinculada. La familia recibió un aviso.');
       const t = $('scr-h'); if(t) t.focus({preventScroll:true});
     },
     advToggle(){
       S.adv.on = !S.adv.on;
-      if(S.adv.on){ S.adv.sub = 'registro'; if(!S.cams.some(c => c.room===S.adv.cam) && S.cams.length) S.adv.cam = S.cams[0].room; act('Desde esta PC: se activó el modo avanzado'); toast('ok', 'sliders', 'Activamos el modo avanzado. Queda anotado en la actividad.'); }
-      else { if(S.adv.sub==='registro' || S.adv.sub==='medidores') S.adv.sub = 'actividad'; act('Desde esta PC: se desactivó el modo avanzado'); toast('ok', 'sliders', 'Desactivamos el modo avanzado.'); }
+      if(S.adv.on){ S.adv.sub = 'registro'; if(!S.cams.some(c => c.room===S.adv.cam) && S.cams.length) S.adv.cam = S.cams[0].room; act('Desde esta PC: se activó el modo avanzado'); toast('ok', 'sliders', 'Modo avanzado activado.'); }
+      else { if(S.adv.sub==='registro' || S.adv.sub==='medidores') S.adv.sub = 'actividad'; act('Desde esta PC: se desactivó el modo avanzado'); toast('ok', 'sliders', 'Modo avanzado desactivado.'); }
     },
     advSub(arg){ S.adv.sub = arg; render(); },
     advCam(arg){ S.adv.cam = arg; S.log.open = null; if(S.log.paused) S.log.cut = logAll(S, arg).length; render(); },
@@ -218,33 +218,33 @@
         if(v==='Otro'){ st.capOther = true; render(); const i = $('cap-val'); if(i) i.focus(); return; }
         if(!st.capOther && st.cap===v) return;
         act('Desde esta PC: el límite de espacio pasó de '+(st.capOther ? (st.capVal||'otro')+' GB' : st.cap)+' a '+v); st.cap = v; st.capOther = false;
-        return toast('ok', 'drive', 'El límite de espacio ahora es de '+v+'.');
+        return toast('ok', 'drive', 'Límite de espacio: '+v+'.');
       }
       const F = {mov:['retMov','los movimientos'], vid:['retVid','el video'], clip:['retClip','los clips']}[key];
       if(st[F[0]]===v) return;
       act('Desde esta PC: '+F[1]+' pasaron de '+st[F[0]]+' a '+v.toLowerCase());
       st[F[0]] = v;
-      toast('ok', 'check', v==='Nunca borrar' ? 'No borraremos '+F[1]+' de esta PC.' : 'Guardaremos '+F[1]+' '+v+' en esta PC.');
+      toast('ok', 'check', v==='Nunca borrar' ? 'No borraremos '+F[1]+'.' : 'Guardaremos '+F[1]+' '+v+'.');
     },
-    stMov(){ S.store.moves = !S.store.moves; act('Desde esta PC: '+(S.store.moves ? 'se activó' : 'se desactivó')+' el guardado de movimientos'); toast('ok', 'check', S.store.moves ? 'Guardamos los movimientos en esta PC.' : 'Dejamos de guardar movimientos en esta PC. Los guardados se borran según su plazo.'); },
+    stMov(){ S.store.moves = !S.store.moves; act('Desde esta PC: '+(S.store.moves ? 'se activó' : 'se desactivó')+' el guardado de movimientos'); toast('ok', 'check', S.store.moves ? 'Guardamos los movimientos en esta PC.' : 'Dejamos de guardar movimientos. Los guardados se borran a su plazo.'); },
     stVid(){
       if(!S.store.video) return openDlg('video');
       S.store.video = false; act('Desde esta PC: se desactivó el video continuo');
-      toast('ok', 'check', 'Dejamos de guardar video. El video guardado se borra según su plazo.');
+      toast('ok', 'check', 'Dejamos de guardar video. El guardado se borra a su plazo.');
     },
     videoOn(){ S.store.video = true; S.dlg = null; act('Desde esta PC: se activó el video continuo'); toast('ok', 'cam', 'Guardamos video continuo solo en esta PC.'); restore(opener); },
-    stClip(){ S.store.clips = !S.store.clips; act('Desde esta PC: '+(S.store.clips ? 'se activó' : 'se desactivó')+' el guardado de clips'); toast('ok', 'check', S.store.clips ? 'Guardamos los clips de los avisos en esta PC.' : 'Dejamos de guardar los clips en esta PC. La familia los sigue viendo en la app.'); },
+    stClip(){ S.store.clips = !S.store.clips; act('Desde esta PC: '+(S.store.clips ? 'se activó' : 'se desactivó')+' el guardado de clips'); toast('ok', 'check', S.store.clips ? 'Guardamos los clips de los avisos en esta PC.' : 'Dejamos de guardar clips. La familia los ve en la app.'); },
     folderChange(){
       S.store.state = 'moving'; render(); clearTimeout(moveT);
-      moveT = setTimeout(() => { S.store.state = null; S.store.path = 1 - S.store.path; act('Desde esta PC: se cambió la carpeta de los datos'); toast('ok', 'folder', 'Listo. Los datos ya están en la carpeta nueva.'); }, 2200);
+      moveT = setTimeout(() => { S.store.state = null; S.store.path = 1 - S.store.path; act('Desde esta PC: se cambió la carpeta de los datos'); toast('ok', 'folder', 'Datos movidos a la carpeta nueva.'); }, 2200);
     },
-    revokeKeep(){ S.dlg = null; toast('ok', 'check', 'Conservamos los movimientos de esta PC. No guardaremos nuevos.'); },
+    revokeKeep(){ S.dlg = null; toast('ok', 'check', 'Conservamos los movimientos. No guardaremos nuevos.'); },
     revokeWipe(){ S.dlg = null; S.store.movKept = false; act('Desde esta PC: se borraron los movimientos guardados'); toast('ok', 'trash', 'Borramos los movimientos de esta PC.'); },
     replayOpen(){ S.replay = true; S.rp.state = null; render(true); },
     replayClose(){ stopPlay(); S.replay = false; toast('ok', 'eye', 'Acceso registrado'); const t = document.querySelector('#winslot [data-act="replayOpen"]'); if(t) t.focus({preventScroll:true}); },
     rpPlay(){ if(S.rp.playing){ stopPlay(); render(); } else { startPlay(); render(); } },
-    rpPrev(){ const e = rpEvents(S).filter(x => x.t < S.rp.t-.6).pop(); if(e){ fitWin(e.t); S.rp.t = e.t; render(); } else toast('ok', 'info', 'No hay eventos antes en este tramo.'); },
-    rpNext(){ const e = rpEvents(S).find(x => x.t > S.rp.t+.6); if(e){ fitWin(e.t); S.rp.t = e.t; render(); } else toast('ok', 'info', 'No hay más eventos en este tramo.'); },
+    rpPrev(){ const e = rpEvents(S).filter(x => x.t < S.rp.t-.6).pop(); if(e){ fitWin(e.t); S.rp.t = e.t; render(); } else toast('ok', 'info', 'No hay eventos antes.'); },
+    rpNext(){ const e = rpEvents(S).find(x => x.t > S.rp.t+.6); if(e){ fitWin(e.t); S.rp.t = e.t; render(); } else toast('ok', 'info', 'No hay más eventos.'); },
     rpSpeed(){ S.rp.speed = SPEEDS[(SPEEDS.indexOf(S.rp.speed)+1) % SPEEDS.length]; render(); },
     rpZoom(z){ if(S.rp.zoom===z) return; S.rp.zoom = z; S.rp.w0 = null; const w = rpWin(S); if(S.rp.t < w[0] || S.rp.t > w[1]) fitWin(S.rp.t); render(); },
     rpSeek(t){ t = Number(t); fitWin(t); S.rp.t = t; render(); },
@@ -286,7 +286,7 @@
     const id = e.target.id;
     if(id==='unlink-wipe') S.unlinkWipe = e.target.checked;
     else if(id==='rp-day'){ stopPlay(); S.rp.day = e.target.value==='old' ? 'hoy' : e.target.value; S.rp.state = null; render(); }
-    else if(id==='cap-val' && Number(S.store.capVal) > 0){ act('Desde esta PC: el límite de espacio pasó a '+S.store.capVal+' GB'); toast('ok', 'drive', 'El límite de espacio ahora es de '+S.store.capVal+' GB.'); }
+    else if(id==='cap-val' && Number(S.store.capVal) > 0){ act('Desde esta PC: el límite de espacio pasó a '+S.store.capVal+' GB'); toast('ok', 'drive', 'Límite de espacio: '+S.store.capVal+' GB.'); }
   });
   /* línea de tiempo: arrastrar para buscar */
   function seekX(tr, x){ const r = tr.getBoundingClientRect(), w = rpWin(S); seek(w[0] + Math.max(0, Math.min(1, (x-r.left)/r.width))*(w[1]-w[0])); }
@@ -390,7 +390,7 @@
       S.online = !S.online; S.retry = S.screen==='vincular' ? 25 : 8;
       if(S.linked && salaCam()) addLine(salaCam().room, S.online ? LOG_NET_OK : LOG_NET);
       if(closed || S.screen!=='main') return render();
-      if(S.online) toast('ok', 'check', 'Volvió internet. Se enviaron los avisos pendientes.'); else render();
+      if(S.online) toast('ok', 'check', 'Volvió internet. Avisos enviados.'); else render();
     },
     server(){ S.server = !S.server; S.retry = 25; render(); },
     usb(){
@@ -399,10 +399,10 @@
       if(S.lost){ if(closed && assigned) osNotify('lost'); else render(); }
       else { if(closed) render(); else toast('ok', 'usb', 'La '+DEVS.d3.name+' volvió a responder.'); }
     },
-    extra(){ S.extra = !S.extra; if(closed) return render(); if(S.extra) toast('ok', 'usb', 'Se conectó una webcam nueva: HD USB Camera. Las demás siguen en su habitación.'); else render(); },
+    extra(){ S.extra = !S.extra; if(closed) return render(); if(S.extra) toast('ok', 'usb', 'Webcam nueva: HD USB Camera.'); else render(); },
     busy(){ S.busy = !S.busy; render(); },
-    full(){ S.store.state = S.store.state==='full' ? null : 'full'; if(closed) return render(); if(S.store.state) toast('warn', 'folder', 'No podemos guardar en la carpeta elegida. La detección sigue.'); else toast('ok', 'check', 'Hay espacio otra vez. Volvemos a guardar en la carpeta.'); },
-    near(){ S.store.state = S.store.state==='near' ? null : 'near'; S.store.video = S.store.videoStored = S.store.state==='near' || S.store.videoStored; if(closed) return render(); if(S.store.state) toast('warn', 'drive', 'Queda poco espacio en la carpeta de Te Tengo.'); else render(); },
+    full(){ S.store.state = S.store.state==='full' ? null : 'full'; if(closed) return render(); if(S.store.state) toast('warn', 'folder', 'No podemos guardar en la carpeta. La detección sigue.'); else toast('ok', 'check', 'Hay espacio otra vez.'); },
+    near(){ S.store.state = S.store.state==='near' ? null : 'near'; S.store.video = S.store.videoStored = S.store.state==='near' || S.store.videoStored; if(closed) return render(); if(S.store.state) toast('warn', 'drive', 'Queda poco espacio.'); else render(); },
     live(){
       const r = (S.cams.find(c => c.room==='Dormitorio') || S.cams[0]).room;
       S.live = S.live ? null : {who:'Carmen', since:'10:42', room:r};
@@ -414,13 +414,13 @@
       if(S.pause) act('Luis pausó la cámara de '+ROOM_ART(salaCam().room)+' hasta las 11:42'.replace('Desde esta PC: ', ''));
       if(S.pause) S.acts[0].who = 'LH';
       if(closed) return render();
-      if(S.pause) toast('ok', 'pause', 'Luis pausó la cámara de '+ROOM_ART(salaCam().room)+' desde la app hasta las 11:42.');
-      else toast('ok', 'check', 'La pausa terminó. Te Tengo vuelve a cuidar '+ROOM_ART(salaCam().room)+'.');
+      if(S.pause) toast('ok', 'pause', 'Luis pausó '+ROOM_ART(salaCam().room)+' hasta las 11:42.');
+      else toast('ok', 'check', 'Pausa terminada: vuelve a cuidar '+ROOM_ART(salaCam().room)+'.');
     },
     consent(){
       S.consent = !S.consent;
       if(closed) return render();
-      if(S.consent) toast('ok', 'check', 'La familia registró el consentimiento en la app Te Tengo.'); else render();
+      if(S.consent) toast('ok', 'check', 'Consentimiento registrado en la app.'); else render();
     },
     rename(){
       const c = salaCam(); c.room = c.room==='Sala' ? 'Sala comedor' : 'Sala';
@@ -428,7 +428,7 @@
       if(S.rp.cam==='Sala' || S.rp.cam==='Sala comedor') S.rp.cam = c.room;
       S.acts.unshift({t:'10:42', who:'CH', m:'Carmen cambió el nombre de la habitación en la app: «'+c.room+'»'});
       if(closed) return render();
-      toast('ok', 'check', 'La familia cambió el nombre de la habitación en la app: «'+c.room+'».');
+      toast('ok', 'check', 'Habitación renombrada en la app: «'+c.room+'».');
     },
     /* la familia asigna las cámaras desde la app: la PC se actualiza sola, una cámara tras otra */
     assign(){
@@ -463,9 +463,9 @@
     revoke(){
       S.moveConsent = !S.moveConsent;
       if(!S.moveConsent){ S.rp.video = false; stopPlay(); S.acts.unshift({t:'10:42', who:'CH', m:'Carmen registró que Rosa ya no autoriza guardar sus movimientos'}); if(S.store.movKept && S.screen==='main'){ if(closed){ S.dlg = 'revoke'; render(); } else openDlg('revoke'); } else render(); }
-      else { S.acts.unshift({t:'10:42', who:'CH', m:'Carmen registró el permiso de Rosa para guardar movimientos'}); if(closed) return render(); toast('ok', 'check', 'La familia registró el permiso para guardar movimientos.'); }
+      else { S.acts.unshift({t:'10:42', who:'CH', m:'Carmen registró el permiso de Rosa para guardar movimientos'}); if(closed) return render(); toast('ok', 'check', 'Permiso para guardar movimientos registrado.'); }
     },
-    fall(){ simulateFall(); renderDemo(); if(!closed && !(S.tab==='avanzado' && S.adv.on)) toast('ok', 'info', 'Abre Avanzado para ver el registro y los medidores.'); },
+    fall(){ simulateFall(); renderDemo(); if(!closed && !(S.tab==='avanzado' && S.adv.on)) toast('ok', 'info', 'Míralo en Avanzado.'); },
     noPerson(){ S.m.person = !S.m.person; if(S.tab==='avanzado' && advSub(S)==='medidores') paintMeters(); renderDemo(); },
     videoStored(){ S.store.videoStored = !S.store.videoStored; if(S.store.videoStored) S.store.video = true; else S.rp.video = false; render(); },
     failFolder(){ S.failFolder = !S.failFolder; renderDemo(); },
@@ -534,32 +534,32 @@
 
 
   const CTRL = {
-    approve: {l:'El celular aprobó la vinculación', icon:'check', tip:['Carmen escanea el QR (o escribe el código) y pulsa «Aprobar» en la app.', 'La PC dice a qué vivienda quedó vinculada, lista las webcams que detectó y pide elegir las cámaras desde la app.']},
-    reject: {l:'El celular rechazó la vinculación', icon:'x', tip:['En la app alguien elige «No reconozco esta PC».', 'La PC no se vincula y ofrece mostrar otro código.']},
-    expire: {l:'Código vencido', icon:'clock', tip:['Pasan los 10 minutos sin aprobación.', 'La PC muestra un código nuevo sola, sin que nadie lo pida, y lo anuncia.']},
-    re90: {l:'Más de 90 días sin conexión', icon:'clock', tip:['La PC estuvo 90 días o más sin internet.', 'Vuelve a la pantalla de vinculación con un aviso ámbar. Al aprobar, conserva sus cámaras.']},
-    net: {l:'Sin internet en la casa', sw:true, tip:['Se corta la conexión a internet de la PC.', 'Las cámaras siguen detectando en la PC y los avisos esperan. Al vincular, no hay código hasta que vuelva la conexión.']},
-    server: {l:'Te Tengo no responde', sw:true, tip:['El servidor de Te Tengo no está disponible.', 'Al vincular, la PC dice que no hay nada que hacer en la casa y reintenta sola.']},
-    usb: {l:'Se desconectó la cámara del Pasillo', sw:true, tip:['Se suelta el cable USB de la USB2.0 PC Camera.', 'Estado y Cámaras la muestran punteada; su habitación no pasa a otra cámara. Con la ventana cerrada, aparece un aviso de Windows.']},
-    extra: {l:'Se conectó otra webcam', sw:true, tip:['Se enchufa una webcam nueva (HD USB Camera).', 'Aparece en Cámaras como «Nueva · Sin usar» y las demás siguen en su habitación: se reconocen por su identificador, no por el puerto.']},
-    busy: {l:'Otro programa usa una webcam', sw:true, tip:['Una videollamada abre la Logitech C920 antes que Te Tengo.', 'En Cámaras se pide cerrar ese programa y buscar de nuevo.']},
-    full: {l:'Disco lleno', sw:true, tip:['El disco de la carpeta elegida se llena.', 'Almacenamiento pide revisar el disco o elegir otra carpeta. La detección y los avisos siguen.']},
-    near: {l:'Queda poco espacio', sw:true, tip:['Lo guardado llega al 90 % del límite.', 'Almacenamiento avisa que pronto se borrará el video más antiguo.']},
-    live: {l:'Carmen ve una cámara en vivo', sw:true, tip:['Un familiar abre la vista en vivo desde la app.', 'Estado muestra quién mira y qué habitación; el punto de la bandeja pasa a morado. Con la ventana cerrada, aparece un aviso de Windows.']},
-    pause: {l:'Luis pausa la Sala hasta las 11:42', sw:true, tip:['Un familiar pausa una cámara desde la app.', 'Esa cámara no analiza nada hasta la hora indicada; las demás siguen cuidando. Queda en la actividad.']},
-    consent: {l:'Falta el consentimiento', sw:true, tip:['El consentimiento de Rosa todavía no está registrado en la app.', 'Ninguna cámara se usa y la ventana explica que se espera el consentimiento.']},
-    rename: {l:'Sala renombrada a «Sala comedor»', sw:true, tip:['Carmen cambia el nombre de la habitación en la app.', 'La PC muestra el nombre nuevo en Estado, Cámaras y Avanzado. Vuelve a tocar para llamarla «Sala» otra vez.']},
-    assign: {l:'Carmen eligió las cámaras desde la app', icon:'cam', tip:['Carmen asigna cada webcam detectada a una habitación desde la app.', 'La PC se actualiza sola: un aviso por cámara («Carmen eligió la Webcam USB HD para la Sala») y aparecen sus filas en Estado y Cámaras.']},
-    unassign: {l:'Carmen dejó de usar una cámara', icon:'x', tip:['Desde la app, Carmen deja de usar la última cámara asignada.', 'La PC lo avisa, la cámara vuelve a «Sin usar» y su habitación deja de tener detección.']},
-    peek: {l:'Carmen mira una cámara para elegirla', sw:true, tip:['En la app, Carmen pide la vista previa de una webcam para decidir su habitación.', 'La fila de esa cámara muestra una luz violeta («No se graba») y el punto de la bandeja pasa a morado, como en la vista en vivo.']},
-    removed: {l:'Carmen quitó esta PC desde la app', icon:'unlink', tip:['El titular elige «Quitar esta PC» en la app.', 'La PC deja de capturar, borra su acceso y ofrece vincularla de nuevo. Con la ventana cerrada, aparece «Esta PC se quitó de la vivienda».']},
-    revoke: {l:'Rosa ya no autoriza guardar movimientos', sw:true, tip:['Carmen registra en la app que Rosa revoca el permiso para guardar movimientos.', 'La PC pregunta si también borra los movimientos guardados aquí. Movimientos y «Ver qué pasó» quedan desactivados con el motivo.']},
-    fall: {l:'Rosa se cae frente a la Sala', icon:'warn', tip:['Simula una caída frente a la cámara de la Sala.', 'Con el modo avanzado, el registro agrega las líneas y los medidores pasan por Posible caída, En el suelo (30 s) y Caída confirmada. El aviso va al celular.']},
-    noPerson: {l:'Nadie frente a la cámara de la Sala', sw:true, tip:['Rosa sale de la imagen.', 'Los medidores no muestran valores y dicen «Sin persona en la imagen».']},
-    videoStored: {l:'Hay video guardado de hoy', sw:true, tip:['El video continuo estuvo activo antes de este momento.', 'Almacenamiento muestra 3,2 GB y «Ver qué pasó» permite ver el esqueleto sobre el video, que nunca sale de la PC.']},
-    failFolder: {l:'La carpeta no permite guardar', sw:true, tip:['La carpeta elegida para el diagnóstico no tiene espacio o permiso.', 'Al exportar, se informa el error, no queda un archivo a medias y se elige otra carpeta.']},
-    linked: {l:'Empezar con la PC ya vinculada', icon:'link', tip:['Salta la vinculación y la elección de cámaras.', 'Abre la ventana con Sala, Dormitorio y Pasillo ya cuidando.']},
-    reset: {l:'Reiniciar la demo', icon:'refresh', tip:['Vuelve todo al estado inicial.', 'Se repite la ventana de arranque y luego la PC aparece sin vincular, con su código QR.']}
+    approve: {l:'El celular aprobó la vinculación', icon:'check', tip:['Carmen aprueba en la app.', 'La PC muestra la casa y las webcams detectadas.']},
+    reject: {l:'El celular rechazó la vinculación', icon:'x', tip:['«No reconozco esta PC» en la app.', 'La PC ofrece otro código.']},
+    expire: {l:'Código vencido', icon:'clock', tip:['Pasan 10 minutos sin aprobación.', 'Aparece un código nuevo solo.']},
+    re90: {l:'Más de 90 días sin conexión', icon:'clock', tip:['La PC estuvo 90 días sin internet.', 'Pide vincular de nuevo; conserva sus cámaras.']},
+    net: {l:'Sin internet en la casa', sw:true, tip:['Se corta internet.', 'Se sigue detectando; los avisos esperan.']},
+    server: {l:'Te Tengo no responde', sw:true, tip:['El servidor no está disponible.', 'Al vincular, la PC reintenta sola.']},
+    usb: {l:'Se desconectó la cámara del Pasillo', sw:true, tip:['Se suelta el cable USB.', 'Queda punteada; con la ventana cerrada, aviso de Windows.']},
+    extra: {l:'Se conectó otra webcam', sw:true, tip:['Se enchufa la HD USB Camera.', 'Aparece «Nueva · Sin usar»; las demás no cambian.']},
+    busy: {l:'Otro programa usa una webcam', sw:true, tip:['Una videollamada abre la Logitech C920.', 'Cámaras pide cerrar ese programa.']},
+    full: {l:'Disco lleno', sw:true, tip:['La carpeta elegida se llena.', 'Almacenamiento pide revisar el disco.']},
+    near: {l:'Queda poco espacio', sw:true, tip:['Se llega al 90 % del límite.', 'Avisa que borrará el video más antiguo.']},
+    live: {l:'Carmen ve una cámara en vivo', sw:true, tip:['Un familiar abre la vista en vivo.', 'Estado dice quién mira; punto morado.']},
+    pause: {l:'Luis pausa la Sala hasta las 11:42', sw:true, tip:['Pausa desde la app.', 'Esa cámara no analiza; las demás siguen.']},
+    consent: {l:'Falta el consentimiento', sw:true, tip:['El consentimiento de Rosa no está registrado.', 'Ninguna cámara se usa.']},
+    rename: {l:'Sala renombrada a «Sala comedor»', sw:true, tip:['Carmen renombra la habitación en la app.', 'La PC muestra el nombre nuevo.']},
+    assign: {l:'Carmen eligió las cámaras desde la app', icon:'cam', tip:['Carmen asigna cada webcam a una habitación.', 'La PC se actualiza sola, un aviso por cámara.']},
+    unassign: {l:'Carmen dejó de usar una cámara', icon:'x', tip:['Carmen deja de usar la última cámara.', 'Vuelve a «Sin usar».']},
+    peek: {l:'Carmen mira una cámara para elegirla', sw:true, tip:['Carmen pide la vista previa en la app.', 'Luz violeta «No se graba»; punto morado.']},
+    removed: {l:'Carmen quitó esta PC desde la app', icon:'unlink', tip:['El titular elige «Quitar esta PC».', 'La PC deja de capturar y ofrece vincular de nuevo.']},
+    revoke: {l:'Rosa ya no autoriza guardar movimientos', sw:true, tip:['Rosa revoca el permiso.', 'La PC pregunta si borra los movimientos guardados.']},
+    fall: {l:'Rosa se cae frente a la Sala', icon:'warn', tip:['Simula una caída en la Sala.', 'Se ve en Avanzado: registro y medidores.']},
+    noPerson: {l:'Nadie frente a la cámara de la Sala', sw:true, tip:['Rosa sale de la imagen.', 'Los medidores dicen «Sin persona en la imagen».']},
+    videoStored: {l:'Hay video guardado de hoy', sw:true, tip:['El video continuo estuvo activo.', '«Ver qué pasó» puede mostrar el video.']},
+    failFolder: {l:'La carpeta no permite guardar', sw:true, tip:['Sin espacio o permiso en la carpeta.', 'El diagnóstico falla sin dejar archivo.']},
+    linked: {l:'Empezar con la PC ya vinculada', icon:'link', tip:['Salta la vinculación.', 'Sala, Dormitorio y Pasillo ya cuidando.']},
+    reset: {l:'Reiniciar la demo', icon:'refresh', tip:['Vuelve al estado inicial.', 'Arranque y PC sin vincular.']}
   };
   const PANEL = [
     {id:'vin', t:'Vinculación', icon:'link', items:['approve', 'reject', 'expire', 're90']},
@@ -570,11 +570,11 @@
   ];
   (function buildPanel(){
     const root = $('demo');
-    root.innerHTML = '<div class="dp-scroll"><header class="dp-head"><h2 id="dp-h">Panel de demostración</h2><p>Simula lo que pasa fuera de esta ventana: el celular de la familia, la PC, las webcams y el disco.</p></header>' +
+    root.innerHTML = '<div class="dp-scroll"><header class="dp-head"><h2 id="dp-h">Panel de demostración</h2><p>Simula el celular, la PC, las webcams y el disco.</p></header>' +
       '<dl class="dp-status" aria-label="Estado de la demostración"><div><dt>Hora</dt><dd class="mono">10:42</dd></div><div><dt>Ventana</dt><dd id="dp-win">Iniciando</dd></div>' +
       '<div class="wide"><dt>Bandeja</dt><dd id="dp-tray"><i class="dp-dot" aria-hidden="true"></i><span>Sin vincular</span></dd></div></dl>' +
       '<div class="dp-secs">' + PANEL.map(s => DP.section(s, s.items.map(k => DP.row(k, CTRL[k])).join(''))).join('') + '</div>' +
-      '<p class="dp-hint">' + ic('info') + '<span>Cierra o minimiza la ventana: el programa sigue en la bandeja, junto al reloj. Toca su ícono para abrirla otra vez. Algunos cambios avisan con una notificación de Windows.</span></p></div>' +
+      '<p class="dp-hint">' + ic('info') + '<span>Al cerrar, sigue en la bandeja junto al reloj. Tócalo para abrir.</span></p></div>' +
       '<div class="dp-foot">' + DP.row('reset', CTRL.reset) + '</div>';
     DP.init(root, 'tt-demo-escritorio-2');
   })();
@@ -586,25 +586,25 @@
     set('peek', !!S.peek);
     set('noPerson', !S.m.person); set('videoStored', S.store.videoStored); set('failFolder', !!S.failFolder);
     const pairing = S.screen==='vincular', canPair = pairing && S.online && S.server, main = S.screen==='main' && S.linked;
-    const notPair = pairing ? (S.online ? (S.server ? '' : 'Te Tengo no responde: la PC no muestra un código.') : 'Sin internet: la PC no muestra un código.') : 'La PC no está esperando una vinculación.';
+    const notPair = pairing ? (S.online ? (S.server ? '' : 'Te Tengo no responde: no hay código.') : 'Sin internet: no hay código.') : 'La PC no espera una vinculación.';
     const D = (k, why) => DP.disable(root, k, why, CTRL[k]);
     D('approve', canPair ? '' : notPair); D('reject', canPair ? '' : notPair); D('expire', canPair ? '' : notPair);
     D('re90', main ? '' : 'Funciona con la PC vinculada.');
-    D('server', pairing ? '' : 'Solo se nota al vincular; después la detección sigue en la PC.');
-    D('usb', ''); D('extra', S.extra && S.cams.some(c => c.id==='d4') ? 'La webcam nueva ya cuida una habitación: primero «Dejar de usar».' : '');
-    D('busy', S.cams.some(c => c.id==='d2') ? 'Te Tengo ya usa la Logitech C920 en el Dormitorio.' : '');
+    D('server', pairing ? '' : 'Solo se nota al vincular.');
+    D('usb', ''); D('extra', S.extra && S.cams.some(c => c.id==='d4') ? 'Ya cuida una habitación: primero «Dejar de usar».' : '');
+    D('busy', S.cams.some(c => c.id==='d2') ? 'La Logitech C920 ya cuida el Dormitorio.' : '');
     D('full', S.linked ? '' : 'Primero vincula la PC.'); D('near', S.linked ? '' : 'Primero vincula la PC.');
-    const noCams = !main ? 'Primero vincula la PC y elige sus cámaras.' : !S.cams.length ? 'Primero elige las cámaras.' : '';
+    const noCams = !main ? 'Primero vincula la PC.' : !S.cams.length ? 'Primero elige las cámaras.' : '';
     D('live', noCams); D('consent', main ? '' : 'Primero vincula la PC.');
     D('pause', noCams || (salaCam() ? '' : 'La cámara de la Sala no está en uso.'));
     D('rename', noCams || (salaCam() ? '' : 'La cámara de la Sala no está en uso.'));
     D('removed', S.linked ? '' : 'Esta PC no está vinculada.');
     const linkedNow = S.linked && ['main', 'vinculada'].includes(S.screen);
-    D('assign', !linkedNow ? 'Primero vincula la PC.' : assignT.length ? 'La app está eligiendo las cámaras.' : !assignPlan().length ? (connected(S).length ? 'Todas las cámaras detectadas ya tienen habitación.' : 'La PC no detecta ninguna cámara.') : '');
+    D('assign', !linkedNow ? 'Primero vincula la PC.' : assignT.length ? 'La app está eligiendo las cámaras.' : !assignPlan().length ? (connected(S).length ? 'Todas ya tienen habitación.' : 'La PC no detecta ninguna cámara.') : '');
     D('unassign', !linkedNow ? 'Primero vincula la PC.' : S.cams.length ? '' : 'Ninguna cámara tiene habitación.');
     D('peek', !linkedNow ? 'Primero vincula la PC.' : connected(S).some(id => !isLost(S, id)) ? '' : 'La PC no detecta ninguna cámara.');
     D('revoke', S.linked ? '' : 'Primero vincula la PC.');
-    D('fall', falling ? 'Ya hay una caída en curso.' : noCams || (!salaCam() ? 'La cámara de la Sala no está en uso.' : !S.consent ? 'Sin consentimiento, la cámara no analiza nada.' : S.pause ? 'La cámara de la Sala está en pausa.' : !S.m.person ? 'No hay nadie frente a la cámara.' : ''));
+    D('fall', falling ? 'Ya hay una caída en curso.' : noCams || (!salaCam() ? 'La cámara de la Sala no está en uso.' : !S.consent ? 'Falta el consentimiento.' : S.pause ? 'La cámara de la Sala está en pausa.' : !S.m.person ? 'No hay nadie frente a la cámara.' : ''));
     D('noPerson', falling ? 'Hay una caída en curso.' : '');
     D('videoStored', S.linked ? '' : 'Primero vincula la PC.');
     D('linked', '');

@@ -107,7 +107,7 @@ Pending the advisor's approval; built ahead of it, additively: an installation w
 Run on a real PC; these need hardware the cloud does not have.
 1. `uv sync && make modelo && make revisar probar`.
 2. `make validar` reproduces the numbers in `docs/validation.md` (the core did not change).
-3. `uv run te-tengo-captura --backend-falso --config config.ejemplo.toml`: splash, then the window's «Estado» tab with «Te Tengo está cuidando la sala».
+3. `uv run te-tengo-captura --backend-falso --config config.ejemplo.toml`: splash, then the window's «Estado» tab with «Te Tengo cuida la sala».
 4. Unplug the webcam → state 05 and, with the window closed, notification 07; plug it back → resumes alone. Open «Cámaras»: the preview shows the real image, only on this PC.
 5. Turn off Wi-Fi → state 04 with the countdown; «Reintentar ahora» works; events made offline arrive later.
 6. With the real API running locally: consent missing → 03; pause from the mobile app → 02 and resumes at the hour.

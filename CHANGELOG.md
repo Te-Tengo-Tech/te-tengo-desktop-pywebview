@@ -5,9 +5,9 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 ## [Unreleased]
 
 ### Changed
-- The window follows the synthesized desktop prototype and the Te Tengo brand kit: cream background, violet and coral, Poppins (bundled, SIL OFL) and the two-figures symbol in the app icon, the tray icon and the splash. It has two tabs, «Estado» and «Cámaras». «Estado» says the state once («Te Tengo está cuidando la sala · Todo funciona bien.»), with one row per camera and «Datos de la instalación» folded; it no longer says that video is sent. «Cámaras» lists the webcams with their room and connection and a preview of the real image that is only seen on this PC (kept in memory while the window asks for it, never written nor sent).
+- The window follows the synthesized desktop prototype and the Te Tengo brand kit: cream background, violet and coral, Poppins (bundled, SIL OFL) and the two-figures symbol in the app icon, the tray icon and the splash. It has two tabs, «Estado» and «Cámaras». «Estado» says the state once («Te Tengo cuida la sala · Todo funciona bien.»), with one row per camera and «Datos de la instalación» folded; it no longer says that video is sent. The copy follows the reduced prototype (docs repo `b83deb9`: about a third less text). «Cámaras» lists the webcams with their room and connection and a preview of the real image that is only seen on this PC (kept in memory while the window asks for it, never written nor sent).
 - Someone watching the live view is now visible on the PC (prototype screens 08 and 09): the summary says «Un familiar está viendo la sala en vivo», the tray dot turns violet and, with the window closed, a system notice says so. The contract does not name the viewer.
-- The system notices follow the prototype: «La cámara de la sala no responde», and «Sigue cuidando la sala» when the window is first closed. `--sin-interfaz` logs the situation as `cuidando` instead of `enviando`.
+- The system notices follow the prototype: «La cámara de la sala no responde», and «Cuida la sala. Ábrelo junto al reloj.» when the window is first closed. `--sin-interfaz` logs the situation as `cuidando` instead of `enviando`.
 
 ### Pending
 - Validate the unstable movement rule with our own recordings.

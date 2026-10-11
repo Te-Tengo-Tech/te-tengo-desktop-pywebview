@@ -19,15 +19,15 @@ assert.match(html, /Esta PC: <b>Sala-Rosa<\/b>/);
 assert.match(html, /Vivienda de Rosa Huamán/);
 assert.match(html, /Jr\. Los Pinos 482, San Miguel, Lima/);
 assert.match(html, /class="health ok" role="status"/);
-assert.match(html, /Te Tengo está cuidando 3 habitaciones/);
-assert.match(html, /Sala, Dormitorio y Pasillo · Todo funciona bien\./);
+assert.match(html, /Te Tengo cuida 3 habitaciones/);
+assert.match(html, /<span data-r=\"hd\">Todo funciona bien\.<\/span>/);
 assert.equal((html.match(/class="crow"/g) || []).length, 3);
-assert.match(html, /<b class="stx send">En línea<\/b><span class="t-meta">Todo funciona bien<\/span>/);
+assert.match(html, /<b class="stx send">En línea<\/b><\/span>/);
 assert.match(html, /Logitech C920/);
 assert.match(html, /Datos de la instalación/);
 assert.match(html, /<dt>Instalación<\/dt><dd>22\/09\/2026<\/dd>/);
 assert.match(html, /<dt>Programa<\/dt><dd>Te Tengo Captura 0\.5\.0<\/dd>/);
-assert.match(html, /Las cámaras, las pausas, el consentimiento y las alertas se gestionan en la app Te Tengo\./);
+assert.match(html, /Cámaras, pausas, consentimiento y alertas: en la app/);
 assert.match(html, /Se inicia con Windows/);
 assert.doesNotMatch(html, /details class="inst" data-k="inst" open/);  // folded by default
 assert.match(ui.win(E.tres, U({open:{inst:true}}), ''), /data-k="inst" open/);
@@ -47,7 +47,7 @@ assert.doesNotMatch(consentimiento.split('class="health')[1].split('</div></div>
 // 04 Sin internet: the countdown is a patchable region with «Reintentar ahora».
 const internet = ui.win(E.internet, U(), '');
 assert.match(internet, /class="health offline"/);
-assert.match(internet, /<span data-r="hd">Las cámaras siguen cuidando y los avisos esperan\. Volvemos a intentar en <span class="mono" id="retry">8<\/span> s\.<\/span>/);
+assert.match(internet, /<span data-r="hd">Las cámaras siguen cuidando; los avisos esperan\. Reintento en <span class="mono" id="retry">8<\/span> s\.<\/span>/);
 assert.match(internet, /data-act="retryNow">.*Reintentar ahora<\/button>/);
 assert.equal(ui.structure(E.internet), ui.structure(Object.assign({}, E.internet, {retry: 7, health: Object.assign({}, E.internet.health, {detalle_html: 'x'})})));
 
@@ -70,27 +70,27 @@ assert.match(ui.win(E.html, U(), ''), /Dormitorio &lt;b&gt;/);
 const camaras = ui.win(E.tres, U({tab:'camaras', sel:'dormitorio'}), '');
 assert.match(camaras, /id="tab-camaras" aria-selected="true"/);
 assert.match(camaras, /Cámaras de esta PC/);
-assert.match(camaras, /Cada cámara con su habitación\. Las habitaciones se eligen desde la app Te Tengo, en tu celular\./);
+assert.match(camaras, /Las habitaciones se eligen en la app\./);
 assert.match(camaras, /role="radiogroup" aria-labelledby="g-cams"/);
 assert.match(camaras, /aria-checked="true" tabindex="0" data-act="selCam" data-arg="dormitorio"/);
 assert.match(camaras, /En uso · Dormitorio/);
 assert.match(camaras, /id="pv" data-clave="dormitorio"/);
-assert.match(camaras, /La vista previa solo se ve en esta PC/);
-assert.match(camaras, /Usa la vista previa para revisar que la cámara vea bien la habitación\./);
-assert.match(camaras, /Cada cámara usa más la PC\. Si la detección se vuelve lenta, conecta algunas cámaras a otra PC\./);
+assert.match(camaras, /Solo se ve en esta PC/);
+assert.match(camaras, /Usa la vista previa para revisar el encuadre\./);
+assert.match(camaras, /Si la detección va lenta, pasa alguna cámara a otra PC\./);
 const desconectada = ui.win(E.perdida, U({tab:'camaras', sel:'sala'}), '');
 assert.match(desconectada, /Desconectada · Sala/);
-assert.match(desconectada, /La cámara no responde: revisa el cable USB/);
-assert.match(desconectada, /Sala sigue asignada a esta cámara y no pasa a otra\./);
+assert.match(desconectada, /No responde: revisa el cable USB/);
+assert.match(desconectada, /Sala sigue asignada a esta cámara\. Conéctala y pulsa Buscar de nuevo\./);
 
 // In-window notices when the state changes (proto.js).
 assert.equal(ui.transition(null, E.tres), null);
-assert.equal(ui.transition(E.internet, E.tres).text, 'Volvió internet. Se enviaron los avisos pendientes.');
+assert.equal(ui.transition(E.internet, E.tres).text, 'Volvió internet. Avisos enviados.');
 assert.equal(ui.transition(E.perdida, E.uno).text, 'La Webcam USB HD volvió a responder.');
-assert.match(ui.transition(E.uno, E.pausa).text, /^La familia pausó la cámara de la Sala desde la app hasta las \d\d:\d\d\.$/);
-assert.equal(ui.transition(E.pausa, E.uno).text, 'La pausa terminó. Te Tengo vuelve a cuidar la Sala.');
-assert.equal(ui.transition(E.consentimiento, E.uno).text, 'La familia registró el consentimiento en la app Te Tengo.');
-assert.equal(ui.transition(E.uno, E.renombrada).text, 'La familia cambió el nombre de la habitación en la app: «Sala comedor».');
+assert.match(ui.transition(E.uno, E.pausa).text, /^La familia pausó la Sala hasta las \d\d:\d\d\.$/);
+assert.equal(ui.transition(E.pausa, E.uno).text, 'Pausa terminada: vuelve a cuidar la Sala.');
+assert.equal(ui.transition(E.consentimiento, E.uno).text, 'Consentimiento registrado en la app.');
+assert.equal(ui.transition(E.uno, E.renombrada).text, 'Habitación renombrada en la app: «Sala comedor».');
 assert.equal(ui.transition(Object.assign({}, E.internet, {listo:false}), E.uno), null);
 
 // The splash (screen 00).
