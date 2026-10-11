@@ -100,7 +100,7 @@ def test_aprobada_en_el_celular_queda_vinculada(e: Escenario) -> None:
     assert datos["screen"] == "vinculada"
     assert datos["home"]["who"] == "Rosa Huamán"
     assert datos["linkedBy"] == "Carmen"
-    assert [d["name"] for d in datos["devices"]] == ["Webcam USB HD", "Logitech C920"]
+    assert sorted(d["name"] for d in datos["devices"]) == ["Logitech C920", "Webcam USB HD"]
     assert c.estado().bandeja.etiqueta == "falta elegir las cámaras en la app"
     c.ir_a_estado()
     estado = c.estado()

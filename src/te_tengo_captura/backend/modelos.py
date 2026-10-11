@@ -116,6 +116,12 @@ class OrdenTransmision(_Cuerpo):
     transmitir: bool | None = None
     preparar: bool | None = None
     desvincular: bool | None = None
+    # The PC's own channel (US-29): an assignment from the app, «Buscar de nuevo», and the
+    # preview of a webcam «sin usar» (``camaraId``/``dispositivoId`` added to a live view message).
+    camara: dict[str, Any] | None = None
+    buscar_camaras: bool | None = None
+    camara_id: str | None = None
+    dispositivo_id: str | None = None
     url_publicacion: str | None = None
     usuario: str | None = None
     clave: str | None = Field(default=None, repr=False)
@@ -137,3 +143,57 @@ class PcDelAgente(_Cuerpo):
 class SenalPc(_Cuerpo):
     version_agente: str
     sistema_operativo: str
+
+
+class WebcamInventario(_Cuerpo):
+    dispositivo_id: str
+    nombre_dispositivo: str
+    conectada: bool = True
+
+
+class Inventario(_Cuerpo):
+    webcams: list[WebcamInventario]
+
+
+class CamaraDeLaPc(_Cuerpo):
+    """A webcam of a linked PC: its room and per-camera token while in use (US-29)."""
+
+    camara_id: str
+    dispositivo_id: str
+    nombre_dispositivo: str
+    en_uso: bool
+    conectada: bool = True
+    ambiente_id: str | None = None
+    nombre_habitacion: str | None = None
+    estado_conexion: str | None = None
+    pausada_hasta: datetime | None = None
+    token: str | None = Field(default=None, repr=False)
+    expira_en: datetime | None = None
+
+
+class CamaraEnAmbiente(_Cuerpo):
+    id: str
+    pc_id: str | None = None
+    pc_nombre: str | None = None
+    nombre_dispositivo: str | None = None
+    estado_conexion: str | None = None
+
+
+class Ambiente(_Cuerpo):
+    """A room of the household and the camera in use in it, on this PC or another one."""
+
+    id: str
+    nombre: str
+    camaras: list[CamaraEnAmbiente] = []
+
+
+class AsignacionCamara(_Cuerpo):
+    """«Elegir aquí» (CA-29.8): a webcam of this PC to a room, by id or by a new name."""
+
+    dispositivo_id: str
+    nombre_dispositivo: str
+    ambiente_id: str | None = None
+    nombre_ambiente: str | None = None
+
+    def json_api(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", by_alias=True, exclude_none=True)

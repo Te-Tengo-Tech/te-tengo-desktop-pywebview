@@ -63,6 +63,9 @@ class Aplicacion:
                 vincular_de_nuevo=agente.vincular_de_nuevo,
                 ir_a_estado=agente.ir_a_estado,
                 desvincular=agente.desvincular,
+                ambientes=agente.ambientes,
+                usar_aqui=agente.usar_aqui,
+                dejar_de_usar=agente.dejar_de_usar,
             ),
         )
         self._inicio = arranque.VentanaArranque(agente.version)

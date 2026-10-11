@@ -253,6 +253,7 @@ def test_json_para_la_interfaz() -> None:
             "new": False,
             "by": None,
             "preview": True,
+            "peek": False,
         }
     ]
     assert datos["health"]["accion"] == {
@@ -315,3 +316,21 @@ def test_estado_inmutable() -> None:
     e = estado()
     with pytest.raises(AttributeError):
         e.situacion = Situacion.EN_PAUSA  # type: ignore[misc]
+
+
+def test_bandeja_violeta_cuando_miran_una_camara_para_elegirla() -> None:
+    from dataclasses import replace as cambiar
+
+    from tests.captura.estados import entradas, webcam_de
+
+    e = entradas(camara())
+    mirada = cambiar(webcam_de(camara()), mirando=True)
+    from te_tengo_captura.estado import derivar
+    from tests.captura.estados import HOGAR
+
+    estado_ = derivar(cambiar(e, webcams=(mirada,)), HOGAR, PC, "0.5.0")
+    assert (estado_.bandeja.k, estado_.bandeja.etiqueta) == (
+        "live",
+        "Un familiar está viendo una cámara para elegirla",
+    )
+    assert estado_.a_json()["devices"][0]["peek"] is True

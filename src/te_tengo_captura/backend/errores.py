@@ -1,13 +1,22 @@
 """Typed errors of the backend: one exception per ``ProblemDetail.codigo`` the agent handles."""
 
+from typing import Any
+
 
 class ErrorBackendError(RuntimeError):
     """The backend answered with an error, or could not be reached."""
 
-    def __init__(self, mensaje: str, estado: int | None = None, codigo: str | None = None) -> None:
+    def __init__(
+        self,
+        mensaje: str,
+        estado: int | None = None,
+        codigo: str | None = None,
+        cuerpo: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(mensaje)
         self.estado = estado
         self.codigo = codigo
+        self.cuerpo = cuerpo or {}  # the ProblemDetail, e.g. 409 AMBIENTE_OCUPADO's camera
 
     @property
     def reintentable(self) -> bool:

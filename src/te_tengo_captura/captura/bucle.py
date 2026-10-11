@@ -22,6 +22,8 @@ It runs in a worker thread (``HiloCaptura``). Rules (AGENTS.md):
 
 import logging
 import threading
+import time
+from collections import deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -39,6 +41,8 @@ from te_tengo_deteccion.clips.buffer import BufferClip, Clip
 from te_tengo_deteccion.clips.codificar import codificar_mp4
 
 logger = logging.getLogger(__name__)
+
+FOTOGRAMAS_FPS = 24  # frames over which the real rate is measured (3 s at 8 fps)
 
 # Events that are sent as alerts and carry a clip; the others are notices without video.
 EVENTOS_CON_CLIP = frozenset({TipoEvento.CAIDA, TipoEvento.MOVIMIENTO_INESTABLE})
@@ -71,6 +75,7 @@ class BucleCaptura:
         reloj_utc: Callable[[], datetime] = lambda: datetime.now(UTC),
         generar_id: Callable[[], str] = uuid7,
         en_vivo: TransmisorEnVivo | None = None,
+        reloj: Callable[[], float] = time.monotonic,
     ) -> None:
         self._captador = captador
         self._estimador = estimador
@@ -90,6 +95,8 @@ class BucleCaptura:
         self._umbrales_nuevos: Umbrales | None = None
         self.deteccion_confiable = True
         self.fallando = False  # an unexpected error happened and no frame was processed since
+        self._procesados: deque[float] = deque(maxlen=FOTOGRAMAS_FPS)
+        self._reloj = reloj
 
     @property
     def activa(self) -> bool:
@@ -100,6 +107,15 @@ class BucleCaptura:
     def webcam_conectada(self) -> bool:
         """Last known state; a webcam not opened yet (capture not allowed) is not «lost»."""
         return not self.fallando and self._captador.conectada is not False
+
+    @property
+    def fps(self) -> float:
+        """The real rate of analysed frames over the last ``FOTOGRAMAS_FPS`` (the target is 8):
+        with several cameras on one PC it shows whether the PC keeps up (US-29)."""
+        procesados = list(self._procesados)
+        if len(procesados) < 2 or self._reloj() - procesados[-1] > 2.0:
+            return 0.0
+        return (len(procesados) - 1) / max(1e-6, procesados[-1] - procesados[0])
 
     @property
     def umbrales(self) -> Umbrales:
@@ -138,6 +154,7 @@ class BucleCaptura:
 
         pose = self._estimador.estimar(fotograma.imagen, fotograma.instante_ms)
         self.fallando = False
+        self._procesados.append(self._reloj())
         if self._en_vivo.activo:
             # The skeleton of the live view is drawn from the latest pose, in its own thread.
             self._en_vivo.anotar_pose(pose)

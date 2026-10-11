@@ -19,6 +19,11 @@ class Acciones:
     vincular_de_nuevo: Callable[[], None] = lambda: None
     ir_a_estado: Callable[[], None] = lambda: None
     desvincular: Callable[[bool], dict[str, bool]] = lambda _borrar: {"ok": False}
+    ambientes: Callable[[], list[dict[str, Any]]] = lambda: []
+    usar_aqui: Callable[[str, str | None, str | None], dict[str, Any]] = lambda _d, _a, _n: {
+        "ok": False
+    }
+    dejar_de_usar: Callable[[str], dict[str, Any]] = lambda _c: {"ok": False}
 
 
 class Puente:
@@ -78,3 +83,21 @@ class Puente:
     def desvincular(self, borrar_datos: bool) -> dict[str, bool]:
         """«Desvincular esta PC», optionally deleting the data saved on it (CA-31.3, CA-31.6)."""
         return self._acciones.desvincular(bool(borrar_datos))
+
+    def ambientes(self) -> list[dict[str, Any]]:
+        """The household's rooms for «Elegir aquí, si estás instalando» (CA-29.8)."""
+        return self._acciones.ambientes()
+
+    def usarAqui(  # noqa: N802 (JavaScript name)
+        self, dispositivo_id: str, ambiente_id: str | None, nombre: str | None
+    ) -> dict[str, Any]:
+        """«Usar esta cámara» or «Guardar cambio» from this PC."""
+        return self._acciones.usar_aqui(
+            str(dispositivo_id),
+            str(ambiente_id) if ambiente_id else None,
+            str(nombre).strip() if nombre else None,
+        )
+
+    def dejarDeUsar(self, camara_id: str) -> dict[str, Any]:  # noqa: N802 (JavaScript name)
+        """«Dejar de usar» from this PC."""
+        return self._acciones.dejar_de_usar(str(camara_id))

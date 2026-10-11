@@ -43,6 +43,9 @@ def test_el_puente_expone_solo_los_metodos_del_contrato() -> None:
         "vincularDeNuevo",
         "irAEstado",
         "desvincular",
+        "ambientes",
+        "usarAqui",
+        "dejarDeUsar",
     }
     assert puente.estado() == {"situacion": "cuidando"}
     assert puente.vistaPrevia("sala") == {"jpeg": "/9hqcGVn"}
@@ -175,6 +178,19 @@ def _pantallas_de_vinculacion() -> dict[str, Any]:
             "linkedAt": "10:31",
         },
         "pcPrincipal": {**vinculada, "unlink": True, "dataBytes": 3_200_000_000},
+        "pcMirando": {
+            **vinculada,
+            "unlink": True,
+            "devices": [{**d, "peek": d["name"] == "Logitech C920"} for d in vinculada["devices"]],
+        },
+        "pcConSala": {
+            **vinculada,
+            "unlink": True,
+            "devices": [
+                {**vinculada["devices"][0], "room": "Sala", "by": "app"},
+                *vinculada["devices"][1:],
+            ],
+        },
         "rechazada": {"screen": "rechazada"},
         "quitada": {"screen": "quitada", "who": "Rosa Huamán", "at": "11:20"},
     }

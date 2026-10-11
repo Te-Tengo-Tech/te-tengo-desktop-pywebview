@@ -40,7 +40,13 @@ from typing import Any
 import httpx
 
 from te_tengo_captura.agente import Agente
-from te_tengo_captura.agente_pc import AgentePc, enviar_revocacion_pendiente, leer_pc
+from te_tengo_captura.agente_pc import (
+    AgentePc,
+    FabricaCamaras,
+    enviar_revocacion_pendiente,
+    leer_pc,
+)
+from te_tengo_captura.backend.errores import ErrorBackendError
 from te_tengo_captura.backend.pc import ClientePc
 from te_tengo_captura.captura.dispositivos import Dispositivo, listar_dispositivos
 from te_tengo_captura.estado import EstadoAgente, EstadoBandeja, Hogar, hora_local
@@ -103,8 +109,11 @@ class Coordinador:
         listar: Callable[[], list[Dispositivo]] = listar_dispositivos,
         reloj: Callable[[], float] = time.time,
         zona: tzinfo | None = None,
+        fabrica: FabricaCamaras | None = None,
     ) -> None:
+        """``fabrica`` builds the agents of a linked PC's cameras (US-29)."""
         self.version = version
+        self._fabrica = fabrica
         self._api_url = api_url
         self._directorio = directorio_datos
         self._almacen = almacen
@@ -295,7 +304,55 @@ class Coordinador:
         return False
 
     def vista_previa_jpeg(self, clave: str) -> bytes | None:
-        return self.agente.vista_previa_jpeg(clave) if self.agente is not None else None
+        if self.agente is not None:
+            return self.agente.vista_previa_jpeg(clave)
+        if self.pc is not None:
+            return self.pc.vista_previa_jpeg(clave)
+        return None
+
+    def ambientes(self) -> list[dict[str, Any]]:
+        """The household's rooms for «Elegir aquí» (CA-29.8), with the camera in each."""
+        pc = self.pc
+        if pc is None:
+            return []
+        try:
+            ambientes = pc.ambientes()
+        except ErrorBackendError:
+            return []
+        propia = pc.sesion.pc_id
+        return [
+            {
+                "id": a.id,
+                "nombre": a.nombre,
+                "camaras": [
+                    {"id": c.id, "pc": c.pc_nombre, "estaPc": c.pc_id == propia} for c in a.camaras
+                ],
+            }
+            for a in ambientes
+        ]
+
+    def usar_aqui(
+        self, dispositivo_id: str, ambiente_id: str | None, nombre: str | None
+    ) -> dict[str, Any]:
+        """«Usar esta cámara» / «Guardar cambio» from the PC (CA-29.8)."""
+        pc = self.pc
+        if pc is None:
+            return {"ok": False, "codigo": "SIN_PC"}
+        try:
+            r = pc.usar_aqui(dispositivo_id, ambiente_id, nombre)
+        except ErrorBackendError:
+            return {"ok": False, "codigo": "PC_DESVINCULADA"}
+        return {"ok": r.ok, "codigo": r.codigo, "ambiente": r.ambiente, "pc": r.pc}
+
+    def dejar_de_usar(self, camara_id: str) -> dict[str, Any]:
+        pc = self.pc
+        if pc is None:
+            return {"ok": False}
+        try:
+            r = pc.dejar_de_usar(camara_id)
+        except ErrorBackendError:
+            return {"ok": False, "codigo": "PC_DESVINCULADA"}
+        return {"ok": r.ok, "codigo": r.codigo}
 
     def otro_codigo(self) -> None:
         """«Mostrar otro código» (D-28.5)."""
@@ -349,6 +406,9 @@ class Coordinador:
             if self._desvinculando:
                 return
             self._desvinculando = True
+        pc = self.pc
+        if pc is not None:
+            pc.bloquear()  # capture stops now, before the threads are stopped (CA-31.1)
         threading.Thread(
             target=self._quitar, args=(motivo,), name="desvincular", daemon=True
         ).start()
@@ -406,6 +466,7 @@ class Coordinador:
             canal=self._canal_pc,
             zona=self._zona,
             al_contactar=self._contacto,
+            fabrica=self._fabrica,
         )
         self.pc.iniciar()
 

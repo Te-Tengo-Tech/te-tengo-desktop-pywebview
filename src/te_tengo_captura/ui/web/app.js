@@ -263,10 +263,16 @@
     return '<dl class="conf-kv"><div><dt>Esta PC</dt><dd>'+esc(pc.nombre)+'</dd></div><div><dt>Sistema</dt><dd>'+esc(pc.sistema)+'</dd></div>'+
       origen+'<div><dt>Programa</dt><dd>'+esc(pc.programa)+'</dd></div></dl>';
   }
+  /* the app asks for the preview of a webcam to choose its room: shown on the PC, as the live view */
+  function peekNotice(E, here){
+    const d = (E.devices || []).find(x => x.peek);
+    if(!d) return '';
+    return '<div class="notice info peek-n" role="status"><span class="led" aria-hidden="true"></span><div><b>'+(here ? 'Un familiar está viendo esta cámara para elegirla' : 'Un familiar está viendo la '+esc(d.name)+' para elegirla')+'</b><span>No se graba y queda en el registro de la familia.</span></div></div>';
+  }
   function panelEstado(E, U){
     const list = E.cams.length ? '<ul class="crows" aria-label="Cámaras de esta PC">'+E.cams.map(camRow).join('')+'</ul>' : '';
     return '<header class="cam-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Vivienda de '+esc(E.home.who)+'</h1>'+(E.home.addr ? '<p class="t-meta mt4">'+ic('home')+esc(E.home.addr)+'</p>' : '')+'</div></header>'+
-      health(E)+list+
+      health(E)+peekNotice(E)+list+
       '<div class="card instcard">'+det(U, 'inst', '', ic('lock')+'Datos de la instalación', instData(E))+'</div>'+
       '<p class="scr-foot">'+ic('mobile')+'<span class="ft">Cámaras, pausas, consentimiento y alertas: en la app</span><span class="sep"></span>'+ic('power')+'<span>Se inicia con Windows</span></p>';
   }
@@ -293,23 +299,62 @@
     const by = d.room ? (d.by==='pc' ? 'Elegida en esta PC' : d.by==='app' ? 'La eligió la familia en la app' : 'El nombre se cambia en la app Te Tengo') : 'Se elige en la app';
     return '<div class="cpane info"><figure class="pv2 art" id="pv" data-clave="'+esc(d.id)+'">'+roomSVG(d.room || '')+'<img class="pv-img" id="pv-img" alt="" hidden>'+
       '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></figure>'+
+      (d.peek ? peekNotice(E, true) : '')+
       '<dl class="cinfo"><div><dt>Habitación</dt><dd><b>'+(d.room ? esc(d.room) : 'Sin usar')+'</b><span>'+by+'</span></dd></div>'+
       '<div><dt>Conexión</dt><dd><b class="ok">'+ic('check')+'Conectada</b><span>'+(d.new ? 'Nueva · por USB' : 'Por USB')+'</span></dd></div></dl>'+
       '<p class="help-l">'+ic('eye')+'Usa la vista previa para revisar el encuadre.</p>'+
-      (E.cams.length >= 3 ? '<p class="help-l">'+ic('info')+'Si la detección va lenta, pasa alguna cámara a otra PC.</p>' : '')+'</div>';
+      (E.cams.length >= 3 ? '<p class="help-l">'+ic('info')+'Si la detección va lenta, pasa alguna cámara a otra PC.</p>' : '')+
+      (E.unlink ? '<div class="pane-actions start"><button class="btn btn-ghost btn-sm" data-act="hereOn">'+ic('cam')+'Elegir aquí (si estás instalando)</button></div>' : '')+'</div>';
+  }
+  /* «Elegir aquí, si estás instalando» (CA-29.8): the same rules as the app */
+  const ROOMS = ['Sala', 'Dormitorio', 'Cocina', 'Comedor', 'Pasillo'];
+  function norm(s){ return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(); }
+  function camPane(E, U, d){
+    if(!d.connected || d.busy) return camInfo(E, U, d);
+    const pk = U.pick, r = d.room;
+    const amb = U.rooms || [];
+    const nombres = ROOMS.slice(); amb.forEach(a => { if(!nombres.some(n => norm(n)===norm(a.nombre))) nombres.push(a.nombre); });
+    const ocupada = n => { const a = amb.find(x => norm(x.nombre)===norm(n)); if(!a || !a.camaras.length) return null; if(r && norm(n)===norm(r)) return null; return a.camaras[0]; };
+    const custom = r && !nombres.slice(0, 5).some(n => norm(n)===norm(r)) && !amb.some(a => norm(a.nombre)===norm(r));
+    const otherOn = pk.otherOn;
+    const room = otherOn ? pk.other : (pk.room!=null ? pk.room : r);
+    const chips = nombres.map(x => {
+      const o = ocupada(x);
+      if(o) return '<button class="chip2" aria-disabled="true" title="'+(o.estaPc?'Ya tiene cámara en esta PC':'Ya tiene cámara en la PC '+esc(o.pc||''))+'"><span>'+esc(x)+'</span><small>Ya tiene cámara'+(!o.estaPc && o.pc?' · '+esc(o.pc):'')+'</small></button>';
+      const on = !otherOn && room!=null && norm(room)===norm(x);
+      return '<button class="chip2'+(on?' sel':'')+'" aria-pressed="'+on+'" data-act="pickRoom" data-arg="'+esc(x)+'">'+(on?ic('check'):'')+esc(x)+'</button>';
+    }).join('') + '<button class="chip2'+(otherOn?' sel':'')+'" aria-pressed="'+otherOn+'" data-act="pickOther">'+(otherOn?ic('check'):'')+'Otra…</button>';
+    const errs = {empty:'Escribe el nombre de la habitación.', bath:'Por privacidad, Te Tengo no admite cámaras en el baño.',
+      dup:'Ya hay una cámara en la habitación '+esc(pk.errRoom||'')+' (PC '+esc(pk.errPc||'')+'). Por ahora, cada habitación usa una sola cámara.',
+      net:'Aún sin internet.'};
+    const err = pk.err ? errs[pk.err] : '';
+    const changed = r ? (room && norm(room)!==norm(r)) : (otherOn || !!room);
+    const primary = '<button class="btn btn-primary" data-act="useCam"'+(changed && !U.busy?'':' disabled')+'>'+ic('check')+(r?'Guardar cambio':'Usar esta cámara')+'</button>';
+    return '<div class="cpane"><figure class="pv2 art" id="pv" data-clave="'+esc(d.id)+'">'+roomSVG(d.room || '')+'<img class="pv-img" id="pv-img" alt="" hidden>'+
+      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption><span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></figure>'+
+      '<span class="rooms-l" id="rooms-l">¿En qué habitación está?</span><div class="chips2" role="group" aria-labelledby="rooms-l">'+chips+'</div>'+
+      (otherOn ? '<div class="other-row field'+(err?' err':'')+'"><label class="sr" for="room-other">Nombre de la habitación</label><input class="input" id="room-other" value="'+esc(pk.other || (custom ? r : ''))+'" placeholder="Por ejemplo, Sala comedor" autocomplete="off"'+(err?' aria-invalid="true" aria-describedby="room-err"':'')+'></div>' : '')+
+      (err ? '<p class="field-msg err-msg" id="room-err" role="alert">'+ic('warn')+'<span>'+err+'</span></p>' : '')+
+      '<p class="help-l">'+ic('info')+'Por privacidad, Te Tengo no admite cámaras en el baño.</p>'+
+      '<div class="pane-actions">'+(r ? '<button class="btn btn-danger-ghost btn-sm" data-act="unuse">Dejar de usar</button>' : '')+primary+'</div></div>';
   }
   function panelCamaras(E, U){
-    const devs = E.devices, any = E.cams.length;
-    const meta = !devs.length || any ? 'Las habitaciones se eligen en la app.'
-      : 'Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'. Elígelas en la app.';
-    const head = '<header class="p-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Cámaras de esta PC</h1><p class="t-meta">'+meta+'</p></div></header>';
+    const devs = E.devices, any = E.cams.length, here = U.here && E.unlink && devs.length;
+    const meta = here ? 'Elige cada cámara, mira su vista previa y di en qué habitación está. La familia lo verá en la app.'
+      : !devs.length ? 'Las habitaciones se eligen desde la app Te Tengo, en tu celular.'
+      : any ? 'Cada cámara con su habitación. Las habitaciones se eligen desde la app Te Tengo, en tu celular.'
+      : 'Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'. Elígelas desde la app Te Tengo, en tu celular.';
+    const head = '<header class="p-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">'+(here?'Elegir aquí, si estás instalando':'Cámaras de esta PC')+'</h1><p class="t-meta">'+meta+'</p></div>'+
+      (here ? '<button class="btn btn-secondary btn-sm" data-act="hereOff">'+ic('back')+'Volver</button>' : '')+'</header>';
     if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">No encontramos cámaras</h2>'+
       '<p class="t-small">Conecta una webcam por USB.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc(E);
     const sel = selDev(E, U);
-    const rows = devs.map(d => '<button class="cpick'+(!d.connected?' lost':'')+'" role="radio" aria-checked="'+(d===sel)+'" tabindex="'+(d===sel?0:-1)+'" data-act="selCam" data-arg="'+esc(d.id)+'">'+
-      '<span class="thumb art'+(!d.connected||d.busy?' dim':'')+'">'+roomSVG(d.room || '')+'</span><span class="grow"><b>'+esc(d.name)+'</b>'+devTag(d)+'</span></button>').join('');
+    const peekRow = d => !here && d.peek ? '<span class="peek"><span class="led" aria-hidden="true"></span><span>Un familiar está viendo esta cámara para elegirla · No se graba</span></span>' : '';
+    const rows = devs.map(d => '<button class="cpick'+(!d.connected?' lost':'')+(!here && d.peek?' peeking':'')+'" role="radio" aria-checked="'+(d===sel)+'" tabindex="'+(d===sel?0:-1)+'" data-act="selCam" data-arg="'+esc(d.id)+'">'+
+      '<span class="thumb art'+(!d.connected||d.busy?' dim':'')+'">'+roomSVG(d.room || '')+'</span><span class="grow"><b>'+esc(d.name)+'</b>'+devTag(d)+'</span>'+peekRow(d)+'</button>').join('');
+    const many = here && E.cams.length >= 3 ? '<p class="many">'+ic('info')+'<span>Si la detección va lenta, pasa alguna cámara a otra PC.</span></p>' : '';
     return head+'<div class="camgrid"><div class="clist"><p class="grp-l" id="g-cams">Cámaras conectadas</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
-      '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc(E)+'</div>'+camInfo(E, U, sel)+'</div>';
+      '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+many+thisPc(E)+'</div>'+(here ? camPane(E, U, sel) : camInfo(E, U, sel))+'</div>';
   }
 
   /* =================== diálogos =================== */
@@ -363,6 +408,12 @@
       if(p.pause && !c.pause && c.st.k!=='off') return {kind:'ok', icon:'check', text:'Pausa terminada: vuelve a cuidar '+ROOM_ART(c.room)+'.'};
       if(p.room!==c.room) return {kind:'ok', icon:'check', text:'Habitación renombrada en la app: «'+c.room+'».'};
     }
+    const antes = {}; (prev.devices || []).forEach(d => antes[d.uid || d.id] = d);
+    for(const d of (E.devices || [])){
+      const a = antes[d.uid || d.id]; if(!a) continue;
+      if(!a.room && d.room && d.by==='app') return {kind:'ok', icon:'mobile', text:'La familia eligió la '+d.name+' para '+ROOM_ART(d.room)};
+      if(a.room && !d.room && a.by==='app') return {kind:'ok', icon:'mobile', text:'La familia dejó de usar la '+d.name+': ya no cuida '+ROOM_ART(a.room)+'.'};
+    }
     if(!prev.online && E.online) return {kind:'ok', icon:'check', text:'Volvió internet. Avisos enviados.'};
     if(!prev.consent && E.consent) return {kind:'ok', icon:'check', text:'Consentimiento registrado en la app.'};
     return null;
@@ -382,7 +433,7 @@
 
   const $ = id => document.getElementById(id);
   let E = null, first = true, toastTimer = null, preview = null, previewSrc = null;
-  const U = {tab:'estado', sel:null, open:{}, toast:null, dlg:null, unlinkWipe:false, busy:false};
+  const U = {tab:'estado', sel:null, open:{}, toast:null, dlg:null, unlinkWipe:false, busy:false, here:false, rooms:null, pick:{room:null, otherOn:false, other:'', err:null}};
   let opener = null;
   const bridge = () => (global.pywebview && global.pywebview.api) || null;
 
@@ -462,13 +513,40 @@
   preview = setInterval(pollPreview, 250);
 
   /* ---------- acciones ---------- */
-  function call(name, arg){ const b = bridge(); return b && b[name] ? Promise.resolve(arg===undefined ? b[name]() : b[name](arg)) : Promise.resolve(null); }
+  function call(name, arg){
+    const b = bridge(); if(!b || !b[name]) return Promise.resolve(null);
+    return Promise.resolve(arg===undefined ? b[name]() : Array.isArray(arg) ? b[name](...arg) : b[name](arg));
+  }
   const ACT = {
     minimize(){ call('minimizar'); },
     close(){ call('cerrar'); },
     tab(el){ U.tab = el.dataset.arg; render(); const t = $('tab-'+U.tab); if(t) t.focus({preventScroll:true}); },
     toCams(){ U.tab = 'camaras'; render(); const t = $('tab-camaras'); if(t) t.focus({preventScroll:true}); },
-    selCam(el){ U.sel = el.dataset.arg; previewSrc = null; render(); },
+    selCam(el){ U.sel = el.dataset.arg; previewSrc = null; U.pick = {room:null, otherOn:false, other:'', err:null}; render(); },
+    hereOn(){ U.here = true; U.pick = {room:null, otherOn:false, other:'', err:null}; render(); call('ambientes').then(r => { U.rooms = r || []; render(); }); },
+    hereOff(){ U.here = false; render(); },
+    pickRoom(el){ U.pick = {room:el.dataset.arg, otherOn:false, other:'', err:null}; render(); },
+    pickOther(){ U.pick = {room:null, otherOn:true, other:'', err:null}; render(); const i = $('room-other'); if(i) i.focus(); },
+    useCam(){
+      const d = E.devices.find(x => x.id===U.sel); if(!d) return;
+      const pk = U.pick, nombre = pk.otherOn ? pk.other.trim() : pk.room;
+      if(!nombre){ U.pick.err = 'empty'; render(); return; }
+      if(/^(ba(n|ñ)o|wc|ss\.?\s?hh\.?|servicios? higi(e|é)nicos?|aseo)$/i.test(nombre.trim())){ U.pick.err = 'bath'; render(); return; }
+      const amb = (U.rooms || []).find(a => norm(a.nombre)===norm(nombre));
+      U.busy = true; render();
+      call('usarAqui', [d.uid || d.id, amb ? amb.id : null, amb ? null : nombre]).then(r => {
+        U.busy = false;
+        if(r && r.ok){ U.pick = {room:null, otherOn:false, other:'', err:null}; toast('ok', 'check', 'La cámara '+d.name+' cuida ahora '+ROOM_ART(nombre)); call('ambientes').then(x => { U.rooms = x || []; }); return; }
+        const c = r && r.codigo;
+        U.pick.err = c==='AMBIENTE_OCUPADO' ? 'dup' : c==='AMBIENTE_NO_PERMITIDO' ? 'bath' : c==='AMBIENTE_NOMBRE_VACIO' ? 'empty' : 'net';
+        U.pick.errRoom = r && r.ambiente || nombre; U.pick.errPc = r && r.pc || E.pc.nombre; render();
+      });
+    },
+    unuse(){
+      const d = E.devices.find(x => x.id===U.sel); if(!d || !d.room) return;
+      U.busy = true; render();
+      call('dejarDeUsar', d.id).then(r => { U.busy = false; if(r && r.ok) toast('ok', 'check', 'La cámara '+d.name+' ya no cuida '+ROOM_ART(d.room)+'.'); else { U.pick.err = 'net'; render(); } });
+    },
     toEstado(){ U.tab = 'estado'; call('irAEstado').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },
     otherCode(){ call('otroCodigo').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },
     pairAgain(){ call('vincularDeNuevo').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },
@@ -500,9 +578,11 @@
   });
   function closeDlg(){ U.dlg = null; render(); if(opener && document.body.contains(opener)) opener.focus({preventScroll:true}); else restore({act:'unlinkAsk'}); opener = null; }
   document.addEventListener('change', e => { if(e.target && e.target.id==='unlink-wipe') U.unlinkWipe = e.target.checked; });
+  document.addEventListener('input', e => { if(e.target && e.target.id==='room-other'){ U.pick.other = e.target.value; if(U.pick.err){ U.pick.err = null; } const b = document.querySelector('#app [data-act="useCam"]'); if(b) b.disabled = !e.target.value.trim(); } });
   document.addEventListener('toggle', e => { const d = e.target; if(d && d.matches && d.matches('details[data-k]')) U.open[d.dataset.k] = d.open; }, true);
   document.addEventListener('keydown', e => {
     const t = e.target, role = t.getAttribute && t.getAttribute('role');
+    if(e.key==='Enter' && t.id==='room-other'){ e.preventDefault(); ACT.useCam(); return; }
     if(U.dlg){
       if(e.key==='Escape'){ e.preventDefault(); closeDlg(); return; }
       if(e.key==='Tab'){

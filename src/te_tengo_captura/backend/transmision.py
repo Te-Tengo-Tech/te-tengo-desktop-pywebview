@@ -106,7 +106,14 @@ class CanalTransmision:
         reintento_maximo_s: float = REINTENTO_MAXIMO_S,
         al_desvincular: Callable[[str], None] | None = None,
         nombre: str = "Canal de vista en vivo",
+        al_mensaje: Callable[[dict[str, Any], OrdenTransmision], bool] | None = None,
+        al_conectar: Callable[[], None] | None = None,
     ) -> None:
+        """``al_mensaje`` sees every valid message first and returns ``True`` when it handled
+        it (the PC's channel: cameras and previews); ``al_conectar`` runs on every connection
+        (the PC reconciles what it missed offline)."""
+        self._al_mensaje = al_mensaje
+        self._al_conectar = al_conectar
         self._cliente = cliente
         self._al_desvincular = al_desvincular
         self._nombre = nombre
@@ -183,6 +190,8 @@ class CanalTransmision:
             self.conectado = True
             self._fallos = 0
             logger.info("%s conectado", self._nombre)
+            if self._al_conectar is not None:
+                self._al_conectar()
             for mensaje in conexion:
                 self.atender_mensaje(mensaje)
 
@@ -191,11 +200,19 @@ class CanalTransmision:
             logger.warning("%s: mensaje binario ignorado", self._nombre)
             return
         try:
-            orden = OrdenTransmision.model_validate(json.loads(mensaje))
+            datos = json.loads(mensaje)
+            orden = OrdenTransmision.model_validate(datos)
         except (ValueError, ValidationError) as error:
             # Never echo the message: it may carry the publish token.
             logger.warning("%s: mensaje inválido ignorado (%s)", self._nombre, type(error).__name__)
             return
+        if self._al_mensaje is not None and isinstance(datos, dict):
+            try:
+                if self._al_mensaje(datos, orden):
+                    return
+            except Exception:
+                logger.exception("%s: error al atender un mensaje", self._nombre)
+                return
         if orden.transmitir is True:
             if not orden.url_publicacion:
                 logger.warning("%s: «transmitir» sin urlPublicacion", self._nombre)

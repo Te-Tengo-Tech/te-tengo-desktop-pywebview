@@ -11,7 +11,7 @@ upload URL, is ever logged.
 import logging
 import threading
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -56,6 +56,17 @@ TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 TIMEOUT_SUBIDA = httpx.Timeout(10.0, connect=5.0, write=60.0)
 
 
+class FuenteDeToken(Protocol):
+    """A linked PC's camera: its token comes from the PC (``camaras.TokenDeCamara``)."""
+
+    @property
+    def camara_id(self) -> str: ...
+
+    def token(self) -> str | None: ...
+
+    def renovar(self, rechazado: str | None) -> str: ...
+
+
 class ClienteBackend:
     def __init__(
         self,
@@ -65,9 +76,12 @@ class ClienteBackend:
         version_agente: str,
         transporte: httpx.BaseTransport | None = None,
         al_desvincular: Callable[[str], None] | None = None,
+        fuente_token: FuenteDeToken | None = None,
     ) -> None:
-        """``al_desvincular`` hears a ``401 PC_DESVINCULADA``: the installation's PC was removed
-        from the household in the app (US-31)."""
+        """``al_desvincular`` hears a ``401 PC_DESVINCULADA``: the PC (or the installation's PC)
+        was removed from the household in the app (US-31). With ``fuente_token`` (a linked PC's
+        camera) the token comes from the PC instead of registering with a credential."""
+        self._fuente_token = fuente_token
         self._credencial = credencial_instalacion
         self.al_desvincular = al_desvincular
         self._nombre_habitacion = nombre_habitacion
@@ -89,10 +103,16 @@ class ClienteBackend:
     def registro(self) -> Registro | None:
         return self._registro
 
+    @property
+    def camara_id(self) -> str | None:
+        if self._fuente_token is not None:
+            return self._fuente_token.camara_id
+        return self._registro.camara_id if self._registro is not None else None
+
     def secretos(self) -> list[str]:
         """Values that must never appear in a log (for the log filter)."""
         token = self._token()
-        return [self._credencial, *([token] if token else [])]
+        return [s for s in (self._credencial, token) if s]
 
     # ------------------------------------------------------------------ contract
 
@@ -176,6 +196,8 @@ class ClienteBackend:
 
     def _registrar_si_hace_falta(self, rechazado: str | None) -> str:
         """Registers unless another thread already got a token other than the rejected one."""
+        if self._fuente_token is not None:
+            return self._fuente_token.renovar(rechazado)
         with self._candado_registro:
             actual = self._token()
             if actual is not None and actual != rechazado:
@@ -183,6 +205,8 @@ class ClienteBackend:
             return self.registrar().token
 
     def _token(self) -> str | None:
+        if self._fuente_token is not None:
+            return self._fuente_token.token()
         with self._candado:
             return self._registro.token if self._registro else None
 
@@ -207,19 +231,21 @@ class ClienteBackend:
 def error_de_respuesta(metodo: str, ruta: str, respuesta: httpx.Response) -> ErrorBackendError:
     codigo: str | None = None
     detalle = ""
+    cuerpo: dict[str, Any] = {}
     try:
         problema = respuesta.json()
         if isinstance(problema, dict):
+            cuerpo = problema
             codigo = problema.get("codigo")
             detalle = str(problema.get("detail") or problema.get("title") or "")
     except ValueError:
         pass
     mensaje = f"{metodo} {ruta} → {respuesta.status_code} {codigo or ''} {detalle}".strip()
     if codigo in POR_CODIGO:
-        return POR_CODIGO[codigo](mensaje, respuesta.status_code, codigo)
+        return POR_CODIGO[codigo](mensaje, respuesta.status_code, codigo, cuerpo)
     if respuesta.status_code == 401:
-        return NoAutorizadoError(mensaje, 401, codigo)
-    return ErrorBackendError(mensaje, respuesta.status_code, codigo)
+        return NoAutorizadoError(mensaje, 401, codigo, cuerpo)
+    return ErrorBackendError(mensaje, respuesta.status_code, codigo, cuerpo)
 
 
 def leer_modelo(modelo: type[_Modelo], respuesta: httpx.Response) -> _Modelo:

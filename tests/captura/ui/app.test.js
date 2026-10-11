@@ -158,4 +158,26 @@ assert.match(dialogo, /Movimientos, video y clips\.<\/span>/);
 assert.match(dialogo, /data-act="dlgClose">Cancelar/);
 assert.match(dialogo, /data-act="unlinkDo">.*Desvincular<\/button>/);
 assert.equal(ui.transition(E.vinculada, E.pcPrincipal), null);
+
+// Several cameras: the violet light while the app previews a webcam (CA-29.7), «Elegir aquí».
+const mirando = ui.win(E.pcMirando, U({tab:'camaras'}), '');
+assert.match(mirando, /class="cpick peeking"/);
+assert.match(mirando, /Un familiar está viendo esta cámara para elegirla · No se graba/);
+assert.match(ui.win(E.pcMirando, U(), ''), /Un familiar está viendo la Logitech C920 para elegirla/);
+assert.match(mirando, /data-act="hereOn">.*Elegir aquí \(si estás instalando\)/);
+const aqui = ui.win(E.pcPrincipal, U({tab:'camaras', here:true, sel:'id-2', rooms:[{id:'a-1', nombre:'Cocina', camaras:[{id:'x', pc:'Cocina-Rosa', estaPc:false}]}], pick:{room:'Sala', otherOn:false, other:'', err:null}}), '');
+assert.match(aqui, /Elegir aquí, si estás instalando/);
+assert.match(aqui, /Elige cada cámara, mira su vista previa y di en qué habitación está\. La familia lo verá en la app\./);
+assert.match(aqui, /data-act="hereOff">.*Volver/);
+assert.match(aqui, /¿En qué habitación está\?/);
+assert.match(aqui, /aria-disabled="true" title="Ya tiene cámara en la PC Cocina-Rosa"><span>Cocina<\/span><small>Ya tiene cámara · Cocina-Rosa<\/small>/);
+assert.match(aqui, /class="chip2 sel" aria-pressed="true" data-act="pickRoom" data-arg="Sala"/);
+assert.match(aqui, /data-act="useCam">.*Usar esta cámara/);
+assert.match(aqui, /Por privacidad, Te Tengo no admite cámaras en el baño\./);
+const duplicada = ui.win(E.pcPrincipal, U({tab:'camaras', here:true, sel:'id-2', rooms:[], pick:{room:null, otherOn:true, other:'sala', err:'dup', errRoom:'Sala', errPc:'Sala-Rosa'}}), '');
+assert.match(duplicada, /Ya hay una cámara en la habitación Sala \(PC Sala-Rosa\)\. Por ahora, cada habitación usa una sola cámara\./);
+assert.match(duplicada, /id="room-other" value="sala"/);
+const listo = o => Object.assign({}, o, {listo: true});
+assert.equal(ui.transition(listo(E.pcPrincipal), listo(E.pcConSala)).text, 'La familia eligió la Webcam USB HD para la Sala');
+assert.equal(ui.transition(listo(E.pcConSala), listo(E.pcPrincipal)).text, 'La familia dejó de usar la Webcam USB HD: ya no cuida la Sala.');
 console.log('ok');

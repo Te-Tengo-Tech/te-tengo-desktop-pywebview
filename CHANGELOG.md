@@ -10,6 +10,9 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 - Webcams are listed by the operating system's unique id (AVFoundation `uniqueID` on macOS, the DirectShow device path on Windows, `/dev/v4l/by-id` on Linux), mapped to OpenCV's index when opened; `scripts/listar_camaras.py` prints them.
 - `--autoprueba` also checks the credential store, the QR and the webcam listing.
 
+- **Cameras of a linked PC** (US-29, US-30): the PC reports the webcams it detects by their OS id (`PUT /api/agente/pc/camaras/inventario`, at start and when one is plugged in or out), and follows the owner's choices from the phone (`{"camara":…}` and `{"buscarCamaras":true}` on its channel, `GET /api/agente/pc/camaras` after reconnecting). Each camera in use runs its own agent: capture loop with its own MediaPipe landmarker, heartbeat, outbox, clips, live view on its own MediaMTX path and control channel, with its token, renewed after the PC's. Plugging another webcam or rebooting never moves a room to another camera (CA-29.4); an unplugged camera keeps its room (CA-29.5). A webcam «sin usar» can be previewed from the app (2 minutes at most, CA-29.7): its row on the PC shows the violet light «Un familiar está viendo esta cámara para elegirla · No se graba» and the tray dot turns violet. «Elegir aquí (si estás instalando)» assigns a room from the PC with the app's rules: one camera per room, also across PCs, no bathroom, a name required (CA-29.8). The real rate of analysed frames is measured per camera.
+- `--video` also feeds the cameras of a linked PC (demos and end-to-end tests).
+
 ### Changed
 - An installation removed from the app («PC de la casa») stops capturing, deletes `credencial_instalacion` from `config.toml` and shows the link code (contract: "deletes its credentials").
 

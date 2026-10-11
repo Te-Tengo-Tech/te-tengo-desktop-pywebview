@@ -12,8 +12,8 @@ an access token and a rotating refresh token in the OS credential store
   retries after 2, 4, 8, 16 s and then every 30 s, like the cameras' heartbeat.
 * **Control channel** with the PC's own token: it hears ``{"desvincular":true}`` even with no
   camera in use (CA-31.1).
-* **Webcams**: the ones the PC detects (``captura/dispositivos.py``), by their stable OS id, for
-  «Detectamos 3 cámaras» and the «Cámaras» tab.
+* **Cameras** (US-29): ``camaras.SupervisorCamaras`` reports the webcams the PC detects by their
+  stable OS id and runs one ``Agente`` per camera the owner put in a room.
 * **Unlink from the PC** (CA-31.3, CA-31.6): ``DELETE /api/agente/pc``; if the API cannot be
   reached, the refresh token is revoked instead (RFC 7009, works without a valid access token);
   if that fails too, the refresh token is kept as a pending revocation and sent as soon as
@@ -26,16 +26,35 @@ import math
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
 from pathlib import Path
+from typing import Any
 
+import httpx
 from pydantic import ValidationError
 
+from te_tengo_captura.agente import Agente, AjustesCamara
+from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.errores import ErrorBackendError, PcDesvinculadaError
-from te_tengo_captura.backend.modelos import ModoVista, PcDelAgente
+from te_tengo_captura.backend.modelos import (
+    Ambiente,
+    CamaraDeLaPc,
+    ModoVista,
+    OrdenTransmision,
+    PcDelAgente,
+)
 from te_tengo_captura.backend.pc import ClientePc
 from te_tengo_captura.backend.transmision import CanalTransmision
-from te_tengo_captura.captura.dispositivos import Dispositivo, listar_dispositivos
+from te_tengo_captura.camaras import ResultadoAsignacion, SupervisorCamaras, TokenDeCamara
+from te_tengo_captura.captura.dispositivos import (
+    Dispositivo,
+    FuenteWebcamPorId,
+    listar_dispositivos,
+)
+from te_tengo_captura.captura.fuentes import FuenteVideo
+from te_tengo_captura.captura.pose import Estimador
+from te_tengo_captura.config import AjustesPc
 from te_tengo_captura.estado import DatosPc, Entradas, EstadoAgente, Hogar, Webcam, derivar
 from te_tengo_captura.sistema import nombre_pc, sistema_operativo
 from te_tengo_captura.vinculacion.credenciales import AlmacenCredenciales, RevocacionPendiente
@@ -132,10 +151,11 @@ def guardar_pc(archivo: Path, pc: PcDelAgente) -> None:
 
 
 class _SinVistaEnVivo:
-    """The PC's own channel carries no live view for a camera in use (previews: US-29)."""
+    """A live view message on the PC's channel without a webcam id: nothing to publish (a
+    camera in use gets its live view on its own channel)."""
 
     def transmitir(self, url: str, usuario: str | None, clave: str | None, modo: ModoVista) -> None:
-        logger.info("Canal de la PC: vista previa no disponible todavía")
+        logger.warning("Canal de la PC: «transmitir» sin dispositivoId ignorado")
 
     def cambiar_modo(self, modo: ModoVista) -> None:
         pass
@@ -145,6 +165,17 @@ class _SinVistaEnVivo:
 
     def detener(self) -> None:
         pass
+
+
+@dataclass(frozen=True, slots=True)
+class FabricaCamaras:
+    """How a linked PC builds each camera's agent (``__main__`` and the tests differ)."""
+
+    ajustes: AjustesPc
+    crear_estimador: Callable[[], Estimador]
+    abrir_fuente: Callable[[str], FuenteVideo] = FuenteWebcamPorId
+    transporte: httpx.BaseTransport | None = None
+    canal: bool = True
 
 
 class AgentePc:
@@ -161,8 +192,11 @@ class AgentePc:
         canal: bool = True,
         zona: tzinfo | None = None,
         al_contactar: Callable[[], None] = lambda: None,
+        fabrica: FabricaCamaras | None = None,
     ) -> None:
         self.version = version
+        self._api_url = api_url
+        self._fabrica = fabrica
         self.sesion = sesion
         self._cliente = cliente
         self._oauth = oauth
@@ -173,7 +207,15 @@ class AgentePc:
         self.latido = LatidoPc(
             cliente, version, directorio_datos / ARCHIVO_PC, al_contactar=al_contactar
         )
-        self._dispositivos: list[Dispositivo] | None = None
+        self.camaras = SupervisorCamaras(
+            cliente,
+            self._crear_agente,
+            listar,
+            fabrica.abrir_fuente if fabrica is not None else FuenteWebcamPorId,
+            consentimiento=self._consentimiento,
+            fps_vivo=fabrica.ajustes.vista_en_vivo.fps if fabrica is not None else 15.0,
+        )
+        sesion.al_renovar.append(self._renovar_camaras)
         self._canal = (
             CanalTransmision(
                 sesion,
@@ -181,6 +223,8 @@ class AgentePc:
                 _SinVistaEnVivo(),
                 al_desvincular=sesion.desvincular,
                 nombre="Canal de la PC",
+                al_mensaje=self._al_mensaje,
+                al_conectar=lambda: self._en_otro_hilo(self.camaras.sincronizar),
             )
             if canal
             else None
@@ -195,7 +239,7 @@ class AgentePc:
         logger.info(
             "Te Tengo Captura %s iniciando (PC vinculada %s)", self.version, self.sesion.pc_id
         )
-        threading.Thread(target=self.buscar_webcams, name="webcams", daemon=True).start()
+        self.camaras.iniciar()
         self._hilo.start()
         if self._canal is not None:
             self._canal.iniciar()
@@ -207,40 +251,86 @@ class AgentePc:
             self._canal.detener()
         if self._hilo.is_alive() and self._hilo is not threading.current_thread():
             self._hilo.join(5.0)
+        self.camaras.detener()
         self._cliente.cerrar()
 
+    def bloquear(self) -> None:
+        """The PC left the household: every camera stops capturing at once."""
+        self.camaras.bloquear()
+
     def secretos(self) -> list[str]:
-        return self.sesion.secretos()
+        return [*self.sesion.secretos(), *self.camaras.secretos()]
 
     # ------------------------------------------------------------------ state
 
     @property
     def webcams_listadas(self) -> bool:
-        return self._dispositivos is not None
+        return self.camaras.dispositivos is not None
 
-    @property
-    def dispositivos(self) -> list[Dispositivo]:
-        return list(self._dispositivos or [])
+    def _consentimiento(self) -> bool:
+        pc = self.latido.pc
+        return pc.consentimiento_vigente if pc is not None else False
 
     def estado(self) -> EstadoAgente:
         pc = self.latido.pc
-        webcams = tuple(
-            Webcam(
-                clave=d.dispositivo_id,
-                nombre=d.nombre,
-                dispositivo_id=d.dispositivo_id,
-                nombre_habitacion=None,
+        supervisor = self.camaras
+        with supervisor._candado:
+            agentes = list(supervisor.agentes.values())
+            conocidas = list(supervisor.camaras.values())
+            detectadas = list(supervisor.dispositivos or [])
+            listadas = supervisor.dispositivos is not None
+            nuevos, elegidas = set(supervisor.nuevos), set(supervisor.elegidas_aqui)
+        mirando = supervisor.mirando
+        fps = supervisor.fps()
+        camaras = tuple(replace(a.camara(), fps=fps.get(a.camara().clave)) for a in agentes)
+        en_uso = {c.clave: c for c in camaras}
+        detectados = {d.dispositivo_id: d for d in detectadas}
+        webcams: list[Webcam] = []
+        for camara in sorted(conocidas, key=lambda c: c.nombre_dispositivo.lower()):
+            fila = en_uso.get(camara.camara_id)
+            conectada = (
+                fila.webcam_conectada if fila is not None else camara.dispositivo_id in detectados
             )
-            for d in self.dispositivos
-        )
+            webcams.append(
+                Webcam(
+                    clave=camara.camara_id if fila is not None else camara.dispositivo_id,
+                    nombre=camara.nombre_dispositivo,
+                    dispositivo_id=camara.dispositivo_id,
+                    nombre_habitacion=(
+                        (fila.nombre_habitacion if fila else camara.nombre_habitacion)
+                        if camara.en_uso
+                        else None
+                    ),
+                    conectada=conectada,
+                    nueva=camara.dispositivo_id in nuevos and not camara.en_uso,
+                    elegida_desde=("pc" if camara.camara_id in elegidas else "app")
+                    if camara.en_uso
+                    else None,
+                    vista_previa=conectada,
+                    mirando=camara.dispositivo_id in mirando,
+                )
+            )
+        sabidos = {c.dispositivo_id for c in conocidas}
+        for d in detectadas:  # detected but not answered by the API yet
+            if d.dispositivo_id not in sabidos:
+                webcams.append(
+                    Webcam(
+                        clave=d.dispositivo_id,
+                        nombre=d.nombre,
+                        dispositivo_id=d.dispositivo_id,
+                        nombre_habitacion=None,
+                        nueva=d.dispositivo_id in nuevos,
+                        mirando=d.dispositivo_id in mirando,
+                    )
+                )
         entradas = Entradas(
-            camaras=(),
+            camaras=camaras,
             en_linea=self.latido.en_linea,
             consentimiento=pc.consentimiento_vigente if pc is not None else True,
             segundos_para_reintento=self.latido.segundos_para_reintento(),
-            webcams=webcams,
+            webcams=tuple(webcams),
             vinculada=True,
-            webcams_detectadas=len(webcams) if self._dispositivos is not None else None,
+            webcams_detectadas=len(detectadas) if listadas else None,
         )
         return derivar(entradas, self.hogar(), self.datos_pc(), self.version, self._zona)
 
@@ -265,13 +355,102 @@ class AgentePc:
     # ------------------------------------------------------------------ bridge actions
 
     def buscar_webcams(self) -> bool:
+        """«Buscar de nuevo»: list the webcams and report them (CA-29.6)."""
         try:
-            self._dispositivos = self._listar()
-        except Exception:
-            logger.exception("No se pudieron listar las webcams")
-            self._dispositivos = []
-        logger.info("Webcams detectadas: %d", len(self._dispositivos))
-        return bool(self._dispositivos)
+            return self.camaras.buscar_de_nuevo()
+        except PcDesvinculadaError:
+            return False
+
+    def vista_previa_jpeg(self, clave: str) -> bytes | None:
+        return self.camaras.vista_previa_jpeg(clave)
+
+    def ambientes(self) -> list[Ambiente]:
+        return self.camaras.ambientes()
+
+    def usar_aqui(
+        self, dispositivo_id: str, ambiente_id: str | None, nombre: str | None
+    ) -> ResultadoAsignacion:
+        return self.camaras.usar_aqui(dispositivo_id, ambiente_id, nombre)
+
+    def dejar_de_usar(self, camara_id: str) -> ResultadoAsignacion:
+        return self.camaras.dejar_de_usar(camara_id)
+
+    # ------------------------------------------------------------------ cameras
+
+    def _crear_agente(self, camara: CamaraDeLaPc, token: TokenDeCamara) -> Agente:
+        fabrica = self._fabrica
+        if fabrica is None:
+            raise RuntimeError("Esta PC no puede abrir cámaras (sin fábrica)")
+        camara_id = camara.camara_id
+
+        def retirada(motivo: str) -> None:
+            self.camaras.camara_retirada(camara_id, motivo)
+
+        cliente = ClienteBackend(
+            self._api_url,
+            "",
+            camara.nombre_habitacion or "",
+            self.version,
+            transporte=fabrica.transporte,
+            al_desvincular=retirada,
+            fuente_token=token,
+        )
+        ajustes = AjustesCamara(
+            api_url=self._api_url,
+            nombre_habitacion=camara.nombre_habitacion or "",
+            nombre_webcam=camara.nombre_dispositivo,
+            clasificacion=fabrica.ajustes.clasificacion,
+            vista_en_vivo=fabrica.ajustes.vista_en_vivo,
+            dispositivo_id=camara.dispositivo_id,
+            elegida_desde="pc" if camara_id in self.camaras.elegidas_aqui else "app",
+        )
+        return Agente(
+            ajustes,
+            cliente,
+            fabrica.abrir_fuente(camara.dispositivo_id),
+            fabrica.crear_estimador(),
+            self._directorio / "camaras" / camara_id,
+            self.version,
+            zona=self._zona,
+            vista_en_vivo=fabrica.canal,
+            al_desvincular=retirada,
+        )
+
+    def _renovar_camaras(self) -> None:
+        self._en_otro_hilo(self.camaras.renovar_tokens)
+
+    def _al_mensaje(self, mensaje: dict[str, Any], orden: OrdenTransmision) -> bool:
+        """The PC channel's own messages; ``True`` when handled here."""
+        if "camara" in mensaje or mensaje.get("buscarCamaras") is True:
+            self.camaras.al_mensaje(mensaje)
+            return True
+        dispositivo = orden.dispositivo_id
+        if dispositivo is None:
+            return False
+        if orden.transmitir is True:
+            self.camaras.previa_remota(
+                dispositivo,
+                True,
+                orden.url_publicacion,
+                orden.usuario,
+                orden.clave,
+                orden.modo or ModoVista.VIDEO,
+            )
+        elif orden.transmitir is False:
+            self.camaras.previa_remota(dispositivo, False)
+        elif orden.modo is not None:
+            self.camaras.cambiar_modo_previa(dispositivo, orden.modo)
+        return True
+
+    @staticmethod
+    def _en_otro_hilo(accion: Callable[[], object]) -> None:
+        def correr() -> None:
+            try:
+                accion()
+            except ErrorBackendError as error:
+                logger.info("Cámaras: %s", error)
+
+        threading.Thread(target=correr, name="camaras-accion", daemon=True).start()
 
     def reintentar_ahora(self) -> bool:
         self.latido.reintentar_ahora()

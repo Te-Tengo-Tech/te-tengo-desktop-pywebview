@@ -7,7 +7,7 @@ Since the change request «PCs, cámaras y datos de movimiento», a new PC needs
 1. Install Te Tengo Captura (section 3) and start it. With no `config.toml` it opens on «Vincula esta PC con tu celular»: a QR, an 8-letter code (`XXXX-XXXX`, consonants only), the address `app.tetengo.reqsai.tech/vincular` and a 10-minute countdown. The code renews itself when it expires (CA-28.3).
 2. In the app: Ajustes › PCs y cámaras › Agregar PC, scan the QR or type the code, check the PC's name, system and version, and «Aprobar» (only the owner can, CA-28.5).
 3. Within a few seconds the PC says «Vinculada a la casa de …» and lists the webcams it detected. Its tokens are stored in the operating system's credential store (Windows Credential Manager, the macOS Keychain), never in files.
-4. The owner chooses each camera's room in the app (US-29; the PC follows on its own).
+4. The owner chooses each camera's room in the app («Elige las cámaras»: each webcam by its name, with a short preview; US-29). The PC follows on its own: only the cameras in use capture, each one by the operating system's unique id, so plugging another webcam or rebooting never changes which camera watches each room. Whoever installs the PC without the owner's phone can use «Cámaras › Elegir aquí (si estás instalando)» on the PC, with the same rules; the app shows the choice. `uv run python scripts/listar_camaras.py` prints the webcams with their ids.
 
 The PC stays linked through restarts and network changes; it only asks for a new link after being removed from the app, «Desvincular» in its «Cámaras» tab, or 90 days without internet (CA-28.7). Removing it from the app makes it stop capturing at once, delete its tokens and show the code again (CA-31.1, CA-31.2).
 
