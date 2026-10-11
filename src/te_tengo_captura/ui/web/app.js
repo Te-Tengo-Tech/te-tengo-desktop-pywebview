@@ -368,7 +368,7 @@
   function logLine(U, l){
     const open = U.log.open===l.id;
     return '<div class="lline '+(l.tone||'')+'"><time>'+esc(l.t)+'</time><span class="li">'+ic(l.i)+'</span><span class="msg">'+esc(l.m)+'</span>'+
-      '<button class="tech-btn" aria-expanded="'+open+'" aria-controls="tx-'+l.id+'" data-act="techToggle" data-arg="'+l.id+'">Ver línea técnica'+ic('chevDown')+'</button></div>'+
+      '<button class="tech-btn" aria-expanded="'+open+'" aria-controls="tx-'+l.id+'" data-act="techToggle" data-arg="'+l.id+'" aria-label="Ver línea técnica">Técnica'+ic('chevDown')+'</button></div>'+
       (open ? '<div class="ltech" id="tx-'+l.id+'"><span class="code">'+esc(l.x)+'</span><button class="btn btn-ghost btn-xs" data-act="copyTech" data-arg="'+l.id+'">'+ic('copy')+'Copiar</button></div>' : '');
   }
   function logRows(E, U, cam){
@@ -380,9 +380,9 @@
     const pin = fila && fila.pause ? '<div class="lline pin"><time></time><span class="li">'+ic('pause')+'</span><span class="msg">Cámara en pausa hasta las <span class="mono">'+esc(fila.pause)+'</span></span><span></span></div>' : '';
     const lost = fila && fila.st.k==='off' ? '<div class="lline aviso pin"><time></time><span class="li">'+ic('videoOff')+'</span><span class="msg">Cámara desconectada: revisa el cable USB</span><span></span></div>' : '';
     let body;
-    if(!all.length) body = '<div class="logempty">'+ic('terminal')+'<b>Aún no pasa nada en esta cámara</b><span class="t-meta">Las líneas aparecen aquí apenas el programa detecta algo.</span></div>';
+    if(!all.length) body = '<div class="logempty">'+ic('terminal')+'<b>Aún no pasa nada en esta cámara</b></div>';
     else if(!vis.length && q) body = '<div class="logempty">'+ic('search')+'<b>No hay líneas con «'+esc(lg.q)+'»</b></div>';
-    else if(!vis.length) body = '<div class="logempty">'+ic('list')+'<b>No hay líneas de ese tipo</b><span class="t-meta">Activa otro filtro para ver más.</span></div>';
+    else if(!vis.length) body = '<div class="logempty">'+ic('list')+'<b>No hay líneas de ese tipo</b></div>';
     else body = vis.map(l => logLine(U, l)).join('');
     return pin + lost + body;
   }
@@ -410,11 +410,11 @@
     return '<svg viewBox="0 0 240 150" preserveAspectRatio="xMidYMax meet" aria-hidden="true"><path d="M0 134H240" stroke="#D9D1E0" stroke-width="2"/>'+s+'</g></svg>';
   }
   function meterReason(E, M){
-    if(!M) return {t:'Sin persona en la imagen', s:'Los medidores vuelven solos cuando la cámara vea a alguien.', i:'person', c:'pausa'};
-    if(M.motivo==='desconectada') return {t:'Cámara desconectada', s:'Revisa el cable USB. Los medidores vuelven solos al conectarla.', i:'videoOff', c:'aviso dash'};
-    if(M.motivo==='pausa') return {t:'En pausa hasta las '+M.pausa, s:'La familia la pausó desde la app. Los medidores vuelven solos al terminar la pausa.', i:'pause', c:'pausa'};
+    if(!M) return {t:'Sin persona en la imagen', s:'Vuelven cuando la cámara vea a alguien.', i:'person', c:'pausa'};
+    if(M.motivo==='desconectada') return {t:'Cámara desconectada', s:'Revisa el cable USB.', i:'videoOff', c:'aviso dash'};
+    if(M.motivo==='pausa') return {t:'En pausa hasta las '+M.pausa, s:'La pausaron desde la app.', i:'pause', c:'pausa'};
     if(M.motivo==='consentimiento') return {t:'Cámara detenida', s:'Falta el consentimiento de '+E.home.first+'.', i:'doc', c:'aviso'};
-    if(M.motivo==='sin_persona') return {t:'Sin persona en la imagen', s:'Los medidores vuelven solos cuando la cámara vea a alguien.', i:'person', c:'pausa'};
+    if(M.motivo==='sin_persona') return {t:'Sin persona en la imagen', s:'Vuelven cuando la cámara vea a alguien.', i:'person', c:'pausa'};
     return null;
   }
   function metersInner(E, M){
@@ -427,7 +427,7 @@
       ? '<div class="mcard mnote" role="status"><span class="ci '+off.c+'">'+ic(off.i)+'</span><div><b>'+esc(off.t)+'</b><span>'+esc(off.s)+'</span></div></div>'
       : '<div class="mcard"><h3>'+ic('gauge')+'Rendimiento</h3><span class="mval">'+num(m.fps, 1)+'<small>fps</small></span><p class="msub">Objetivo: 8 fps</p>'+
           '<div class="mkv"><div><span>Uso del procesador</span><b>'+Math.round(m.cpu||0)+' %</b></div><div><span>Demora del análisis</span><b>'+num(m.demora||0, 2)+' s</b></div></div></div>'+
-        '<div class="mcard"><h3>'+ic('person')+'Persona</h3><p class="mperson"><span class="ci calma">'+ic('check')+'</span>Sí, se ve a una persona</p><p class="msub mt8">Una sola persona en la imagen</p></div>'+
+        '<div class="mcard"><h3>'+ic('person')+'Persona</h3><p class="mperson"><span class="ci calma">'+ic('check')+'</span>Sí, una persona</p></div>'+
         '<div class="mcard"><h3>'+ic('clock')+'Temporizadores</h3>'+
           '<p class="timer">Ventana de caída <b>'+num(m.ventana, 2)+' s</b></p><div class="tbar"><i style="transform:scaleX('+(m.ventana/m.ventanaTotal).toFixed(3)+')"></i></div>'+
           '<p class="timer mt8">En el suelo <b>'+Math.round(m.suelo)+' de '+Math.round(m.confirmacion)+' s</b></p><div class="tbar"><i style="transform:scaleX('+Math.min(1, m.suelo/m.confirmacion).toFixed(3)+')"></i></div></div>';
@@ -441,8 +441,8 @@
       meas('Inclinación del tronco (M2)', m.m2==null ? '—' : Math.round(th)+'°', '', 'Avisa por debajo de '+Math.round(ua)+'°', th < ua || !!m.cabezaBajoPies, (90-th)/90*100, 50)+
       meas('Forma del cuerpo, ancho/alto (M3)', m.m3==null ? '—' : num(P, 2), '', 'Avisa desde '+num(ur, 0), P >= ur || !!m.cabezaBajoPies, P/(ur*2)*100, 50)+
       '<div class="mcard mphase"><h3>'+ic('pulse')+'Fase</h3><div class="phs">'+PHASES.map((p, i) => (i?ic('chevR'):'')+'<span class="ph'+(i===ph?' cur '+p[1]:'')+'"'+(i===ph?' aria-current="step"':'')+'>'+(i===ph?ic('check'):'')+p[0]+'</span>').join('')+'</div>'+
-        '<p class="msub mt8">Avisa si queda en el suelo después de la ventana de 1,48 s; la caída se confirma a los 30 s.</p></div>'+
-      '<div class="mside"><div class="mcard"><h3>'+ic('person')+'Puntos del cuerpo</h3><div class="pbars">'+bars+'</div><p class="plow">Visibilidad de 0 a 1 · mínimo 0,5 (la raya)</p></div>'+
+        '<p class="msub mt8">Avisa si sigue en el suelo tras 1,48 s; confirma a los 30 s.</p></div>'+
+      '<div class="mside"><div class="mcard"><h3>'+ic('person')+'Puntos del cuerpo</h3><div class="pbars">'+bars+'</div><p class="plow">Visibilidad 0–1 · mínimo 0,5</p></div>'+
         '<div class="mcard" style="flex:1;display:flex;flex-direction:column"><h3>'+ic('eye')+'Esqueleto</h3><div class="mskel">'+
           (off ? '' : skelReal(m.esqueleto))+'<span class="pv-lock">'+ic('lock')+'Solo se ve en esta PC</span></div></div></div>';
   }
@@ -454,8 +454,8 @@
     const av = w => w==='pc' ? '<span class="av pc">'+ic('monitor')+'</span>' : w==='app' ? '<span class="av pc">'+ic('mobile')+'</span>' : '<span class="av">'+esc(w)+'</span>';
     const body = rows.length ? days.map(d => '<h3 class="actday">'+esc(d)+'</h3>'+rows.filter(a => a.d===d).map(a =>
         '<div class="arow">'+av(a.who)+'<span>'+esc(a.m)+'</span><span class="when">'+(a.pend?'<span class="ptag">'+ic('clock')+'Pendiente de enviar</span>':'')+'<span class="mono">'+esc(a.t)+'</span></span></div>').join('')).join('')
-      : '<div class="actempty">'+ic('list')+'<b>Aún no hay actividad registrada</b><span class="t-meta">Aquí verás quién vinculó la PC, cambió una cámara o cómo se guardan los datos.</span></div>';
-    return '<div class="advhead">'+seg+'</div><div class="actlist" id="actlist">'+body+'</div><p class="actfoot">'+ic('lock')+'Nadie puede editar ni borrar esta lista. Lo que se hace en esta PC se anota como «Desde esta PC».</p>';
+      : '<div class="actempty">'+ic('list')+'<b>Aún no hay actividad</b><span class="t-meta">Aquí verás quién cambió qué y cuándo.</span></div>';
+    return '<div class="advhead">'+seg+'</div><div class="actlist" id="actlist">'+body+'</div><p class="actfoot">'+ic('lock')+'Nadie puede editar ni borrar esta lista.</p>';
   }
   function advSubs(E){ return (E.advanced ? [['registro','terminal','Registro en vivo'], ['medidores','gauge','Medidores']] : []).concat([['actividad','list','Actividad']]); }
   function advSub(E, U){ const subs = advSubs(E); return subs.some(x => x[0]===U.adv.sub) ? U.adv.sub : (E.advanced ? 'registro' : 'actividad'); }
@@ -465,10 +465,10 @@
     const btns = '<div class="advbtns">'+(on ? '<button class="btn btn-secondary btn-sm" data-act="diagOpen">'+ic('download')+'Exportar diagnóstico</button>' : '')+'</div>';
     const cams = advCams(E);
     const mode = on
-      ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">Modo avanzado</b> · Nada de esto sale de esta PC.</span>'+
+      ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">Modo avanzado</b> · Nada sale de esta PC.</span>'+
           (camSel && cams.length ? '<span class="cam-l" id="cam-l">Cámara</span><div class="seg2 sm" role="radiogroup" aria-labelledby="cam-l">'+cams.map(c => '<button role="radio" aria-checked="'+(cam && c.id===cam.id)+'" data-act="advCam" data-arg="'+esc(c.id)+'">'+esc(c.room)+'</button>').join('')+'</div>' : '')+'</div>'
-      : '<div class="card advcard"><span class="ci lg">'+ic('sliders')+'</span><div class="grow"><b id="adv-l">Modo avanzado</b><span>Muestra, cámara por cámara, lo que detecta el programa y por qué avisa o no avisa. Sirve para revisar la instalación. Nada de esto sale de esta PC.</span></div>'+sw(false, 'advToggle', 'adv-l')+'</div>';
-    const sinCamara = '<div class="logempty">'+ic('cam')+'<b>Aún no pasa nada en esta cámara</b><span class="t-meta">Las líneas aparecen aquí apenas el programa detecta algo.</span></div>';
+      : '<div class="card advcard"><span class="ci lg">'+ic('sliders')+'</span><div class="grow"><b id="adv-l">Modo avanzado</b><span>Qué detecta cada cámara y por qué avisa. Nada sale de esta PC.</span></div>'+sw(false, 'advToggle', 'adv-l')+'</div>';
+    const sinCamara = '<div class="logempty">'+ic('cam')+'<b>Aún no pasa nada en esta cámara</b></div>';
     const body = sub==='registro' ? (cam ? logView(E, U, cam) : sinCamara) : sub==='medidores' ? (cam ? metersView(E, U, cam) : sinCamara) : actView(E, U);
     return '<h1 class="sr" id="scr-h" tabindex="-1">Avanzado</h1><div class="advhead">'+seg+btns+'</div>'+mode+'<div class="advbody" role="tabpanel" aria-labelledby="sub-'+sub+'">'+body+'</div>';
   }
@@ -489,14 +489,14 @@
     if(U.dlg==='diag'){
       const d = U.diag, nombre = d.nombre || '';
       const file = '<div class="filebox">'+ic('doc')+'<span class="code">'+esc(d.step==='done' ? d.ruta : nombre)+'</span>'+(d.step==='done' ? '<small>'+esc(d.tamano)+'</small>' : '')+'</div>';
-      if(d.step==='busy') return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Crea un archivo para enviarlo al equipo de soporte.',
+      if(d.step==='busy') return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Un archivo para el equipo de soporte.',
         file+'<div class="prog" role="status"><div class="tbar"><i></i></div><p>Preparando el diagnóstico…</p></div>', '');
-      if(d.step==='done') return dlgBox('dlg-diag', '<span class="ci lg calma">'+ic('check')+'</span>', 'Diagnóstico guardado · '+esc(d.tamano), 'Envíalo al equipo de soporte cuando te lo pidan.',
+      if(d.step==='done') return dlgBox('dlg-diag', '<span class="ci lg calma">'+ic('check')+'</span>', 'Diagnóstico guardado · '+esc(d.tamano), 'Envíalo a soporte cuando te lo pidan.',
         file, '<button class="btn btn-secondary" data-act="diagShow">'+ic('folder')+'Mostrar en la carpeta</button><button class="btn btn-primary" data-act="dlgClose">Listo</button>');
       const lists = '<div class="inc"><div class="yes"><h3>Incluye</h3><ul>'+['Registros del programa', 'Versión y sistema operativo', 'Cámaras y habitaciones', 'Umbrales de detección'].map(x => '<li>'+ic('check')+x+'</li>').join('')+'</ul></div>'+
         '<div class="no"><h3>No incluye</h3><ul>'+['Contraseñas ni accesos', 'Imágenes ni video', 'Puntos del cuerpo'].map(x => '<li>'+ic('x')+x+'</li>').join('')+'</ul></div></div>';
-      return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Crea un archivo para enviarlo al equipo de soporte.',
-        (d.step==='err' ? '<div class="notice err" role="alert">'+ic('warn')+'<div><b>No pudimos guardar el archivo en esa carpeta. Elige otra.</b><span>No se guardó ningún archivo.</span></div></div>' : lists)+file,
+      return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Un archivo para el equipo de soporte.',
+        (d.step==='err' ? '<div class="notice err" role="alert">'+ic('warn')+'<div><b>No pudimos guardar en esa carpeta</b><span>No quedó ningún archivo. Elige otra.</span></div></div>' : lists)+file,
         '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-primary" data-act="diagSave">'+ic('folder')+(d.step==='err'?'Elegir otra carpeta':'Elegir dónde guardar')+'</button>');
     }
     return '';
@@ -658,7 +658,7 @@
       const activar = !E.advanced;
       call('modoAvanzado', activar).then(r => {
         E.advanced = !!(r && r.on); U.adv.sub = E.advanced ? 'registro' : 'actividad'; U.acts = null;
-        toast('ok', 'sliders', E.advanced ? 'Activamos el modo avanzado. Queda anotado en la actividad.' : 'Desactivamos el modo avanzado.');
+        toast('ok', 'sliders', E.advanced ? 'Modo avanzado activado.' : 'Modo avanzado desactivado.');
         loadActs();
       });
     },

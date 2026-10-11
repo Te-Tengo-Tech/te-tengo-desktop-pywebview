@@ -1,8 +1,8 @@
 """Advanced mode (US-32): what each camera detects and decides, in plain language, only on the PC.
 
 * **Live log** (CA-32.2): ``Narrador`` turns what a camera's capture loop sees into short Spanish
-  lines («Persona detectada en la Sala», «Posible caída: esperando que quede en el suelo
-  (1,48 s)», «Imagen descartada: no se ven los tobillos»; the prototype's ``LOG`` in ``core.js``)
+  lines («Persona detectada en la Sala», «Posible caída: ventana de 1,48 s», «Imagen descartada:
+  no se ven los tobillos»; the prototype's ``LOG`` in ``core.js``)
   and logs them with ``extra={"diario": …}``. ``ManejadorDiario``, a logging handler, keeps them
   in an in-memory ring buffer per camera (``Diario``) with their technical line («Ver línea
   técnica»): ``2026-09-23T10:41:51.482-05:00 INFO clasificador fase=INICIO_CAIDA v=0.034 …``.
@@ -300,7 +300,7 @@ class Narrador:
                         "evento",
                         "inestable",
                         "arrowDown",
-                        "Bajó rápido la cadera (descenso por encima del umbral)",
+                        "La cadera bajó rápido (sobre el umbral)",
                         f"INFO clasificador M1=1 v_cadera={_num(ultima.velocidad)} "
                         f"umbral_v={u.velocidad_descenso_min}",
                     )
@@ -332,7 +332,7 @@ class Narrador:
                 "evento",
                 "caida",
                 "warn",
-                f"Posible caída: esperando que quede en el suelo ({_coma(m.ventana_total)} s)",
+                f"Posible caída: ventana de {_coma(m.ventana_total)} s",
                 f"INFO clasificador fase=INICIO_CAIDA v={_num(v)} theta={_num(theta, 1)} "
                 f"P={_num(razon, 2)} M1=1 M2=1 M3=0",
             )
@@ -360,7 +360,7 @@ class Narrador:
                 "evento",
                 "caida",
                 "warn",
-                "Caída: quedó en el suelo. Aviso enviado a la familia",
+                "Caída: en el suelo. Aviso enviado",
                 (
                     "WARN clasificador fase=CAIDA en_suelo=1 evento=caida aviso=encolado " + datos
                 ).rstrip(),
@@ -373,7 +373,7 @@ class Narrador:
                 "evento",
                 "caida",
                 "warn",
-                "Caída confirmada: sigue en el suelo después de 30 s",
+                "Caída confirmada: 30 s en el suelo",
                 f"WARN clasificador fase=CAIDA_CONFIRMADA t_suelo={_num(self.medicion.suelo, 1)}",
                 logging.WARNING,
             )
@@ -392,7 +392,7 @@ class Narrador:
                 "evento",
                 "inestable",
                 "warn",
-                "Movimiento inestable: se balanceó y recuperó el equilibrio",
+                "Inestable: recuperó el equilibrio",
                 f"WARN clasificador evento=inestable recuperado=1 {datos}".strip(),
                 logging.WARNING,
             )
@@ -439,7 +439,7 @@ class Narrador:
                     "conexion",
                     "aviso",
                     "wifiOff",
-                    "Sin internet. Los avisos esperan en la cola",
+                    "Sin internet: avisos en cola",
                     "WARN conexion estado=sin_red",
                     logging.WARNING,
                 )
@@ -449,7 +449,7 @@ class Narrador:
                     "conexion",
                     "calma",
                     "wifi",
-                    "Volvió internet. Se enviaron los avisos pendientes",
+                    "Volvió internet: avisos enviados",
                     "INFO conexion estado=en_linea",
                 )
             self._en_linea = en_linea

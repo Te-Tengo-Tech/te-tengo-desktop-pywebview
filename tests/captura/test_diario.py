@@ -65,10 +65,10 @@ def caida() -> list[tuple[float, Pose | None]]:
 def test_una_caida_contada_en_lenguaje_sencillo(diario: Diario) -> None:
     narrador, lineas = narrar(diario, caida())
     assert lineas[0] == "Persona detectada en la Sala"
-    assert "Bajó rápido la cadera (descenso por encima del umbral)" in lineas
-    assert "Posible caída: esperando que quede en el suelo (1,48 s)" in lineas
-    assert "Caída: quedó en el suelo. Aviso enviado a la familia" in lineas
-    assert "Caída confirmada: sigue en el suelo después de 30 s" in lineas
+    assert "La cadera bajó rápido (sobre el umbral)" in lineas
+    assert "Posible caída: ventana de 1,48 s" in lineas
+    assert "Caída: en el suelo. Aviso enviado" in lineas
+    assert "Caída confirmada: 30 s en el suelo" in lineas
     assert lineas[-1] == "Se levantó"
     lineas_completas = diario.desde("c1")
     caida_ = next(linea for linea in lineas_completas if linea.texto.startswith("Caída:"))
@@ -116,8 +116,8 @@ def test_conexion_pausa_y_camara(diario: Diario) -> None:
     textos = [linea.texto for linea in diario.desde("c1")]
     assert textos[0] == "Se abrió la cámara del Dormitorio (Logitech C920)"
     assert "Cámara desconectada: revisa el cable USB" in textos
-    assert "Sin internet. Los avisos esperan en la cola" in textos
-    assert "Volvió internet. Se enviaron los avisos pendientes" in textos
+    assert "Sin internet: avisos en cola" in textos
+    assert "Volvió internet: avisos enviados" in textos
     assert any(t.startswith("Cámara en pausa hasta las ") for t in textos)
 
 
