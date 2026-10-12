@@ -4,6 +4,8 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-12
+
 ### Added
 - **«Restablecer esta PC»** in «Avanzado › Acerca de», behind a dialog that lists what is deleted: the PC unlinks itself (`DELETE /api/agente/pc?datosLocalesBorrados=true&motivo=restablecida`; offline the revocation waits until there is internet), deletes its tokens and the data key from the OS credential store, `config.toml`, everything in the data folder (also a moved one) and the start with the system, and shows the link code again.
 - **Uninstall that unlinks** (Windows): the uninstaller asks «¿Quitar también esta PC de la casa y borrar sus datos?» and runs the new `te-tengo-captura.exe --restablecer --sin-interfaz --motivo desinstalada` before removing the program, which also deletes the logs; silent uninstalls do it with `/RESTABLECER`. The family's app removes the PC and its activity says «se desinstaló». **«Desinstalar»** on a Mac does the reset and moves the `.app` to the Trash.
