@@ -547,6 +547,12 @@ class SupervisorCamaras:
         with self._candado:
             return {d for d, p in self._previas.items() if p.vigente()}
 
+    @property
+    def previa_local_abierta(self) -> bool:
+        """This window shows the preview of a webcam «sin usar» (updates wait, CA-43.9)."""
+        with self._candado:
+            return any(vista.pedida for vista, _lector in self._locales.values())
+
     def vista_previa_jpeg(self, clave: str) -> bytes | None:
         """The «Cámaras» tab's local preview: a camera in use or a webcam «sin usar»."""
         with self._candado:

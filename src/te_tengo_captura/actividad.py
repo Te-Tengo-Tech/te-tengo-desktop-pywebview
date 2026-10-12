@@ -3,8 +3,9 @@
 Every change made on this PC is appended to ``actividad.jsonl`` in the data folder (append-only:
 nothing is ever edited or deleted, CA-33.1) with a UUID v7 ``id`` and the time it happened. The
 changes the API does not see on its own (contract: ``MODO_AVANZADO_ACTIVADO``/``_DESACTIVADO``,
-``GUARDADO_LOCAL_CAMBIADO``, ``DATOS_LOCALES_ELIMINADOS`` and ``REPETICION_VISTA``, a replay
-watched on this PC with its camera, moment and duration, CA-39.3) are sent to
+``GUARDADO_LOCAL_CAMBIADO``, ``DATOS_LOCALES_ELIMINADOS``, ``REPETICION_VISTA``, a replay
+watched on this PC with its camera, moment and duration, CA-39.3, and the updates of US-43:
+``PC_ACTUALIZADA`` and ``ACTUALIZACION_AUTOMATICA_ACTIVADA``/``_DESACTIVADA``) are sent to
 ``POST /api/agente/pc/actividad`` in batches of at most 100; until the API answers they show
 «Pendiente de enviar» (CA-33.3). Sending the same ``id`` again is safe (``repetidos``). The ids
 the API acknowledged go to ``actividad-enviada.txt``, also append-only.
@@ -52,6 +53,9 @@ TIPOS_DE_LA_PC = frozenset(
         "GUARDADO_LOCAL_CAMBIADO",
         "DATOS_LOCALES_ELIMINADOS",
         "REPETICION_VISTA",
+        "PC_ACTUALIZADA",  # US-43, CA-43.2
+        "ACTUALIZACION_AUTOMATICA_ACTIVADA",  # US-43, CA-43.7
+        "ACTUALIZACION_AUTOMATICA_DESACTIVADA",
     }
 )
 

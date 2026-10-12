@@ -6,10 +6,11 @@ an access token and a rotating refresh token in the OS credential store
 (``vinculacion/sesion.py``). This module runs what belongs to the PC itself:
 
 * **Heartbeat** (``LatidoPc``): ``POST /api/agente/pc/senal`` every ``INTERVALO_S`` with the
-  agent's version and system keeps the PC «En línea» in the app even with no camera in use
-  (CA-30.2). The answer (``PcDelAgente``: household, approver, consent) is kept in ``pc.json``
-  in the data folder (names only, no secret), so the window can show them offline. Offline, it
-  retries after 2, 4, 8, 16 s and then every 30 s, like the cameras' heartbeat.
+  agent's version, system and «Actualizar automáticamente» (US-43) keeps the PC «En línea» in
+  the app even with no camera in use (CA-30.2). The answer (``PcDelAgente``: household,
+  approver, consent) is kept in ``pc.json`` in the data folder (names only, no secret), so the
+  window can show them offline. Offline, it retries after 2, 4, 8, 16 s and then every 30 s,
+  like the cameras' heartbeat.
 * **Control channel** with the PC's own token: it hears ``{"desvincular":true}`` even with no
   camera in use (CA-31.1).
 * **Cameras** (US-29): ``camaras.SupervisorCamaras`` reports the webcams the PC detects by their
@@ -83,8 +84,10 @@ class LatidoPc:
         reloj: Callable[[], float] = time.monotonic,
         reloj_utc: Callable[[], datetime] = lambda: datetime.now(UTC),
         al_contactar: Callable[[], None] = lambda: None,
+        actualizacion_automatica: Callable[[], bool | None] = lambda: None,
     ) -> None:
         self._cliente = cliente
+        self._actualizacion_automatica = actualizacion_automatica
         self._version = version
         self._al_contactar = al_contactar
         self._ultimo_aviso_contacto: float | None = None
@@ -110,7 +113,7 @@ class LatidoPc:
 
     def latir(self) -> None:
         try:
-            pc = self._cliente.senal(self._version, self._sistema)
+            pc = self._cliente.senal(self._version, self._sistema, self._actualizacion_automatica())
         except PcDesvinculadaError:
             raise
         except ErrorBackendError as error:
@@ -198,6 +201,7 @@ class AgentePc:
         fabrica: FabricaCamaras | None = None,
         actividad: RegistroActividad | None = None,
         almacen_local: AlmacenLocal | None = None,
+        actualizacion_automatica: Callable[[], bool | None] = lambda: None,
     ) -> None:
         self.version = version
         self._almacen_local = almacen_local
@@ -212,7 +216,11 @@ class AgentePc:
         self._listar = listar
         self._zona = zona
         self.latido = LatidoPc(
-            cliente, version, directorio_datos / ARCHIVO_PC, al_contactar=al_contactar
+            cliente,
+            version,
+            directorio_datos / ARCHIVO_PC,
+            al_contactar=al_contactar,
+            actualizacion_automatica=actualizacion_automatica,
         )
         self.camaras = SupervisorCamaras(
             cliente,

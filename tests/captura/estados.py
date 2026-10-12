@@ -87,4 +87,5 @@ def coordinador_de(agente: "Agente", directorio: "Path") -> "Coordinador":
         AlmacenCredenciales(LlaveroEnMemoria()),
         instalacion=lambda _al_desvincular: agente,
         canal_pc=False,
+        plataforma=None,  # no update checks against a real network
     )

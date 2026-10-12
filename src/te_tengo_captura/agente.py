@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta, tzinfo
 from functools import partial
 from pathlib import Path
 
+from te_tengo_captura.actualizaciones.alerta import SeguimientoAlerta
 from te_tengo_captura.almacen.gestor import AlmacenLocal, GrabadorCamara
 from te_tengo_captura.backend.cliente import ClienteBackend
 from te_tengo_captura.backend.modelos import EstadoMovimientos
@@ -163,6 +164,8 @@ class Agente:
             dispositivo=lambda: self.ajustes.nombre_webcam,
             reloj=time.monotonic,
         )
+        # A fall detected and not yet over: updates wait for it (US-43, CA-43.9).
+        self.alerta = SeguimientoAlerta()
         self.bucle.observadores.append(self._analizado)
         # Local storage (US-38) and the cloud (US-36, US-37): this camera's recorder, once its
         # camera id is known, and the movements lane of its outbox.
@@ -333,6 +336,7 @@ class Agente:
         self.narrador.analizado(
             analisis.fotograma.instante, analisis.pose, analisis.clasificador, analisis.eventos
         )
+        self.alerta.observar(evento.tipo for evento in analisis.detectados)
         for evento in analisis.detectados:
             self._eventos[evento.evento_id] = evento.ocurrido_en
             while len(self._eventos) > 32:

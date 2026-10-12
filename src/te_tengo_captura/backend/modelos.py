@@ -172,6 +172,11 @@ class PcDelAgente(_Cuerpo):
 class SenalPc(_Cuerpo):
     version_agente: str
     sistema_operativo: str
+    # «Actualizar automáticamente» (US-43, CA-43.7): the app shows it as Pc.actualizacionAutomatica.
+    actualizacion_automatica: bool | None = None
+
+    def json_api(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
 class WebcamInventario(_Cuerpo):
@@ -237,3 +242,24 @@ class EstadoMovimientos(_Cuerpo):
     guardar_en_la_nube: bool
     retencion_dias: int | None = None
     version_texto_vigente: str | None = None
+
+
+class VersionPublicada(_Cuerpo):
+    """The latest published Te Tengo Captura for one system (``GET /api/versiones``, US-43)."""
+
+    version: str
+    version_minima: str | None = None
+    url: str | None = None
+    sha256: str | None = None
+    tamano_bytes: int | None = None
+    publicada_en: datetime | None = None
+    notas: list[str] = []
+
+
+class VersionesPublicadas(_Cuerpo):
+    """``GET /api/versiones``: the PC reads ``windows`` or ``mac``; the other channels (``apk``,
+    ``play``, ``ios``, ``pwa``) belong to the mobile app and are ignored."""
+
+    windows: VersionPublicada | None = None
+    mac: VersionPublicada | None = None
+    pagina_descargas: str | None = None

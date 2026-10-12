@@ -39,7 +39,9 @@ class Escenario:
         self.coordinador: Coordinador | None = None
 
     def crear(
-        self, instalacion: Callable[[Callable[[str], None]], Agente] | None = None
+        self,
+        instalacion: Callable[[Callable[[str], None]], Agente] | None = None,
+        plataforma: str | None = "auto",
     ) -> Coordinador:
         def olvidar() -> None:
             self.olvidadas += 1
@@ -54,11 +56,12 @@ class Escenario:
             transporte=self.falso.transporte(),
             canal_pc=False,
             listar=lambda: list(WEBCAMS),
+            plataforma=plataforma,
         )
         return self.coordinador
 
-    def vincular(self) -> Coordinador:
-        c = self.crear()
+    def vincular(self, plataforma: str | None = "auto") -> Coordinador:
+        c = self.crear(plataforma=plataforma)
         c.iniciar()
         esperar(lambda: self.falso.codigo_pendiente())
         self.falso.aprobar()
@@ -346,3 +349,51 @@ def test_ver_que_paso_desde_el_coordinador(e: Escenario) -> None:
     assert vista["momentoDesde"] < vista["momentoHasta"]
     assert vista["momentoHasta"].endswith("Z")
     assert "objeto" not in vista  # no camera in use: the API names the room
+
+
+def test_el_latido_de_la_pc_dice_si_se_actualiza_sola(e: Escenario) -> None:
+    """US-43, CA-43.7: on by default on Windows; the switch goes to the activity log."""
+    c = e.vincular(plataforma="windows")
+    esperar(lambda: e.falso.senales_pc)
+    assert e.falso.senales_pc[-1]["actualizacionAutomatica"] is True
+    assert c.cambiar_actualizacion_automatica(False) is False
+    c.pc.reintentar_ahora()  # type: ignore[union-attr]
+    esperar(lambda: e.falso.senales_pc[-1].get("actualizacionAutomatica") is False)
+    tipos = [a.get("tipo") for a in c.actividad.entradas()]
+    assert "ACTUALIZACION_AUTOMATICA_DESACTIVADA" in tipos
+    esperar(
+        lambda: any(
+            a["tipo"] == "ACTUALIZACION_AUTOMATICA_DESACTIVADA" for a in e.falso.actividad.values()
+        )
+    )
+    assert c.cambiar_actualizacion_automatica(False) is False  # no change: no new entry
+    assert len([t for t in (a.get("tipo") for a in c.actividad.entradas()) if t]) == 1
+
+
+def test_sin_sistema_con_actualizaciones_el_latido_no_lo_dice(e: Escenario) -> None:
+    e.vincular(plataforma=None)
+    esperar(lambda: e.falso.senales_pc)
+    assert "actualizacionAutomatica" not in e.falso.senales_pc[0]
+
+
+def test_pc_actualizada_se_anota_una_vez_al_iniciar(e: Escenario) -> None:
+    """CA-43.2: after a newer version starts, «Esta PC se actualizó a X» (PC_ACTUALIZADA)."""
+    e.datos.mkdir(parents=True)
+    (e.datos / "actualizaciones.json").write_text(json.dumps({"ultimaVersion": "0.4.3"}))
+    c = e.vincular(plataforma="windows")
+    entradas = [a for a in c.actividad.entradas() if a.get("tipo") == "PC_ACTUALIZADA"]
+    assert len(entradas) == 1
+    assert entradas[0]["texto"] == "Esta PC se actualizó a 0.5.0"
+    assert (entradas[0]["objeto"], entradas[0]["valorAnterior"], entradas[0]["valorNuevo"]) == (
+        "Te Tengo Captura",
+        "0.4.3",
+        "0.5.0",
+    )
+    c.ir_a_estado()
+    assert c.estado().a_json()["upd"]["updated"] == "0.5.0"  # «Te Tengo Captura se actualizó a…»
+    esperar(lambda: any(a["tipo"] == "PC_ACTUALIZADA" for a in e.falso.actividad.values()))
+    c.detener()
+    otro = e.crear(plataforma="windows")
+    otro._anotar_version()  # the next start: the same version, nothing new
+    tipos = [a.get("tipo") for a in otro.actividad.entradas()]
+    assert tipos.count("PC_ACTUALIZADA") == 1
