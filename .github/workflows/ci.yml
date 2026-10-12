@@ -131,6 +131,14 @@ jobs:
           $prueba = Start-Process -FilePath $exe -ArgumentList "--autoprueba","--logs","logs" -Wait -PassThru
           Get-Content logs/te-tengo-captura.log
           if ($prueba.ExitCode -ne 0) { throw "--autoprueba terminó con $($prueba.ExitCode)" }
+          # The uninstaller's reset (--restablecer): with nothing linked it only deletes the folders.
+          New-Item -ItemType Directory -Force restablecer/datos/Datos, restablecer/logs | Out-Null
+          Set-Content restablecer/datos/envios.sqlite3 "x"
+          Set-Content restablecer/logs/te-tengo-captura.log "x"
+          Set-Content restablecer/config.toml 'api_url = "http://127.0.0.1:9"'
+          $r = Start-Process -FilePath $exe -ArgumentList "--restablecer","--sin-interfaz","--motivo","desinstalada","--datos","restablecer/datos","--logs","restablecer/logs","--config","restablecer/config.toml" -Wait -PassThru
+          if ($r.ExitCode -ne 0) { throw "--restablecer terminó con $($r.ExitCode)" }
+          if ((Test-Path restablecer/datos/envios.sqlite3) -or (Test-Path restablecer/logs) -or (Test-Path restablecer/config.toml)) { throw "--restablecer dejó archivos" }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: te-tengo-captura-windows

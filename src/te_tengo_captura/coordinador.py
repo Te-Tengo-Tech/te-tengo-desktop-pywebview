@@ -45,6 +45,7 @@ from typing import Any
 
 import httpx
 
+from te_tengo_captura import autoinicio
 from te_tengo_captura.actividad import RegistroActividad, para_la_ventana
 from te_tengo_captura.actualizaciones.actualizador import (
     Actualizador,
@@ -69,6 +70,7 @@ from te_tengo_captura.captura.dispositivos import Dispositivo, listar_dispositiv
 from te_tengo_captura.diagnostico import exportar, nombre_archivo
 from te_tengo_captura.diario import Diario
 from te_tengo_captura.estado import EstadoAgente, EstadoBandeja, Hogar, habitacion_arte, hora_local
+from te_tengo_captura.restablecer import Motivo, vaciar_carpeta
 from te_tengo_captura.sistema import nombre_pc, sistema_operativo
 from te_tengo_captura.vinculacion.credenciales import (
     AlmacenCredenciales,
@@ -133,6 +135,8 @@ class Coordinador:
         almacen: AlmacenCredenciales,
         instalacion: Callable[[Callable[[str], None]], Agente] | None = None,
         olvidar_instalacion: Callable[[], None] = lambda: None,
+        olvidar_configuracion: Callable[[], None] = lambda: None,
+        quitar_autoinicio: Callable[[], bool] = autoinicio.quitar,
         transporte: httpx.BaseTransport | None = None,
         canal_pc: bool = True,
         listar: Callable[[], list[Dispositivo]] = listar_dispositivos,
@@ -164,6 +168,8 @@ class Coordinador:
         self._almacen = almacen
         self._instalacion = instalacion
         self._olvidar_instalacion = olvidar_instalacion
+        self._olvidar_configuracion = olvidar_configuracion
+        self._quitar_autoinicio = quitar_autoinicio
         self._transporte = transporte
         self._canal_pc = canal_pc
         self._listar = listar
@@ -624,6 +630,53 @@ class Coordinador:
             self._pantalla = None
             self._iniciar_vinculacion()
             self._desvinculando = False
+        return {"ok": True, "avisada": avisada}
+
+    def restablecer(self, motivo: Motivo = "restablecida") -> dict[str, bool]:
+        """«Restablecer esta PC» (and «Desinstalar» on a Mac): the API hears it with ``motivo``
+        (offline, the revocation stays pending until there is internet), and the credentials,
+        ``config.toml``, every file of the data folder and the start with the system go. The
+        window shows the link code again, as on a new install. The logs stay (the open log file
+        cannot be deleted on Windows); the uninstaller deletes them."""
+        with self._candado_bandera:
+            if self._desvinculando:
+                return {"ok": False, "avisada": False}
+            self._desvinculando = True
+        pc = self.pc
+        avisada = pc.desvincular(True, motivo) if pc is not None else False
+        with self._candado:
+            self._detener_modo()
+            try:
+                pendiente = self._almacen.leer_revocacion()
+                self._almacen.borrar_todo()
+                if pendiente is not None:  # sent by ``_revocar_pendiente`` once online
+                    self._almacen.guardar_revocacion(pendiente)
+            except AlmacenNoDisponibleError as error:
+                logger.error("No se pudieron borrar las credenciales de la PC (%s)", error)
+            if self._instalacion is not None:
+                self._instalacion = None
+            try:
+                self._olvidar_configuracion()
+            except OSError as error:
+                logger.error("No se pudo borrar el archivo de configuración (%s)", error)
+            self.almacen.borrar_todo()
+            vaciar_carpeta(self._directorio)
+            self._quitar_autoinicio()
+            self.almacen = self._nuevo_almacen()
+            self.almacen.iniciar(self._consultar_movimientos)
+            self._avanzado = False
+            self.diario.activo = False
+            self._tamano = None
+            self._quitada, self._re90, self._pantalla = {}, False, None
+            self._iniciar_vinculacion()
+            self._desvinculando = False
+        logger.info("Esta PC se restableció (%s)", motivo)
+        if not self._hilo_revocacion.is_alive() and not self._detenido.is_set():
+            self._hilo_revocacion = threading.Thread(
+                target=self._revocar_pendiente, name="revocacion", daemon=True
+            )
+            self._hilo_revocacion.start()
+        self.publicar_estado()
         return {"ok": True, "avisada": avisada}
 
     def borrar_datos_locales(self) -> None:

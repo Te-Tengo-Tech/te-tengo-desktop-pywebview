@@ -174,6 +174,10 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         def cerrar_repeticion(self, c: str, d: int, h: int, s: float) -> dict[str, object]:
             return {"ok": True}
 
+        def restablecer(self, motivo: str = "restablecida") -> dict[str, bool]:
+            self.eventos.append(f"restablecer:{motivo}")
+            return {"ok": True, "avisada": True}
+
     agente = AgenteFalso()
     pasos = [arranque.Paso(22, 0, lambda: True), arranque.Paso(100, 2, lambda: True)]
     monkeypatch.setattr(arranque, "pasos", lambda _: pasos)
@@ -204,8 +208,24 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     abrir, _descargar, _buscar, salir = bandeja.menu.items
     abrir.accion()
     assert estado.visible
-    salir.accion()
+    salir.accion()  # «Salir» stops fall detection: the window asks first
+    assert not estado.destruida
+    assert estado.scripts[-1] == 'window.ttg && window.ttg.accion("salir")'
+    # «Desinstalar» from source: the reset happens, the app is not moved to the Trash.
+    assert puente.desinstalar() == {"ok": True, "avisada": True, "papelera": False}
+    assert agente.eventos[-1] == "restablecer:desinstalada"
+    puente.salir()  # confirmed in the window
     assert estado.destruida
+
+
+def test_la_app_de_mac_se_encuentra_desde_su_ejecutable(tmp_path: Path) -> None:
+    from te_tengo_captura.ui.aplicacion import mover_a_la_papelera, paquete_de_la_app
+
+    exe = "/Applications/Te Tengo Captura.app/Contents/MacOS/te-tengo-captura"
+    assert paquete_de_la_app(exe) == Path("/Applications/Te Tengo Captura.app")
+    assert paquete_de_la_app(str(tmp_path / "te-tengo-captura.exe")) is None
+    assert paquete_de_la_app() is None  # from source
+    assert mover_a_la_papelera(None) is False
 
 
 def test_quita_los_plugins_qt_de_opencv() -> None:

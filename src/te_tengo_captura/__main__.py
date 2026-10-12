@@ -6,7 +6,15 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from te_tengo_captura import __version__, autoinicio, config, registro, rutas, sin_interfaz
+from te_tengo_captura import (
+    __version__,
+    autoinicio,
+    config,
+    registro,
+    restablecer,
+    rutas,
+    sin_interfaz,
+)
 from te_tengo_captura.agente import Agente
 from te_tengo_captura.agente_pc import FabricaCamaras
 from te_tengo_captura.backend.cliente import ClienteBackend
@@ -57,6 +65,20 @@ def argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--marca-tiempo",
         action="store_true",
         help="draw the capture time in ms on the live view (debug: glass-to-glass latency)",
+    )
+    parser.add_argument(
+        "--restablecer",
+        action="store_true",
+        help=(
+            "unlink this PC (if online), delete its credentials, configuration, data and logs "
+            "and the start with the system, then exit (the Windows uninstaller runs it)"
+        ),
+    )
+    parser.add_argument(
+        "--motivo",
+        choices=restablecer.MOTIVOS,
+        default="restablecida",
+        help="with --restablecer: what the family's activity log says (default: restablecida)",
     )
     parser.add_argument(
         "--autoprueba",
@@ -127,6 +149,12 @@ def construir(
     falso = BackendFalso(credencial="", aprobar_tras=3) if args.backend_falso else None
     fabrica: Callable[[Callable[[str], None]], Agente] | None = None
     olvidar: Callable[[], None] = _nada
+    ruta_config = args.config or config.ruta_predeterminada()
+
+    def olvidar_configuracion() -> None:
+        if falso is None:  # a demo never deletes the example file
+            restablecer.borrar_configuracion(ruta_config)
+
     if isinstance(configuracion, config.Configuracion):
         instalacion = configuracion
         if falso is not None:
@@ -174,6 +202,7 @@ def construir(
         AlmacenCredenciales(llavero),
         instalacion=fabrica,
         olvidar_instalacion=olvidar,
+        olvidar_configuracion=olvidar_configuracion,
         transporte=falso.transporte() if falso is not None else None,
         canal_pc=falso is None,
         fabrica=camaras,
@@ -194,8 +223,44 @@ def ejecutar_aplicacion(
     aplicacion.ejecutar()
 
 
+def ejecutar_restablecer(args: argparse.Namespace) -> int:
+    """``--restablecer``: before any log file is opened, so the logs can be deleted too."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    datos = args.datos or rutas.datos()
+    instancia = Instancia(datos)
+    if not instancia.adquirir(lambda: None):
+        print(
+            "Te Tengo Captura está abierto: elige «Salir» y vuelve a intentarlo.", file=sys.stderr
+        )
+        return 3
+    instancia.liberar()
+    ruta_config = args.config or config.ruta_predeterminada()
+    try:
+        cargada = config.cargar(args.config)
+        api_url = args.api_url or cargada.api_url
+    except (config.ConfiguracionInvalidaError, FileNotFoundError):
+        api_url = args.api_url or config.AjustesPc().api_url
+    resultado = restablecer.ejecutar(
+        api_url,
+        AlmacenCredenciales(),
+        datos,
+        ruta_config,
+        args.logs or rutas.logs(),
+        args.motivo,
+    )
+    if resultado.vinculada and not resultado.avisada:
+        print(
+            "Sin conexión: la PC seguirá en la app como «Sin conexión» hasta que la quites.",
+            file=sys.stderr,
+        )
+    print("Te Tengo Captura se restableció en esta PC.")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = argumentos(argv)
+    if args.restablecer:
+        return ejecutar_restablecer(args)
     secretos: list[Callable[[], list[str]]] = []
     ruta_log = registro.configurar(
         args.logs or rutas.logs(), lambda: [s for fuente in secretos for s in fuente()]

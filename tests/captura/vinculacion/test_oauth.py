@@ -89,6 +89,19 @@ def test_revocar_el_token_de_renovacion(borrar: bool) -> None:
     assert falso.pc_quitada
 
 
+def test_revocar_con_motivo() -> None:
+    falso = BackendFalso()
+    oauth = ClienteOAuth(URL_API, falso.transporte())
+    codigo = oauth.pedir_codigo("PC", "x", "y")
+    falso.aprobar()
+    tokens = oauth.canjear(codigo.device_code)
+    oauth.revocar(tokens.refresh_token, True, "desinstalada")
+    assert formulario(falso.solicitudes[-1])["motivo"] == "desinstalada"
+    assert falso.desvinculaciones == [
+        {"via": "revocacion", "datos": "true", "motivo": "desinstalada"}
+    ]
+
+
 def test_errores_de_red_y_del_servidor() -> None:
     falso = BackendFalso()
     oauth = ClienteOAuth(URL_API, falso.transporte())

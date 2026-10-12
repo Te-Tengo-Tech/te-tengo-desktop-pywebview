@@ -2,7 +2,8 @@
 
 The menu follows the prototype's tray menu (screen 68, US-43): «Abrir Te Tengo Captura», with a
 new version «Descargar la versión X» (Mac: «Ir a la descarga de la versión X») and «Buscar
-actualizaciones»; «Salir» is a placeholder until the team confirms it (``docs/BLOCKERS.md``).
+actualizaciones»; «Salir» opens the window and asks to confirm it, because it stops fall detection
+(draft copy, ``docs/BLOCKERS.md``).
 «Abrir…» is the default item, so a click on the icon opens the window. A new version adds a
 coral dot to the icon and «· versión nueva X» to the tooltip.
 """

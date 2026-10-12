@@ -5,7 +5,7 @@ set ``TT_PLAYWRIGHT`` to a ``node_modules/playwright`` folder and ``TT_CHROMIUM`
 binary); skipped elsewhere. The prototype draws a PC with three cameras and names who did each
 thing («Luis la pausó», «Carmen está viendo»); the agent does not know those names, so only the
 screens whose copy the agent reproduces exactly are compared, and only below the tab bar (the
-prototype also shows the «Avanzado» tab). Differences come only from anti-aliasing.
+prototype also shows the «Avanzado» tab) and above the prototype's bottom band. Differences come only from anti-aliasing.
 """
 
 import json
@@ -26,6 +26,9 @@ CHROMIUM = Path(os.environ.get("TT_CHROMIUM", "/opt/pw-browsers/chromium-1194/ch
 LIMA = timezone(timedelta(hours=-5))
 TOLERANCIA = 0.005  # share of pixels that may differ (anti-aliasing)
 DEBAJO_DE_LAS_PESTANAS = 2 * (36 + 50)  # title bar and tab bar, at 2x
+# The prototype's bottom band («Se inicia con Windows») is not drawn by the real window (it looked
+# like the simulated taskbar); the comparison stops above it.
+BANDA_INFERIOR = 2 * 52
 
 
 def _playwright() -> Path | None:
@@ -78,7 +81,7 @@ def test_la_ventana_coincide_con_las_pantallas_del_prototipo(tmp_path: Path) -> 
         esperada = Image.open(PANTALLAS / f"{nombre}.png").convert("L")
         obtenida = Image.open(tmp_path / f"{nombre}.png").convert("L")
         assert obtenida.size == esperada.size
-        caja = (0, DEBAJO_DE_LAS_PESTANAS, esperada.size[0], esperada.size[1])
+        caja = (0, DEBAJO_DE_LAS_PESTANAS, esperada.size[0], esperada.size[1] - BANDA_INFERIOR)
         diferencia = ImageChops.difference(esperada.crop(caja), obtenida.crop(caja)).point(
             lambda v: 255 if v > 40 else 0
         )

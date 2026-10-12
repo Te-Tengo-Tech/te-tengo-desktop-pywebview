@@ -36,6 +36,8 @@ class Escenario:
         self.almacen = AlmacenCredenciales(LlaveroEnMemoria())
         self.datos = tmp_path / "datos"
         self.olvidadas = 0
+        self.configuraciones_borradas = 0
+        self.autoinicios_quitados = 0
         self.coordinador: Coordinador | None = None
 
     def crear(
@@ -46,6 +48,13 @@ class Escenario:
         def olvidar() -> None:
             self.olvidadas += 1
 
+        def borrar_configuracion() -> None:
+            self.configuraciones_borradas += 1
+
+        def quitar_autoinicio() -> bool:
+            self.autoinicios_quitados += 1
+            return True
+
         self.coordinador = Coordinador(
             "0.5.0",
             URL_API,
@@ -53,6 +62,8 @@ class Escenario:
             self.almacen,
             instalacion=instalacion,
             olvidar_instalacion=olvidar,
+            olvidar_configuracion=borrar_configuracion,
+            quitar_autoinicio=quitar_autoinicio,
             transporte=self.falso.transporte(),
             canal_pc=False,
             listar=lambda: list(WEBCAMS),
@@ -200,6 +211,54 @@ def test_desvincular_sin_internet_queda_pendiente_y_se_envia_despues(e: Escenari
     otro.iniciar()
     esperar(lambda: e.almacen.leer_revocacion() is None)
     assert e.falso.desvinculaciones == [{"via": "revocacion", "datos": "true"}]
+
+
+def test_restablecer_esta_pc_avisa_borra_todo_y_vuelve_al_codigo(e: Escenario) -> None:
+    c = e.vincular()
+    c.ir_a_estado()
+    c.cambiar_modo_avanzado(True)
+    for ruta in (e.datos / "clips" / "e.mp4", e.datos / "actividad.jsonl", e.datos / "x.json"):
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        ruta.write_text("x")
+    guardado = c.almacen.carpeta / "movimientos" / "c1" / "x.parquet.ttg"
+    guardado.parent.mkdir(parents=True)
+    guardado.write_bytes(b"TTG1")
+    assert c.restablecer() == {"ok": True, "avisada": True}
+    assert e.falso.desvinculaciones == [
+        {"via": "delete", "datos": "true", "motivo": "restablecida"}
+    ]
+    assert e.almacen.leer() is None
+    assert e.almacen.llavero.get_password("TeTengoCaptura", "clave-datos") is None
+    assert (e.configuraciones_borradas, e.autoinicios_quitados) == (1, 1)
+    assert not guardado.exists()
+    assert not (e.datos / "clips").exists()
+    assert not (e.datos / "actividad.jsonl").exists()
+    assert not (e.datos / "x.json").exists()
+    assert not c.modo_avanzado
+    esperar(lambda: c.estado().a_json().get("pair", {}).get("code"))
+    assert c.estado().pantalla is Pantalla.VINCULAR  # as on a new install
+    assert c.restablecer() == {"ok": True, "avisada": False}  # unlinked: only deletes again
+
+
+def test_restablecer_sin_internet_deja_la_desvinculacion_pendiente(
+    e: Escenario, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import te_tengo_captura.coordinador as modulo
+
+    monkeypatch.setattr(modulo, "REVOCACION_REINTENTO_S", 0.05)
+    c = e.vincular()
+    c.ir_a_estado()
+    e.falso.sin_conexion = True
+    assert c.restablecer("desinstalada") == {"ok": True, "avisada": False}
+    pendiente = e.almacen.leer_revocacion()
+    assert pendiente is not None
+    assert pendiente.motivo == "desinstalada"
+    assert e.almacen.leer() is None
+    e.falso.sin_conexion = False
+    esperar(lambda: e.almacen.leer_revocacion() is None)
+    assert e.falso.desvinculaciones == [
+        {"via": "revocacion", "datos": "true", "motivo": "desinstalada"}
+    ]
 
 
 def test_noventa_dias_sin_conexion(e: Escenario) -> None:
