@@ -875,10 +875,22 @@ class Coordinador:
             self._pantalla = Pantalla.QUITADA
             return
         self._vinculador = Vinculador(
-            self._oauth, nombre_pc(), sistema_operativo(), self.version, self._vinculada
+            self._oauth,
+            nombre_pc(),
+            sistema_operativo(),
+            self.version,
+            self._vinculada,
+            id_instalacion=self._id_instalacion(),
         )
         self._hilo_vinculacion = HiloVinculacion(self._vinculador)
         self._hilo_vinculacion.iniciar()
+
+    def _id_instalacion(self) -> str | None:
+        """The PC's installation id; without a credential store the link works without it."""
+        try:
+            return self._almacen.id_instalacion()
+        except AlmacenNoDisponibleError:
+            return None
 
     def _detener_modo(self) -> None:
         agente, pc, hilo = self.agente, self.pc, self._hilo_vinculacion

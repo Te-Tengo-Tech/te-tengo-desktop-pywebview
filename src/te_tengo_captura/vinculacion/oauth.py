@@ -72,17 +72,21 @@ class ClienteOAuth:
         )
 
     def pedir_codigo(
-        self, nombre_pc: str, sistema_operativo: str, version_agente: str
+        self,
+        nombre_pc: str,
+        sistema_operativo: str,
+        version_agente: str,
+        id_instalacion: str | None = None,
     ) -> CodigoVinculacion:
-        datos = self._formulario(
-            RUTA_VINCULACION,
-            {
-                "client_id": CLIENT_ID,
-                "nombre_pc": nombre_pc,
-                "sistema_operativo": sistema_operativo,
-                "version_agente": version_agente,
-            },
-        )
+        campos = {
+            "client_id": CLIENT_ID,
+            "nombre_pc": nombre_pc,
+            "sistema_operativo": sistema_operativo,
+            "version_agente": version_agente,
+        }
+        if id_instalacion is not None:
+            campos["id_instalacion"] = id_instalacion
+        datos = self._formulario(RUTA_VINCULACION, campos)
         try:
             return CodigoVinculacion(
                 device_code=str(datos["device_code"]),

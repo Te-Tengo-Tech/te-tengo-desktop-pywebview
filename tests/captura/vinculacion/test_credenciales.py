@@ -1,4 +1,5 @@
 import json
+import uuid
 
 import pytest
 
@@ -81,3 +82,21 @@ def test_almacen_no_disponible() -> None:
     with pytest.raises(AlmacenNoDisponibleError):
         almacen.guardar(CREDENCIALES)
     almacen.borrar()  # best effort
+
+
+def test_id_de_instalacion_se_genera_una_vez_y_sobrevive_a_la_desvinculacion() -> None:
+    llavero = LlaveroEnMemoria()
+    almacen = AlmacenCredenciales(llavero)
+    primero = almacen.id_instalacion()
+    assert str(uuid.UUID(primero)) == primero
+    almacen.guardar(CREDENCIALES)
+    almacen.borrar()  # unlinking deletes the tokens, never the installation id
+    assert AlmacenCredenciales(llavero).id_instalacion() == primero
+
+
+def test_id_de_instalacion_ilegible_se_reemplaza() -> None:
+    llavero = LlaveroEnMemoria()
+    llavero.set_password(SERVICIO, "pc-instalacion", json.dumps({"id": "no-es-uuid"}))
+    nuevo = AlmacenCredenciales(llavero).id_instalacion()
+    assert nuevo != "no-es-uuid"
+    assert AlmacenCredenciales(llavero).id_instalacion() == nuevo

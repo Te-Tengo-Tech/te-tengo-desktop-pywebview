@@ -34,6 +34,17 @@ def test_pide_el_codigo_con_un_formulario_y_sin_token() -> None:
     assert codigo.device_code not in repr(codigo)  # the secret never shows
 
 
+def test_envia_el_id_de_instalacion_si_lo_tiene() -> None:
+    falso = BackendFalso()
+    oauth = ClienteOAuth(URL_API, falso.transporte())
+    oauth.pedir_codigo(
+        "Sala-Rosa", "Windows 11 Home", "0.5.0", "0192f0c4-7b1e-7cc0-9a51-3f5e2d8b4a10"
+    )
+    assert formulario(falso.solicitudes[-1])["id_instalacion"] == (
+        "0192f0c4-7b1e-7cc0-9a51-3f5e2d8b4a10"
+    )
+
+
 def test_sondeo_pendiente_aprobado_y_rotacion() -> None:
     falso = BackendFalso()
     oauth = ClienteOAuth(URL_API, falso.transporte())

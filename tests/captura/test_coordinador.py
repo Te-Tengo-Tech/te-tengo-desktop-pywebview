@@ -91,6 +91,8 @@ def test_recien_instalada_muestra_el_codigo(e: Escenario) -> None:
     assert datos["pair"]["qr"]["n"] >= 21
     assert datos["pair"]["left"] == 600
     assert e.falso.vinculaciones[0]["nombre_pc"] == datos["pcname"]
+    # The installation id from the credential store, so the app can say «Esta PC ya está vinculada».
+    assert e.falso.vinculaciones[0]["id_instalacion"] == e.almacen.id_instalacion()
     assert "device_code" not in json.dumps(datos)
     assert "dispositivo-secreto" not in json.dumps(datos)
 
@@ -123,6 +125,17 @@ def test_al_reiniciar_sigue_vinculada_sin_pedir_el_codigo(e: Escenario) -> None:
     otro.iniciar()
     assert otro.estado().pantalla is Pantalla.PRINCIPAL  # CA-28.7
     assert len(e.falso.vinculaciones) == 1
+
+
+def test_el_id_de_instalacion_sobrevive_a_quitarla(e: Escenario) -> None:
+    c = e.vincular()
+    c.ir_a_estado()
+    esperar(lambda: c.pc is not None and c.pc.latido.pc is not None)
+    e.falso.quitar_pc()
+    c.reintentar_ahora()
+    esperar(lambda: c.estado().pantalla is Pantalla.QUITADA)
+    assert e.almacen.leer() is None
+    assert e.almacen.id_instalacion() == e.falso.vinculaciones[0]["id_instalacion"]
 
 
 def test_quitada_desde_la_app(e: Escenario) -> None:
