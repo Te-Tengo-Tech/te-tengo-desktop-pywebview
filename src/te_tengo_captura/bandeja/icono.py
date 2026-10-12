@@ -1,8 +1,10 @@
 """The pystray tray icon: status dot, tooltip and menu.
 
-The menu texts «Abrir Te Tengo Captura» and «Salir» are placeholders until the team confirms
-them (``docs/BLOCKERS.md``): the prototype shows the icon but not its menu. «Abrir…» is the
-default item, so a click on the icon opens the window.
+The menu follows the prototype's tray menu (screen 68, US-43): «Abrir Te Tengo Captura», with a
+new version «Descargar la versión X» (Mac: «Ir a la descarga de la versión X») and «Buscar
+actualizaciones»; «Salir» is a placeholder until the team confirms it (``docs/BLOCKERS.md``).
+«Abrir…» is the default item, so a click on the icon opens the window. A new version adds a
+coral dot to the icon and «· versión nueva X» to the tooltip.
 """
 
 import logging
@@ -17,6 +19,11 @@ logger = logging.getLogger(__name__)
 
 TEXTO_ABRIR = "Abrir Te Tengo Captura"
 TEXTO_SALIR = "Salir"
+TEXTO_BUSCAR = "Buscar actualizaciones"
+
+
+def texto_descarga(version: str, mac: bool) -> str:
+    return f"{'Ir a la descarga de la' if mac else 'Descargar la'} versión {version}"
 
 
 # macOS: AppKit status items may only be touched from the main thread, which pywebview owns.
@@ -38,16 +45,30 @@ def descripcion(estado: Mostrable) -> str:
 
 
 class IconoBandeja:
-    def __init__(self, abrir: Callable[[], None], salir: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        abrir: Callable[[], None],
+        salir: Callable[[], None],
+        descargar: Callable[[], None] = lambda: None,
+        buscar: Callable[[], None] = lambda: None,
+    ) -> None:
         import pystray
 
         self._punto: str | None = None
+        self._version: str | None = None  # a new version of the program (US-43)
+        self._mac = False
         self._icono: Any = pystray.Icon(
             "te-tengo-captura",
             icon=icono("ok"),
             title="Te Tengo Captura",
             menu=pystray.Menu(
                 pystray.MenuItem(TEXTO_ABRIR, lambda: abrir(), default=True),
+                pystray.MenuItem(
+                    lambda _item: texto_descarga(self._version or "", self._mac),
+                    lambda: descargar(),
+                    visible=lambda _item: self._version is not None,
+                ),
+                pystray.MenuItem(TEXTO_BUSCAR, lambda: buscar()),
                 pystray.MenuItem(TEXTO_SALIR, lambda: salir()),
             ),
         )
@@ -57,13 +78,28 @@ class IconoBandeja:
         # called from the main thread, before ``webview.start``.
         self._icono.run_detached()
 
+    def version_nueva(self, version: str | None, mac: bool = False) -> None:
+        """A new version to download (the coral dot and the menu item), or ``None``."""
+        if (version, mac) == (self._version, self._mac):
+            return
+        self._version, self._mac = version, mac
+
+        def aplicar() -> None:
+            if self._punto is not None:
+                self._icono.icon = icono(self._punto, version_nueva=version is not None)
+            self._icono.update_menu()
+
+        _en_hilo_principal(aplicar)
+
     def actualizar(self, estado: Mostrable) -> None:
         punto, titulo = estado.bandeja.k, descripcion(estado)
+        if self._version is not None:
+            titulo += f" · versión nueva {self._version}"
 
         def aplicar() -> None:
             if punto != self._punto:
                 self._punto = punto
-                self._icono.icon = icono(punto)
+                self._icono.icon = icono(punto, version_nueva=self._version is not None)
             if self._icono.title != titulo:
                 self._icono.title = titulo
 

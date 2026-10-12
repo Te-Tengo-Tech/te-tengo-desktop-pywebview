@@ -5,7 +5,8 @@ The brand kit's symbol is two figures hugging: the violet one hugs, the coral on
 icon is a ``#4B2E83`` rounded square (122 × 122 viewBox, rx 28) with the symbol scaled by 0.705
 and moved by (18, 18): the hugging figure in white, the hugged one in coral ``#FF8F7E``. The paths
 only use absolute ``M``, ``C`` and ``Z`` commands, flattened here into polygons for Pillow. The
-status dot of ``trayState`` goes in the bottom-right corner with the colours of ``.tdot``.
+status dot of ``trayState`` goes in the bottom-right corner with the colours of ``.tdot``; a new
+version of the program adds the coral ``.tbadge`` in the top-right corner (US-43).
 """
 
 import re
@@ -102,9 +103,9 @@ def poligono(ruta: str, pasos: int = 16) -> list[Punto]:
     return puntos
 
 
-def icono(punto: str | None = None, tamano: int = 64) -> Image.Image:
+def icono(punto: str | None = None, tamano: int = 64, version_nueva: bool = False) -> Image.Image:
     """The app icon at ``tamano`` px, with the status dot ``ok``, ``idle``, ``warn``, ``live`` or
-    ``off``."""
+    ``off``, and the coral dot of a new version."""
     lado = tamano * _SOBREMUESTREO
     e = lado / _LADO_SVG  # SVG units → pixels
 
@@ -139,4 +140,10 @@ def icono(punto: str | None = None, tamano: int = 64) -> Image.Image:
             )
         else:
             dibujo.ellipse((cx - radio, cy - radio, cx + radio, cy + radio), fill=PUNTOS[punto])
+    if version_nueva:
+        radio = lado * 0.13
+        cx, cy = lado - radio - lado * 0.04, radio + lado * 0.04
+        anillo = radio + lado * 0.04
+        dibujo.ellipse((cx - anillo, cy - anillo, cx + anillo, cy + anillo), fill=ANILLO)
+        dibujo.ellipse((cx - radio, cy - radio, cx + radio, cy + radio), fill=CORAL)
     return imagen.resize((tamano, tamano), Image.Resampling.LANCZOS)

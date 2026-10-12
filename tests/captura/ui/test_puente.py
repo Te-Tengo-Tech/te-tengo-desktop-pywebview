@@ -62,6 +62,11 @@ def test_el_puente_expone_solo_los_metodos_del_contrato() -> None:
         "repeticionPoses",
         "repeticionVideo",
         "cerrarRepeticion",
+        "buscarActualizaciones",
+        "descargarActualizacion",
+        "cancelarActualizacion",
+        "irALaDescarga",
+        "actualizarAutomaticamente",
     }
     assert puente.estado() == {"situacion": "cuidando"}
     assert puente.vistaPrevia("sala") == {"jpeg": "/9hqcGVn"}

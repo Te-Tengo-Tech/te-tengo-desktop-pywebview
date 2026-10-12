@@ -2,7 +2,8 @@
 
 Startup: the splash shows the real startup steps, then the status window appears. Closing or
 minimizing the window hides it to the tray (the first time with a system notification); the
-tray menu opens it again or exits.
+tray menu opens it again, downloads a new version or looks for one (US-43), or exits. To install
+an update the updater calls ``salir`` once the installer started.
 """
 
 import logging
@@ -11,10 +12,11 @@ import tempfile
 from collections.abc import MutableMapping
 from pathlib import Path
 
+from te_tengo_captura.actualizaciones.actualizador import Plataforma
 from te_tengo_captura.bandeja.avisos import Avisos
 from te_tengo_captura.bandeja.icono import EN_MACOS, IconoBandeja
 from te_tengo_captura.bandeja.iconos import icono
-from te_tengo_captura.coordinador import Coordinador
+from te_tengo_captura.coordinador import Coordinador, EstadoVentana
 from te_tengo_captura.ui import arranque
 from te_tengo_captura.ui.puente import Acciones, Puente
 from te_tengo_captura.ui.ventana import VentanaEstado
@@ -64,7 +66,12 @@ def mostrar_en_carpeta(ruta: str) -> None:
 class Aplicacion:
     def __init__(self, agente: Coordinador) -> None:
         self._agente = agente
-        self._icono = IconoBandeja(abrir=self.abrir, salir=self.salir)
+        self._icono = IconoBandeja(
+            abrir=self.abrir,
+            salir=self.salir,
+            descargar=lambda: self._desde_la_bandeja("updGo"),
+            buscar=lambda: self._desde_la_bandeja("updCheck"),
+        )
         self._avisos = Avisos(self._icono.notificar)
         puente = Puente(
             estado=lambda: agente.estado().a_json(),
@@ -96,13 +103,20 @@ class Aplicacion:
                 repeticion_poses=agente.repeticion_poses,
                 repeticion_video=agente.repeticion_video,
                 cerrar_repeticion=agente.cerrar_repeticion,
+                buscar_actualizaciones=agente.actualizador.buscar,
+                descargar_actualizacion=agente.actualizador.descargar,
+                cancelar_actualizacion=agente.actualizador.cancelar,
+                ir_a_la_descarga=agente.actualizador.ir_a_la_descarga,
+                actualizacion_automatica=agente.cambiar_actualizacion_automatica,
             ),
         )
         self._inicio = arranque.VentanaArranque(agente.version)
+        agente.actualizador.al_salir = self.salir  # the installer opens the new version
         self._ventana = VentanaEstado(puente, al_ocultar=self._al_ocultar, oculta=True)
         agente.suscribir(self._ventana.actualizar)
         agente.suscribir(self._icono.actualizar)
         agente.suscribir(self._avisos.estado)
+        agente.suscribir(self._version_nueva)
 
     def ejecutar(self) -> None:
         import webview
@@ -141,6 +155,22 @@ class Aplicacion:
         if carpeta is None:
             return {"ok": False, "cancelado": True}
         return self._agente.cambiar_carpeta(carpeta / "TeTengo" / "Datos")
+
+    def _desde_la_bandeja(self, accion: str) -> None:
+        """«Descargar la versión X» or «Buscar actualizaciones» from the tray menu: the window
+        opens and does it, as its own buttons do."""
+        self.abrir()
+        self._ventana.accion(accion)
+
+    def _version_nueva(self, _estado: EstadoVentana) -> None:
+        actualizador = self._agente.actualizador
+        nueva = actualizador.nueva
+        mac = actualizador.plataforma is Plataforma.MAC
+        restart = actualizador.estado is not None and actualizador.estado.value == "restart"
+        self._icono.version_nueva(nueva.version if nueva and not restart else None, mac)
+        self._avisos.version_nueva(
+            actualizador.aviso_pendiente(), mac, actualizador.marcar_notificada
+        )
 
     def _al_ocultar(self) -> None:
         self._avisos.ventana_oculta(self._agente.estado())
