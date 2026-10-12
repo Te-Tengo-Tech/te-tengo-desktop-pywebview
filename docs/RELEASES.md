@@ -230,7 +230,8 @@ Inno Setup builds `te-tengo-captura-<version>-instalador.exe` ([`packaging/te-te
 | Configuration (optional) | `/CONFIG="C:\ruta\config.toml"` copies the household's installation file to `%APPDATA%\TeTengoCaptura\config.toml`. An existing file is never overwritten |
 | Icon | The brand icon that the PyInstaller spec draws (`build\te-tengo-captura\te-tengo-captura.ico`) |
 
-- **Upgrades.** Running a newer installer stops this user's running agent, replaces the files and starts the agent again, if a configuration exists. The agent is also restarted after a silent install (`/VERYSILENT /SUPPRESSMSGBOXES`), which is what an automatic update would use.
+- **Upgrades.** Running a newer installer stops this user's running agent, replaces the files and starts the agent again, if a configuration exists. A plain silent install (`/VERYSILENT /SUPPRESSMSGBOXES`) behaves the same way.
+- **Silent update started by the agent** (US-43, below): `te-tengo-captura-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /RELANZAR /LOG=<file>`. With `/RELANZAR` the installer (`PrepareToInstall`) first waits, at most 60 s, until the agent has exited by itself (it polls `CheckForMutexes` on the named mutex `TeTengoCapturaEnEjecucion`, which the agent holds while it runs, `src/te_tengo_captura/instancia.py`); if it is still running it is stopped with `taskkill /F` **without** `/T`, because the installer is in the agent's process tree. It then replaces the program and opens the agent again (a `[Run]` entry that is not `postinstall`, so it runs in silent mode, for an installation and for a linked PC with no `config.toml` alike). Interactive installs and silent installs without `/RELANZAR` are unchanged. The installer only writes `{app}` and the `Run` value: `config.toml` (`%APPDATA%`), the data folder (`%LOCALAPPDATA%\TeTengoCaptura`) and the PC's tokens (Credential Manager) are never touched.
 - **Uninstall** (*Settings → Apps*, or `unins000.exe`):
   1. It stops the agent, then removes the program, the shortcut and the autostart value.
   2. It then asks «¿Eliminar también la configuración y los datos…?» The default is **No**, so a reinstall keeps the installation credential and any pending events.
@@ -316,12 +317,12 @@ On first run, an unsigned installer (and the unsigned exe) triggers **Microsoft 
 - **Updates.** They still come from the installer: the Store does not update Win32 apps itself.
 - **Not needed for the pilot.** It is worth it once households install the agent without the team.
 
-## Update notices: `versionAgente`
-- **What exists today.** `GET /api/agente/configuracion` returns `versionAgente`: the API's `TT_AGENTE_VERSION_PUBLICADA`. The agent fetches it at startup and every hour (`src/te_tengo_captura/umbrales_remotos.py`). When it differs from its own `__version__`, the agent **only logs it** («Versión del agente publicada: …»).
-- **How it could notify updates** (a proposal; it changes `docs/AGENT_CONTRACT.md` in both repositories, so it needs the team's agreement):
-  1. **Compare as versions,** not strings (`packaging.version.Version`), and act only when the published version is **newer**. That way a downgrade or a test build never triggers anything.
-  2. **Notify:** show «Hay una versión nueva de Te Tengo Captura» in the window footer and as a tray notification. The copy must be added to the desktop prototype first (AGENTS.md: no invented copy). The project team then runs the new installer, which stops and restarts the agent and keeps the configuration and the outbox.
-  3. **Optional automatic update:** extend the response with `urlDescarga` and `sha256` of the installer.
-     - The agent downloads it to its data directory and checks the SHA-256 and the **Authenticode signature**, so this needs signing.
-     - It then runs it with `/VERYSILENT /SUPPRESSMSGBOXES`. The installer stops the agent and starts the new one.
-     - It should only do this while no event is pending in the outbox and no live view is open.
+## Updates of the agent (US-43)
+The agent updates itself from `GET /api/versiones` (contract, "Updates (US-43)"); `versionAgente` of `GET /api/agente/configuracion` is still only logged. What the API publishes there (version, installer URL, SHA-256, size, notes, minimum version) comes from the release workflows.
+
+- **When:** at startup, once a day and on «Buscar actualizaciones» (Avanzado › Acerca de, or the tray menu). The call carries no token. Without internet it tries again an hour later; an older API (`404`) means no information.
+- **Windows:** «Descargar» downloads the installer to `%LOCALAPPDATA%\TeTengoCaptura\actualizaciones\` after checking the disk has its size plus 100 MB, verifies its SHA-256, writes `actualizacion.json` (from, to) and runs it silently with `/RELANZAR` (above), then exits. The next start says «Terminando la actualización…», deletes the installer (Inno Setup's `instalacion.log` stays for the diagnostic) and records `PC_ACTUALIZADA` in the activity log (any start with a newer version than the last one that ran does, so a manual install is recorded too). Every failure deletes the file and keeps the current version.
+- **Automatically:** «Actualizar automáticamente», on by default, installs a new version between 03:00 and 06:00 local time, once per night, only with no fall alert in progress and no live view, pre-warm or preview open. The PC heartbeat reports the switch (`actualizacionAutomatica`).
+- **Never during an alert or a live view:** the download and the verification go on; the restart waits and continues by itself.
+- **macOS:** nothing is downloaded: «Ir a la descarga» opens `paginaDescargas`, until the `.dmg` is notarized.
+- **Not verified on real hardware** ([BLOCKERS.md](BLOCKERS.md)): the silent install, the mutex wait and the relaunch on a real Windows PC. Authenticode verification of the downloaded installer is not done (no certificate yet); the SHA-256 from the API is the check.
