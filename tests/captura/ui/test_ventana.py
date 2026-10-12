@@ -4,9 +4,10 @@ from pathlib import Path
 import pytest
 
 from te_tengo_captura.config import Configuracion
-from te_tengo_captura.estado import Entradas, derivar
 from te_tengo_captura.ui.puente import Puente
 from te_tengo_captura.ui.ventana import ALTO, ANCHO, WEB, VentanaEstado
+from tests.captura.estados import estado as estado_de_ejemplo
+from tests.captura.estados import ventana
 from tests.captura.ui.pystray_falso import PystrayFalso
 from tests.captura.ui.webview_falso import WebviewFalso
 
@@ -53,8 +54,7 @@ def test_actualiza_la_pagina_solo_cuando_cargo(
 ) -> None:
     estado = VentanaEstado(puente())
     ventana = webview.ventanas[0]
-    entradas = Entradas(True, True, True, None, 2, 8, "Sala")
-    agente = derivar(entradas, configuracion, "1.0.0")
+    agente = estado_de_ejemplo()
     estado.actualizar(agente)
     assert ventana.scripts == []
     ventana.events.loaded.disparar()
@@ -63,15 +63,23 @@ def test_actualiza_la_pagina_solo_cuando_cargo(
 
 
 def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
-    webview: WebviewFalso, configuracion: Configuracion, monkeypatch: pytest.MonkeyPatch
+    webview: WebviewFalso,
+    configuracion: Configuracion,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     pystray = PystrayFalso()
     monkeypatch.setitem(sys.modules, "pystray", pystray)
+    from te_tengo_captura.actualizaciones.actualizador import Actualizador
     from te_tengo_captura.ui import arranque
     from te_tengo_captura.ui.aplicacion import ejecutar
 
     class AgenteFalso:
         version = "1.0.0"
+        actualizador = Actualizador("1.0.0", tmp_path, lambda: None)
+
+        def cambiar_actualizacion_automatica(self, activar: bool) -> bool:
+            return activar
 
         def __init__(self) -> None:
             self.eventos: list[str] = []
@@ -80,7 +88,7 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         config = configuracion
 
         def estado(self) -> object:
-            return derivar(Entradas(True, True, True, None, 2, 8, "Sala"), configuracion, "1.0.0")
+            return ventana(estado_de_ejemplo())
 
         def publicar_estado(self) -> None:
             self.eventos.append("publicar")
@@ -100,6 +108,72 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         def reintentar_ahora(self) -> bool:
             return True
 
+        def vista_previa_jpeg(self, clave: str) -> bytes | None:
+            return None
+
+        def otro_codigo(self) -> None: ...
+
+        def vincular_de_nuevo(self) -> None: ...
+
+        def ir_a_estado(self) -> None: ...
+
+        def desvincular(self, borrar: bool) -> dict[str, bool]:
+            return {"ok": False}
+
+        def ambientes(self) -> list[dict[str, object]]:
+            return []
+
+        def usar_aqui(self, d: str, a: str | None, n: str | None) -> dict[str, object]:
+            return {"ok": False}
+
+        def dejar_de_usar(self, c: str) -> dict[str, object]:
+            return {"ok": False}
+
+        def cambiar_modo_avanzado(self, activar: bool) -> bool:
+            return activar
+
+        def registro(self, c: str, u: int) -> list[dict[str, object]]:
+            return []
+
+        def medidores(self, c: str) -> None:
+            return None
+
+        def lista_actividad(self) -> list[dict[str, object]]:
+            return []
+
+        def nombre_diagnostico(self) -> str:
+            return "x.zip"
+
+        def exportar_diagnostico(self, destino: Path) -> dict[str, object]:
+            return {"ok": False}
+
+        def cambiar_almacenamiento(self, cambios: dict[str, object]) -> dict[str, object]:
+            return {"ok": True}
+
+        def cambiar_carpeta(self, nueva: Path) -> dict[str, object]:
+            return {"ok": True}
+
+        def borrar_movimientos(self) -> dict[str, object]:
+            return {"ok": True}
+
+        def conservar_movimientos(self) -> dict[str, object]:
+            return {"ok": True}
+
+        def repeticion(self) -> dict[str, object]:
+            return {"permitida": False, "camaras": []}
+
+        def repeticion_ventana(self, c: str, d: int, h: int) -> dict[str, object]:
+            return {}
+
+        def repeticion_poses(self, c: str, d: int, h: int) -> dict[str, object]:
+            return {}
+
+        def repeticion_video(self, c: str, t: int) -> bytes | None:
+            return None
+
+        def cerrar_repeticion(self, c: str, d: int, h: int, s: float) -> dict[str, object]:
+            return {"ok": True}
+
     agente = AgenteFalso()
     pasos = [arranque.Paso(22, 0, lambda: True), arranque.Paso(100, 2, lambda: True)]
     monkeypatch.setattr(arranque, "pasos", lambda _: pasos)
@@ -109,25 +183,25 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     assert webview.iniciado
     assert Path(webview.opciones["icon"]).is_file()  # window icon on Linux
     assert agente.eventos == ["iniciar", "publicar", "detener"]
-    assert len(agente.oyentes) == 3  # window, tray icon and notifications
+    assert len(agente.oyentes) == 4  # window, tray icon, notifications and new versions
     inicio, estado = webview.ventanas
     assert inicio.destruida  # the splash gives way to the status window
     assert inicio.scripts[-1] == "window.ttg && window.ttg.arranqueFin()"
     assert estado.visible
     puente = estado.opciones["js_api"]
-    assert puente.estado()["situacion"] == "enviando"
+    assert puente.estado()["situacion"] == "cuidando"
     bandeja = pystray.iconos[0]
     assert not bandeja.corriendo  # stopped when the app ended
     puente.cerrar()
     assert not estado.visible
     assert bandeja.notificaciones == [
         (
-            "Te Tengo Captura sigue funcionando en segundo plano",
-            "Sigue enviando el video de la cámara. Ábrelo desde su ícono, junto al reloj.",
+            "Sigue funcionando en segundo plano",
+            "Cuida la sala. Ábrelo junto al reloj.",
         )
     ]
     assert bandeja.menu is not None
-    abrir, salir = bandeja.menu.items
+    abrir, _descargar, _buscar, salir = bandeja.menu.items
     abrir.accion()
     assert estado.visible
     salir.accion()

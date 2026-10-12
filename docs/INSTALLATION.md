@@ -1,4 +1,21 @@
-# Installation guide (project team)
+# Installation guide
+
+## 0. New installs: link the PC with the phone (US-28)
+
+Since the change request «PCs, cámaras y datos de movimiento», a new PC needs **no configuration file and no credential**. The household's owner links it from the app:
+
+1. Install Te Tengo Captura (section 3) and start it. With no `config.toml` it opens on «Vincula esta PC con tu celular»: a QR, an 8-letter code (`XXXX-XXXX`, consonants only), the address `app.tetengo.reqsai.tech/vincular` and a 10-minute countdown. The code renews itself when it expires (CA-28.3).
+2. In the app: Ajustes › PCs y cámaras › Agregar PC, scan the QR or type the code, check the PC's name, system and version, and «Aprobar» (only the owner can, CA-28.5).
+3. Within a few seconds the PC says «Vinculada a la casa de …» and lists the webcams it detected. Its tokens are stored in the operating system's credential store (Windows Credential Manager, the macOS Keychain), never in files.
+4. The owner chooses each camera's room in the app («Elige las cámaras»: each webcam by its name, with a short preview; US-29). The PC follows on its own: only the cameras in use capture, each one by the operating system's unique id, so plugging another webcam or rebooting never changes which camera watches each room. Whoever installs the PC without the owner's phone can use «Cámaras › Elegir aquí (si estás instalando)» on the PC, with the same rules; the app shows the choice. `uv run python scripts/listar_camaras.py` prints the webcams with their ids.
+
+The PC stays linked through restarts and network changes; it only asks for a new link after being removed from the app, «Desvincular» in its «Cámaras» tab, or 90 days without internet (CA-28.7). Removing it from the app makes it stop capturing at once, delete its tokens and show the code again (CA-31.1, CA-31.2).
+
+The production API is the default (`https://api.tetengo.reqsai.tech`). To link against another API (a local one for tests) pass `--api-url http://localhost:8080`, or write a `config.toml` with only `api_url` (and optionally `[vista_en_vivo]` and `[clasificacion]`). Headless (`--sin-interfaz`), the log prints the code: `Código para vincular esta PC: KQWT-MXHD …`.
+
+The rest of this guide is the **installation** the project team made before PC links. It keeps working unchanged: a `config.toml` with `credencial_instalacion` runs as before. If the household's owner removes that installation («PC de la casa») from the app, the agent stops capturing, deletes the credential from `config.toml` and shows the link code.
+
+## Installation by the project team (until now)
 
 Te Tengo Captura is installed by the project team on the household PC, with a fixed configuration. The family does not configure anything on the PC: consent, pauses, room name and alerts are managed in the Te Tengo mobile app.
 
@@ -116,9 +133,9 @@ To check the framing, run `make camara` from the repository on that PC. It shows
 
 ## 6. First start
 
-Start `te-tengo-captura.exe`. The splash shows «Iniciando…», «Abriendo la webcam configurada…» and «Conectando con Te Tengo…», then the status window appears. It should show «Enviando video · conectado», or «Esperando consentimiento» if the family has not registered consent yet. Any other state is explained in section 8.
+Start `te-tengo-captura.exe`. The splash shows «Iniciando…», «Abriendo las cámaras…» and «Conectando con Te Tengo…», then the window appears on its «Estado» tab. It should say «Te Tengo cuida la sala · Todo funciona bien.», or «Falta el consentimiento de Rosa» if the family has not registered consent yet. Any other state is explained in section 8. The «Cámaras» tab shows the webcam with a preview that is only seen on this PC, to check the framing (section 5).
 
-Close the window: it stays in the tray, next to the clock, with a status dot (green sending, grey paused, amber problem). The first time, Windows shows «Te Tengo Captura sigue funcionando en segundo plano».
+Close the window: it stays in the tray, next to the clock, with a status dot (green sending, grey paused, amber problem). The first time, Windows shows «Sigue funcionando en segundo plano».
 
 ## 7. Verify that the agent registered
 
@@ -149,20 +166,21 @@ Check these, in order:
 
 ## 8. Troubleshooting by window state
 
-The window shows one state at a time, with this priority: webcam disconnected › no internet › waiting for consent › paused › sending. The order and copy come from `camState`, `health` and `trayState` in the prototype (`docs/references/desktop-prototype/src/core.js`), ported in `src/te_tengo_captura/estado.py`. The meanings below are the prototype's screen descriptions (`core.js`, list of screens).
+The «Estado» tab says the state once, in a summary band, with one row per camera below it. The summary's priority is: a camera does not answer › no internet › no consent › a camera paused › someone watching live › all good. The order and copy come from `health`, `camStatus` and `trayState` in the prototype (`docs/references/desktop-prototype/src/core.js`), ported in `src/te_tengo_captura/estado.py`.
 
 | Screen | The window shows | Meaning (prototype) | What to check | Log |
 |---|---|---|---|---|
-| 01 | «Enviando video · conectado» (green) | Everything works | Nothing | `Evento … enviado` when an event goes out |
-| 02 | «En pausa hasta las …» (grey stripes) | The family paused the camera from the app; nothing is processed until that hour, then it resumes on its own | Nothing. If nobody paused it, ask the family; pauses are only made and ended in the app (US-22) | `Estado de captura: permitida=False motivo=EN_PAUSA hasta=…` |
-| 03 | «Esperando consentimiento» (amber) | Without the consent registered in the app, the webcam sends nothing | The family must complete the consent in the app (only the owner can register it); capture starts on its own (CA-05.1, CA-05.2) | `… motivo=SIN_CONSENTIMIENTO` |
-| 04 | «Sin internet · reintentando en … s» (dark) | The webcam is still connected; sending resumes on its own when the connection returns | The PC's internet, then `api_url`. «Reintentar ahora» retries at once; otherwise retries wait 2 s, doubling up to 30 s (`latido.py`). Events made offline are kept in the outbox and sent later | `Sin conexión con Te Tengo: …`, later `Conexión con Te Tengo restablecida` |
-| 05 | «Webcam desconectada: revisa el cable USB» (amber) | The USB webcam stopped answering; the app warns the family | The cable and the USB port; «Buscar de nuevo» reopens it. If the cable is fine, check `[webcam] indice` (`make camara ARGS="--listar-camaras"`) | `Webcam desconectada`, later `Webcam conectada` |
+| 01 | «Te Tengo cuida la sala · Todo funciona bien.» (green, check) | Everything works | Nothing | `Evento … enviado` when an event goes out |
+| 02 | «La sala está en pausa hasta las …» (grey) | The family paused the camera from the app; nothing is processed until that hour, then it resumes on its own | Nothing. If nobody paused it, ask the family; pauses are only made and ended in the app (US-22) | `Estado de captura: permitida=False motivo=EN_PAUSA hasta=…` |
+| 03 | «Falta el consentimiento de Rosa» (amber) | Without the consent registered in the app, the cameras are not used | The family must complete the consent in the app (only the owner can register it); capture starts on its own (CA-05.1, CA-05.2) | `… motivo=SIN_CONSENTIMIENTO` |
+| 04 | «Sin internet» with «Reintento en … s» (amber) | The cameras keep detecting on the PC and the notices wait; they go out on their own when the connection returns | The PC's internet, then `api_url`. «Reintentar ahora» retries at once; otherwise retries wait 2 s, doubling up to 30 s (`latido.py`). Events made offline are kept in the outbox and sent later | `Sin conexión con Te Tengo: …`, later `Conexión con Te Tengo restablecida` |
+| 05 | «Sala no responde» (dashed amber) | The USB webcam stopped answering; the app warns the family | The cable and the USB port; «Buscar de nuevo» reopens it. If the cable is fine, check `[webcam] indice` (`make camara ARGS="--listar-camaras"`) | `Webcam desconectada`, later `Webcam conectada` |
+| 08 | «Un familiar está viendo la sala en vivo» (violet) | A family member opened the live view in the app; it is not recorded and the access is logged | Nothing. The tray dot turns violet; with the window closed a system notice says so | `Vista en vivo solicitada`, `Vista en vivo: publicando a 15 fps` |
 
 Cases the prototype has no screen for. Each is shown with an existing state (`docs/BLOCKERS.md`):
 
 - **Rejected credential** (`401 CREDENCIAL_INVALIDA`): the window shows **04 «Sin internet»** and keeps retrying. The log says `Sin conexión con Te Tengo: POST /api/agente/camaras/registro → 401 CREDENCIAL_INVALIDA …`. Check that `credencial_instalacion` was copied exactly and that `api_url` points to the database where it was issued. If not, issue a new one (section 2).
-- **Internal error in the capture loop:** the window shows **05 «Webcam desconectada»** while the loop restarts. The log says `Error en la captura; se reinicia en N s` with the traceback.
+- **Internal error in the capture loop:** the window shows **05 «Sala no responde»** while the loop restarts. The log says `Error en la captura; se reinicia en N s` with the traceback.
 - **The agent does not start at all:** read the log. A configuration error names the field (section 4).
 - **A second launch only shows a window:** this is expected; one agent at a time (section 11).
 
@@ -173,10 +191,12 @@ Cases the prototype has no screen for. Each is shown with an existing state (`do
 | Configuration | `%APPDATA%\TeTengoCaptura\config.toml` | `~/Library/Application Support/TeTengoCaptura/config.toml` | `~/.config/TeTengoCaptura/config.toml` |
 | Outbox and pending clips (`envios.sqlite3`, `clips/`, `estado_captura.json`) | `%LOCALAPPDATA%\TeTengoCaptura\` | `~/Library/Application Support/TeTengoCaptura/` | `~/.local/share/TeTengoCaptura/` |
 | Logs (`te-tengo-captura.log`, 1 MB × 5, no secrets, no images) | `%LOCALAPPDATA%\TeTengoCaptura\Logs\` | `~/Library/Logs/TeTengoCaptura/` | `~/.local/state/TeTengoCaptura/log/` |
+| Updates (`actualizaciones.json`; while updating, `actualizaciones/` with the downloaded installer and Inno Setup's `instalacion.log`, and `actualizacion.json`) | `%LOCALAPPDATA%\TeTengoCaptura\` | `~/Library/Application Support/TeTengoCaptura/` | `~/.local/share/TeTengoCaptura/` |
+| Local storage (`movimientos/`, `video/`, `clips/`, `indice.sqlite3`; every file encrypted, `.ttg`) | `%LOCALAPPDATA%\TeTengoCaptura\Datos\` | `~/Library/Application Support/TeTengoCaptura/Datos/` | `~/.local/share/TeTengoCaptura/Datos/` |
 
 The macOS and Linux paths are the `platformdirs` defaults for the app name `TeTengoCaptura` (`src/te_tengo_captura/rutas.py`). `--datos <dir>` and `--logs <dir>` override them.
 
-The only images ever written to disk are the clips of events, and only until they are uploaded. To check a build without a webcam, run `te-tengo-captura.exe --autoprueba --logs .`. It writes `te-tengo-captura.log` with one line per check and exits with 0 when all checks pass.
+The only images ever written to disk are the clips of events (until they are uploaded, plus the local copy «Almacenamiento» keeps) and the continuous video if someone turns it on in «Almacenamiento»; both are encrypted in the data folder, whose key is in the OS credential store. «Cambiar carpeta» moves that folder (a `TeTengo\Datos` folder inside the one chosen). To check a build without a webcam, run `te-tengo-captura.exe --autoprueba --logs .`. It writes `te-tengo-captura.log` with one line per check and exits with 0 when all checks pass.
 
 ## 10. Start with the system
 
@@ -304,7 +324,7 @@ Add `--sin-interfaz` to run it with no window nor tray (for example over SSH, or
 
 The video plays in a loop, in real time, instead of the webcam (`[webcam] indice` is ignored). Expected results:
 
-- The window shows «Enviando video · conectado». The seed registered the consent, so capture is allowed.
+- The window shows «Te Tengo cuida la sala». The seed registered the consent, so capture is allowed.
 - The log (macOS: `~/Library/Logs/TeTengoCaptura/te-tengo-captura.log`) shows:
   - `Cámara registrada`;
   - `Evento detectado: caida …`;

@@ -22,26 +22,44 @@ It runs in a worker thread (``HiloCaptura``). Rules (AGENTS.md):
 
 import logging
 import threading
+import time
+from collections import deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
 from typing import Protocol
 
 from te_tengo_captura.backend.modelos import EventoAgente
 from te_tengo_captura.captura.en_vivo import TransmisorEnVivo, TransmisorNulo
-from te_tengo_captura.captura.fuentes import Captador
+from te_tengo_captura.captura.fuentes import Captador, Fotograma
 from te_tengo_captura.captura.pose import Estimador
 from te_tengo_captura.ids import uuid7
-from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico, TipoEvento
+from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico, Evento, TipoEvento
 from te_tengo_deteccion.clasificacion.umbrales import Umbrales
 from te_tengo_deteccion.clips.buffer import BufferClip, Clip
 from te_tengo_deteccion.clips.codificar import codificar_mp4
+from te_tengo_deteccion.pose.schemas import Pose
 
 logger = logging.getLogger(__name__)
 
+FOTOGRAMAS_FPS = 24  # frames over which the real rate is measured (3 s at 8 fps)
+
 # Events that are sent as alerts and carry a clip; the others are notices without video.
 EVENTOS_CON_CLIP = frozenset({TipoEvento.CAIDA, TipoEvento.MOVIMIENTO_INESTABLE})
+
+
+@dataclass(frozen=True, slots=True)
+class Analisis:
+    """One analysed frame, for the observers of the loop."""
+
+    fotograma: Fotograma
+    pose: Pose | None
+    clasificador: ClasificadorCinematico
+    eventos: list[Evento]
+    detectados: list[EventoAgente]  # the same events with their eventoId, queued
+    ocurrido_en: datetime
 
 
 class Bandeja(Protocol):
@@ -71,6 +89,7 @@ class BucleCaptura:
         reloj_utc: Callable[[], datetime] = lambda: datetime.now(UTC),
         generar_id: Callable[[], str] = uuid7,
         en_vivo: TransmisorEnVivo | None = None,
+        reloj: Callable[[], float] = time.monotonic,
     ) -> None:
         self._captador = captador
         self._estimador = estimador
@@ -90,6 +109,14 @@ class BucleCaptura:
         self._umbrales_nuevos: Umbrales | None = None
         self.deteccion_confiable = True
         self.fallando = False  # an unexpected error happened and no frame was processed since
+        self._procesados: deque[float] = deque(maxlen=FOTOGRAMAS_FPS)
+        self.demora = 0.0  # seconds MediaPipe took for the last frame («Demora del análisis»)
+        # They see every analysed frame in the capture thread: the advanced mode's log and
+        # meters, and the local storage. They must be quick; errors are logged and ignored.
+        self.observadores: list[Callable[[Analisis], None]] = []
+        # They get each encoded clip (eventoId, MP4): the local copy of US-38.
+        self.al_clip: list[Callable[[str, bytes], None]] = []
+        self._reloj = reloj
 
     @property
     def activa(self) -> bool:
@@ -100,6 +127,15 @@ class BucleCaptura:
     def webcam_conectada(self) -> bool:
         """Last known state; a webcam not opened yet (capture not allowed) is not «lost»."""
         return not self.fallando and self._captador.conectada is not False
+
+    @property
+    def fps(self) -> float:
+        """The real rate of analysed frames over the last ``FOTOGRAMAS_FPS`` (the target is 8):
+        with several cameras on one PC it shows whether the PC keeps up (US-29)."""
+        procesados = list(self._procesados)
+        if len(procesados) < 2 or self._reloj() - procesados[-1] > 2.0:
+            return 0.0
+        return (len(procesados) - 1) / max(1e-6, procesados[-1] - procesados[0])
 
     @property
     def umbrales(self) -> Umbrales:
@@ -136,8 +172,11 @@ class BucleCaptura:
         for clip in self._buffer.agregar(fotograma.instante, fotograma.jpeg):
             self._ejecutar_clip(partial(self._guardar_clip, clip))
 
+        inicio = self._reloj()
         pose = self._estimador.estimar(fotograma.imagen, fotograma.instante_ms)
+        self.demora = self._reloj() - inicio
         self.fallando = False
+        self._procesados.append(self._reloj())
         if self._en_vivo.activo:
             # The skeleton of the live view is drawn from the latest pose, in its own thread.
             self._en_vivo.anotar_pose(pose)
@@ -145,7 +184,8 @@ class BucleCaptura:
             self.deteccion_confiable = True
         ocurrido_en = self._reloj_utc()
         encolados = []
-        for evento in self._clasificador.actualizar(fotograma.instante, pose):
+        eventos = self._clasificador.actualizar(fotograma.instante, pose)
+        for evento in eventos:
             if evento.tipo is TipoEvento.DETECCION_NO_CONFIABLE:
                 self.deteccion_confiable = False
             detectado = EventoAgente(
@@ -161,6 +201,15 @@ class BucleCaptura:
             encolados.append(detectado)
         if encolados:
             self._al_encolar()
+        if self.observadores:
+            analisis = Analisis(
+                fotograma, pose, self._clasificador, eventos, encolados, ocurrido_en
+            )
+            for observador in list(self.observadores):
+                try:
+                    observador(analisis)
+                except Exception:  # an observer (log, meters, storage) never stops detection
+                    logger.exception("Error de un observador del análisis")
         return encolados
 
     def espera(self) -> float:
@@ -198,6 +247,11 @@ class BucleCaptura:
             logger.error("Clip del evento %s no disponible: %s", clip.evento_id, error)
             return
         self._al_encolar()
+        for oyente in list(self.al_clip):
+            try:
+                oyente(clip.evento_id, mp4)
+            except Exception:
+                logger.exception("Error de un oyente del clip")
 
 
 ESPERA_ERROR_INICIAL_S = 1.0

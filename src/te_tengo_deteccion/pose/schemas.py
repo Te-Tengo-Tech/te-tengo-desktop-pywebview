@@ -36,11 +36,15 @@ class Punto:
 
 @dataclass(frozen=True, slots=True)
 class Landmark:
-    """Normalized landmark (0-1) with its probability of being visible."""
+    """Normalized landmark (0-1) with its probability of being visible.
+
+    ``z`` is MediaPipe's depth relative to the hips, in about the same scale as ``x``. The
+    classifier does not use it; the agent stores it with the movements (US-37, US-38)."""
 
     x: float
     y: float
     visibilidad: float
+    z: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)

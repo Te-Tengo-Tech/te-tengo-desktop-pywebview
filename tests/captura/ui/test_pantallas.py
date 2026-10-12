@@ -1,30 +1,36 @@
-"""The window rendered in Chromium matches the prototype screens 01–05.
+"""The window rendered in Chromium matches the prototype screens (docs/references/desktop-prototype).
 
-Runs where Node.js, Playwright and Chromium are available (the cloud environment has them);
-skipped elsewhere. Differences come only from anti-aliasing, so the tolerance is small.
+Runs where Node.js, Playwright and Chromium are available (the cloud environment has them; locally
+set ``TT_PLAYWRIGHT`` to a ``node_modules/playwright`` folder and ``TT_CHROMIUM`` to a Chromium
+binary); skipped elsewhere. The prototype draws a PC with three cameras and names who did each
+thing («Luis la pausó», «Carmen está viendo»); the agent does not know those names, so only the
+screens whose copy the agent reproduces exactly are compared, and only below the tab bar (the
+prototype also shows the «Avanzado» tab). Differences come only from anti-aliasing.
 """
 
 import json
+import os
 import shutil
 import subprocess
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from pathlib import Path
-from typing import Any
 
 import pytest
 from PIL import Image, ImageChops
 
-from te_tengo_captura.config import Configuracion
-from te_tengo_captura.estado import Entradas, derivar
 from te_tengo_captura.ui.ventana import WEB
+from tests.captura.estados import camara, estado
 
 PANTALLAS = Path(__file__).resolve().parents[3] / "docs/references/desktop-prototype/screens"
-CHROMIUM = Path("/opt/pw-browsers/chromium-1194/chrome-linux/chrome")
+CHROMIUM = Path(os.environ.get("TT_CHROMIUM", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"))
 LIMA = timezone(timedelta(hours=-5))
 TOLERANCIA = 0.005  # share of pixels that may differ (anti-aliasing)
+DEBAJO_DE_LAS_PESTANAS = 2 * (36 + 50)  # title bar and tab bar, at 2x
 
 
 def _playwright() -> Path | None:
+    if propio := os.environ.get("TT_PLAYWRIGHT"):
+        return Path(propio)
     if shutil.which("npm") is None:
         return None
     raiz = subprocess.run(["npm", "root", "-g"], capture_output=True, text=True, check=False)
@@ -39,31 +45,19 @@ pytestmark = pytest.mark.skipif(
     reason="Necesita Node.js, Playwright y Chromium",
 )
 
-VARIANTES: dict[str, dict[str, Any]] = {
-    "01-enviando-video": {},
-    "02-en-pausa": {"pausada_hasta": datetime(2026, 10, 7, 20, 0, tzinfo=UTC)},
-    "03-esperando-consentimiento": {"consentimiento": False},
-    "04-sin-internet": {"en_linea": False},
-    "05-webcam-desconectada": {"webcam_conectada": False},
+TRES = (camara("Sala"), camara("Dormitorio"), camara("Pasillo"))
+VARIANTES = {
+    "01-enviando-video": estado(*TRES, zona=LIMA),
+    "03-esperando-consentimiento": estado(*TRES, zona=LIMA, consentimiento=False),
+    "04-sin-internet": estado(*TRES, zona=LIMA, en_linea=False),
+    "05-webcam-desconectada": estado(
+        camara("Sala"), camara("Dormitorio"), camara("Pasillo", webcam_conectada=False), zona=LIMA
+    ),
 }
 
 
-def test_la_ventana_coincide_con_las_pantallas_del_prototipo(
-    tmp_path: Path, configuracion: Configuracion
-) -> None:
-    base: dict[str, Any] = {
-        "webcam_conectada": True,
-        "en_linea": True,
-        "consentimiento": True,
-        "pausada_hasta": None,
-        "segundos_desde_envio": 2,
-        "segundos_para_reintento": 8,
-        "nombre_habitacion": "Sala",
-    }
-    estados = {
-        nombre: derivar(Entradas(**{**base, **cambios}), configuracion, "1.0.0", LIMA).a_json()
-        for nombre, cambios in VARIANTES.items()
-    }
+def test_la_ventana_coincide_con_las_pantallas_del_prototipo(tmp_path: Path) -> None:
+    estados = {nombre: e.a_json() for nombre, e in VARIANTES.items()}
     resultado = subprocess.run(
         [
             "node",
@@ -84,13 +78,16 @@ def test_la_ventana_coincide_con_las_pantallas_del_prototipo(
         esperada = Image.open(PANTALLAS / f"{nombre}.png").convert("L")
         obtenida = Image.open(tmp_path / f"{nombre}.png").convert("L")
         assert obtenida.size == esperada.size
-        diferencia = ImageChops.difference(esperada, obtenida).point(lambda v: 255 if v > 40 else 0)
-        distintos = diferencia.histogram()[255] / (esperada.size[0] * esperada.size[1])
+        caja = (0, DEBAJO_DE_LAS_PESTANAS, esperada.size[0], esperada.size[1])
+        diferencia = ImageChops.difference(esperada.crop(caja), obtenida.crop(caja)).point(
+            lambda v: 255 if v > 40 else 0
+        )
+        distintos = diferencia.histogram()[255] / ((caja[2] - caja[0]) * (caja[3] - caja[1]))
         assert distintos < TOLERANCIA, f"{nombre}: {distintos:.2%} de píxeles distintos"
 
 
-def test_la_cuenta_regresiva_no_mueve_el_foco(configuracion: Configuracion) -> None:
-    estado = derivar(Entradas(True, False, True, None, 2, 8, "Sala"), configuracion, "1.0.0")
+def test_la_cuenta_regresiva_no_mueve_el_foco() -> None:
+    sin_internet = estado(camara(), en_linea=False)
     resultado = subprocess.run(
         [
             "node",
@@ -99,7 +96,7 @@ def test_la_cuenta_regresiva_no_mueve_el_foco(configuracion: Configuracion) -> N
             str(CHROMIUM),
             str(WEB / "index.html"),
         ],
-        input=json.dumps(estado.a_json()),
+        input=json.dumps(sin_internet.a_json()),
         capture_output=True,
         text=True,
         check=False,

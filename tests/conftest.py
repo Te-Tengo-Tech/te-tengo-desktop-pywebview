@@ -18,4 +18,4 @@ def umbrales() -> Umbrales:
 @pytest.fixture
 def configuracion() -> Configuracion:
     """The example installation of the prototype (``config.ejemplo.toml``)."""
-    return config.cargar(RAIZ / "config.ejemplo.toml")
+    return config.cargar_instalacion(RAIZ / "config.ejemplo.toml")

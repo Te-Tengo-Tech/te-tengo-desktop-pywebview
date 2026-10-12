@@ -1,17 +1,17 @@
 # References
 
-Source material copied from the thesis documentation (Spanish, kept verbatim). Do not edit these files; they are the ground truth for copy, design and acceptance criteria.
+Source material copied from the thesis documentation repository (Spanish, kept verbatim). Do not edit these files; they are the ground truth for copy, design and acceptance criteria. The full gallery of the desktop prototype (64 screens) lives in the docs repository, `05-prototipos/app-escritorio/pantallas.html`; only the screens the agent implements are copied here.
 
 | Path | What it is |
 |---|---|
-| `PRODUCT_BACKLOG.md` | User stories and acceptance criteria (Given/When/Then) |
-| `desktop-prototype/screens/` | The eight pilot screens: 00 splash, 01–05 status window states, 06–07 tray notifications |
-| `desktop-prototype/src/core.js` | Prototype source: exact Spanish copy, state priority (`camState`, `health`, `trayState`), icons, brand SVG and room illustrations |
-| `desktop-prototype/src/app.css` | Design tokens and component styles (the window uses a subset) |
-| `desktop-prototype/src/proto.*`, `prototipo.html` | The navigable prototype (demo panel included; not part of the app) |
-| `desktop-prototype/DESIGN.md`, `PRODUCT.md` | Design and product notes. They predate ADR 0007, so they describe sending video to the cloud; see `docs/BLOCKERS.md` |
-| `desktop-prototype/*.svg` | Brand: app icon, symbol and the «Captura» logotype |
-| `desktop-prototype/fonts/` | Atkinson Hyperlegible Next and Mono (SIL Open Font License, `OFL.txt`) |
+| `PRODUCT_BACKLOG.md` | User stories and acceptance criteria (Given/When/Then), US-01 to US-40 and US-43 (updates; only its rows are synced) |
+| `BRIEF-pcs-camaras-y-movimientos.md` | Design brief of the change request «PCs, cámaras y datos de movimiento» (US-28 to US-40): screens D-28 to D-38 of the desktop |
+| `desktop-prototype/screens/` | The prototype screens the agent implements, named as in the gallery (00 splash, 01–05 states of «Estado», 06–09 tray notifications and the live view, 20 and 23 «Cámaras», 54–59 «Ver qué pasó», 64 a «?» help opened, 65–86 the updates of US-43; later screens are added with their features) |
+| `desktop-prototype/src/core.js` | Prototype source: exact Spanish copy, state priority (`health`, `camStatus`, `trayState`), icons, the brand kit's symbol and the room illustrations |
+| `desktop-prototype/src/app.css` | Design tokens and component styles (copied whole into `ui/web/app.css`) |
+| `desktop-prototype/src/proto.*` | The navigable prototype (its demo panel simulates the phone; not part of the app) |
+| `desktop-prototype/DESIGN.md`, `PRODUCT.md` | Design and product notes, including the draft copy that still needs approval |
+| `desktop-prototype/*.svg` | Brand kit: app icon, symbol and the «Captura» logotype (two figures hugging) |
 | `diagrams/integracion.puml` | Sequence diagrams per flow of the integration architecture |
 
-The future-work gallery of the prototype (camera linking with `TTG-` codes) is intentionally not copied: it is out of the pilot scope.
+The prototype loads Poppins from Google Fonts; the agent bundles it in `src/te_tengo_captura/ui/web/fonts/` (SIL Open Font License, `OFL.txt`) because it must work offline.

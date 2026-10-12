@@ -1,12 +1,13 @@
-"""Splash window (screen 00): 480 × 300, frameless, centered, in ``--morado``.
+"""Splash window (screen 00): 480 × 300, frameless, centered, on the brand's cream.
 
 The progress follows the real startup (``BOOT_STEPS`` of the prototype): «Iniciando…» while
-the agent's threads start, «Abriendo la webcam configurada…» until the webcam answers (or capture
+the agent's threads start, «Abriendo las cámaras…» until the webcam answers (or capture
 turns out not to be allowed yet), «Conectando con Te Tengo…» until the first heartbeat answers.
 Each step has a time limit so a missing webcam or internet never blocks the window. Steps keep
 the prototype's cadence as a minimum (``proto.js``: 22 % at 0.08 s, 54 % at 0.72 s, 86 % at
 1.34 s, 100 % at 1.82 s, fade out at 2.06 s), so the symbol finishes assembling before the
-status window appears even when the real steps are instant.
+status window appears even when the real steps are instant. Right after a silent update
+(US-43, screen 72) every step says «Terminando la actualización…».
 """
 
 import json
@@ -16,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from te_tengo_captura.agente import Agente
+from te_tengo_captura.coordinador import Coordinador
 from te_tengo_captura.ui.ventana import FONDO_ARRANQUE, WEB
 
 ANCHO, ALTO = 480, 300
@@ -34,18 +35,17 @@ class Paso:
     limite_s: float = LIMITE_PASO_S
 
 
-def pasos(agente: Agente) -> list[Paso]:
-    def webcam_resuelta() -> bool:
-        # Opened (or failed to open), or not opened because capture is not allowed.
-        latido = agente.latido
-        no_permitida = latido.en_linea is not None and not latido.captura_permitida()
-        return agente.captador.conectada is not None or no_permitida
+TERMINANDO_ACTUALIZACION = 3  # BOOT_STEPS[3]
 
+
+def pasos(agente: Coordinador) -> list[Paso]:
+    """The webcams opened (or failed to, or are not allowed yet), then Te Tengo answered."""
+    t = TERMINANDO_ACTUALIZACION if agente.actualizador.terminando else None
     return [
-        Paso(22, 0, lambda: True, desde_s=0.08),
-        Paso(54, 1, webcam_resuelta, desde_s=0.72),
-        Paso(86, 2, lambda: agente.latido.en_linea is not None, desde_s=1.34),
-        Paso(100, 2, lambda: True, desde_s=1.82),
+        Paso(22, t or 0, lambda: True, desde_s=0.08),
+        Paso(54, t or 1, agente.webcam_resuelta, desde_s=0.72),
+        Paso(86, t or 2, agente.conexion_resuelta, desde_s=1.34),
+        Paso(100, t or 2, lambda: True, desde_s=1.82),
     ]
 
 

@@ -1,81 +1,383 @@
-// Renders the status window with app.js under Node and checks the markup of screens 01–05.
+// Renders the window with app.js under Node and checks the markup of the prototype's screens.
 // Usage: node app.test.js <app.js>  (the states come as JSON on stdin, from test_puente.py)
 const assert = require('node:assert/strict');
 const ui = require(process.argv[2]);
 const E = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
+const U = (o) => Object.assign({tab:'estado', sel:null, open:{}, toast:null, adv:{sub:'actividad', cam:null}, log:{filters:{}, q:'', paused:false, cut:0, open:null, lines:{}}, meters:{}, acts:[], actScope:'pc', diag:{step:'intro'}}, o || {});
 
-const html = ui.win(E.enviando, '', null);
+// A help behind a «?» icon (core.js infoTip): a button that names its topic, tied to a card with role="tooltip".
+const tip = (html, label, text) => {
+  const m = html.match(new RegExp('<button type="button" class="itip-b" aria-label="Más información: '+label+'" aria-expanded="false" aria-describedby="(itip-[^"]+)">'));
+  assert.ok(m, 'no «?» for '+label);
+  assert.ok(html.includes('<span class="itip-pop" role="tooltip" id="'+m[1]+'">'+text+'</span>'), 'no text for '+label);
+};
+
+// 01 Todo funciona: the title bar, the tab bar, one summary and a row per camera.
+const html = ui.win(E.tres, U(), '');
 assert.match(html, /<span>Te Tengo Captura<\/span>/);
+assert.match(html, /pywebview-drag-region/);
 assert.match(html, /aria-label="Minimizar"/);
 assert.match(html, /aria-disabled="true" tabindex="-1" aria-label="Maximizar \(no disponible\)"/);
 assert.match(html, /data-act="close" aria-label="Cerrar"/);
-assert.match(html, /pywebview-drag-region/);
+assert.match(html, /role="tablist" aria-label="Secciones"/);
+assert.match(html, /id="tab-estado" aria-selected="true"/);
+assert.match(html, /id="tab-camaras" aria-selected="false"/);
+assert.match(html, /Esta PC: <b>Sala-Rosa<\/b>/);
 assert.match(html, /Vivienda de Rosa Huamán/);
 assert.match(html, /Jr\. Los Pinos 482, San Miguel, Lima/);
 assert.match(html, /class="health ok" role="status"/);
-assert.match(html, /Enviando video · conectado/);
-assert.match(html, /Video cifrado · último envío hace 2 s/);
-assert.match(html, /Cámara de esta casa/);
-assert.match(html, /<b class="stx send">Enviando<\/b><span class="t-meta" data-r="cs">Hace 2 s<\/span>/);
-assert.match(html, /Configurada por el equipo del proyecto/);
-assert.match(html, /<dt>Webcam<\/dt><dd>Webcam USB HD \(1080p\)<span>USB · 1920 × 1080<\/span>/);
-assert.match(html, /El nombre se cambia en la app Te Tengo/);
+assert.match(html, /Te Tengo cuida 3 habitaciones/);
+assert.match(html, /<span data-r=\"hd\">Todo funciona bien\.<\/span>/);
+assert.equal((html.match(/class="crow"/g) || []).length, 3);
+assert.match(html, /<b class="stx send">En línea<\/b><\/span>/);
+assert.match(html, /Logitech C920/);
+assert.match(html, /Datos de la instalación/);
 assert.match(html, /<dt>Instalación<\/dt><dd>22\/09\/2026<\/dd>/);
-assert.match(html, /Solo lectura\. Esta PC usa una configuración fija; si algo no funciona, avisa al equipo del proyecto\./);
-assert.match(html, /Las pausas, el consentimiento, el nombre de la habitación y las alertas se gestionan en la app Te Tengo\./);
+assert.match(html, /<dt>Programa<\/dt><dd>Te Tengo Captura 0\.5\.0<\/dd>/);
+assert.match(html, /Cámaras, pausas, consentimiento y alertas: en la app/);
 assert.match(html, /Se inicia con Windows/);
-assert.doesNotMatch(html, /class="thumb art dim"/);
+assert.doesNotMatch(html, /details class="inst" data-k="inst" open/);  // folded by default
+assert.match(ui.win(E.tres, U({open:{inst:true}}), ''), /data-k="inst" open/);
 
-const pausa = ui.win(E.pausa, '', null);
+// 02 Una cámara en pausa.
+const pausa = ui.win(E.pausa, U(), '');
 assert.match(pausa, /class="health idle"/);
-assert.match(pausa, /En pausa hasta las <span class="mono">\d\d:\d\d<\/span>/);
+assert.match(pausa, /La sala está en pausa hasta las <span class="mono">\d\d:\d\d<\/span>/);
 assert.match(pausa, /class="thumb art dim"/);
 
-const consentimiento = ui.win(E.consentimiento, '', null);
+// 03 Esperando consentimiento: no button.
+const consentimiento = ui.win(E.consentimiento, U(), '');
 assert.match(consentimiento, /class="health warn"/);
-assert.match(consentimiento, /consentimiento de Rosa en la app Te Tengo\./);
-assert.doesNotMatch(consentimiento, /<button class="btn/);
+assert.match(consentimiento, /Falta el consentimiento de Rosa/);
+assert.doesNotMatch(consentimiento.split('class="health')[1].split('</div></div>')[0], /<button/);
 
-const internet = ui.win(E.internet, '', null);
-assert.match(internet, /class="health dark"/);
-assert.match(internet, /reintentando en <span class="mono" id="retry">8<\/span> s/);
-assert.match(internet, /<button class="btn btn-ondark btn-sm" data-act="retryNow">.*Reintentar ahora<\/button>/);
-assert.match(internet, /<b class="stx off">Sin conexión<\/b><span class="t-meta" data-r="cs">Esperando internet/);
+// 04 Sin internet: the countdown is a patchable region with «Reintentar ahora».
+const internet = ui.win(E.internet, U(), '');
+assert.match(internet, /class="health offline"/);
+assert.match(internet, /<span data-r="hd">Las cámaras siguen cuidando; los avisos esperan\. Reintento en <span class="mono" id="retry">8<\/span> s\.<\/span>/);
+assert.match(internet, /data-act="retryNow">.*Reintentar ahora<\/button>/);
+assert.equal(ui.structure(E.internet), ui.structure(Object.assign({}, E.internet, {retry: 7, health: Object.assign({}, E.internet.health, {detalle_html: 'x'})})));
 
-const webcam = ui.win(E.webcam, '', null);
-assert.match(webcam, /class="health warn lost"/);
-assert.match(webcam, /<button class="btn btn-secondary btn-sm" data-act="rescan">.*Buscar de nuevo<\/button>/);
+// 05 Una cámara no responde.
+const perdida = ui.win(E.perdida, U(), '');
+assert.match(perdida, /class="health warn lost"/);
+assert.match(perdida, /class="crow lost"/);
+assert.match(perdida, /data-act="rescan">.*Buscar de nuevo<\/button>/);
 
-// User-provided values are escaped.
-const dormitorio = ui.win(E.dormitorio, '', null);
-assert.match(dormitorio, /Dormitorio &lt;b&gt;/);
-assert.doesNotMatch(dormitorio, /Dormitorio <b>/);
+// 08 Un familiar ve en vivo.
+const vivo = ui.win(E.vivo, U(), '');
+assert.match(vivo, /class="health live"/);
+assert.match(vivo, /Un familiar está viendo la sala en vivo/);
+assert.match(vivo, /<b class="stx live">En vivo<\/b>/);
+assert.match(vivo, /<span data-r="hd">Desde las <span class="mono">\d\d:\d\d<\/span><\/span>/);
+assert.doesNotMatch(vivo, /no se graba · queda registrado/);
+tip(vivo, 'privacidad', 'No se graba. Queda en el registro de accesos que ve la familia en la app.');
+assert.match(vivo, /class="itip end" data-tip="health-live"/);
 
-// The countdown only changes a [data-r] region: no full render, so focus stays put.
-const despues = {...E.internet, retry: 7, health: {...E.internet.health, titulo_html: E.internet.health.titulo_html.replace('>8<', '>7<')}};
-assert.equal(ui.structure(E.internet), ui.structure(despues));
-assert.equal(ui.transition(E.internet, despues), null);
+// Names from the API are escaped.
+assert.match(ui.win(E.html, U(), ''), /Dormitorio &lt;b&gt;/);
 
-// Notices when the state changes, verbatim from proto.js.
-assert.equal(ui.transition(E.webcam, E.enviando).text, 'Se volvió a conectar la Webcam USB HD (1080p). El envío se reanudó.');
-assert.equal(ui.transition(E.internet, E.enviando).text, 'Conexión restablecida. El envío se reanudó.');
-assert.equal(ui.transition(E.consentimiento, E.enviando).text, 'Consentimiento registrado en la app Te Tengo. Empezó el envío.');
-assert.match(ui.transition(E.enviando, E.pausa).text, /^La familia pausó la cámara desde la app Te Tengo hasta las \d\d:\d\d\.$/);
-assert.equal(ui.transition(E.pausa, E.enviando).text, 'La pausa terminó: el envío se reanudó.');
-assert.equal(ui.transition(E.enviando, {...E.enviando, room: 'Sala comedor'}).text, 'La familia cambió el nombre de la habitación en la app: «Sala comedor».');
-assert.equal(ui.transition(null, E.enviando), null);
-assert.equal(ui.transition({...E.consentimiento, listo: false}, E.enviando), null);
+// Cámaras: the webcams of this PC with their local preview.
+const camaras = ui.win(E.tres, U({tab:'camaras', sel:'dormitorio'}), '');
+assert.match(camaras, /id="tab-camaras" aria-selected="true"/);
+assert.match(camaras, /Cámaras de esta PC/);
+assert.match(camaras, /Las habitaciones se eligen en la app\./);
+assert.match(camaras, /role="radiogroup" aria-labelledby="g-cams"/);
+assert.match(camaras, /aria-checked="true" tabindex="0" data-act="selCam" data-arg="dormitorio"/);
+assert.match(camaras, /En uso · Dormitorio/);
+assert.match(camaras, /id="pv" data-clave="dormitorio"/);
+assert.match(camaras, /class="itip up start pv-lock" data-tip="pvlock"><button type="button" class="itip-b" aria-label="Más información: vista previa local"[^>]*><svg[^>]*><rect x="5" y="10.5"/);
+tip(camaras, 'vista previa local', 'La vista previa solo se ve en esta PC: no se graba ni sale de la casa. Úsala para revisar el encuadre.');
+assert.match(camaras, /<p class="grp-l tip-l"><span id="g-cams">Cámaras conectadas<\/span><span class="itip start" data-tip="many">/);
+tip(camaras, 'rendimiento', 'Si la detección va lenta, pasa alguna cámara a otra PC.');
+assert.doesNotMatch(camaras, /class="help-l"|Solo se ve en esta PC<\/span>/);
+assert.doesNotMatch(ui.win(E.uno, U({tab:'camaras'}), ''), /data-tip="many"/);  // only from the third camera
+// A tip stays open across renders (ITIP.open) and says so to assistive technology.
+ui.ITIP.open = 'pvlock';
+assert.match(ui.win(E.tres, U({tab:'camaras', sel:'dormitorio'}), ''), /class="itip up start pv-lock open" data-tip="pvlock"><button type="button" class="itip-b" aria-label="Más información: vista previa local" aria-expanded="true"/);
+ui.ITIP.open = null;
+const desconectada = ui.win(E.perdida, U({tab:'camaras', sel:'sala'}), '');
+assert.match(desconectada, /Desconectada · Sala/);
+assert.match(desconectada, /No responde: revisa el cable USB/);
+assert.match(desconectada, /Sala sigue asignada a esta cámara\. Conéctala y pulsa Buscar de nuevo\./);
 
-// The in-window toast.
-assert.match(ui.win(E.enviando, '', {kind: 'warn', icon: 'wifiOff', text: 'Aún sin internet. Seguimos intentando.'}), /<div class="wtoast warn" role="status">.*Aún sin internet\. Seguimos intentando\./);
+// In-window notices when the state changes (proto.js).
+assert.equal(ui.transition(null, E.tres), null);
+assert.equal(ui.transition(E.internet, E.tres).text, 'Volvió internet. Avisos enviados.');
+assert.equal(ui.transition(E.perdida, E.uno).text, 'La Webcam USB HD volvió a responder.');
+assert.match(ui.transition(E.uno, E.pausa).text, /^La familia pausó la Sala hasta las \d\d:\d\d\.$/);
+assert.equal(ui.transition(E.pausa, E.uno).text, 'Pausa terminada: vuelve a cuidar la Sala.');
+assert.equal(ui.transition(E.consentimiento, E.uno).text, 'Consentimiento registrado en la app.');
+assert.equal(ui.transition(E.uno, E.renombrada).text, 'Habitación renombrada en la app: «Sala comedor».');
+assert.equal(ui.transition(Object.assign({}, E.internet, {listo:false}), E.uno), null);
 
-// Every room of the prototype has its illustration, without people.
-for (const room of ['Sala', 'Dormitorio', 'Cocina', 'Pasillo']) assert.match(ui.roomSVG(room), /^<svg class="room"/);
 // The splash (screen 00).
-const boot = ui.bootWin({play: true, pct: 34, step: 0, version: '1.0.0'});
-assert.match(boot, /role="dialog" aria-label="Te Tengo Captura se está iniciando"/);
-assert.match(boot, /aria-label="Te Tengo Captura"/);
-assert.match(boot, /role="progressbar" aria-label="Progreso del inicio" aria-valuemin="0" aria-valuemax="100" aria-valuenow="34"/);
-assert.match(boot, /<span id="boot-st" aria-live="polite">Iniciando…<\/span><span class="boot-v">Versión 1\.0\.0<\/span>/);
-assert.deepEqual(ui.BOOT_STEPS, ['Iniciando…', 'Abriendo la webcam configurada…', 'Conectando con Te Tengo…']);
+const boot = ui.bootWin({pct: 34, step: 1, version: '0.5.0'});
+assert.match(boot, /Abriendo las cámaras…/);
+assert.match(boot, /Versión 0\.5\.0/);
+assert.match(boot, /aria-valuenow="34"/);
+assert.match(boot, /class="sp-mark"/);
+// Vincular esta PC (D-28.1): QR, the code letter by letter, countdown; offline; 90 days.
+const vincular = ui.win(E.vincular, U(), '');
+assert.match(vincular, /Vincula esta PC con tu celular/);
+assert.match(vincular, /Abre la app Te Tengo<\/span>/);
+assert.match(vincular, /Ajustes.*PCs y cámaras.*Agregar PC/);
+assert.match(vincular, /Escanea este código/);
+assert.match(vincular, /Esta PC: <b>Sala-Rosa<\/b>/);
+assert.match(vincular, /<svg class="qr" viewBox="-2 -2 \d+ \d+" role="img" aria-label="Código QR para vincular esta PC"/);
+assert.match(vincular, /class="qr-logo"/);
+assert.match(vincular, /O escribe este código en la app:/);
+assert.match(vincular, /<span aria-hidden="true">KQWT-MXHD<\/span><span class="sr">K Q W T, guion, M X H D<\/span>/);
+assert.match(vincular, /app\.tetengo\.reqsai\.tech\/vincular/);
+assert.match(vincular, /Vence en <span class="mono" id="pair-left">9:41<\/span>/);
+assert.match(vincular, /Esperando aprobación en el celular…/);
+assert.match(vincular, /¿Error en el celular\?/);
+assert.doesNotMatch(vincular, /class="tabbar"/);
+const renovado = ui.win(E.renovado, U(), '');
+assert.match(renovado, /Código nuevo · el anterior venció/);
+assert.match(renovado, /class="pair-left low"/);
+const sinInternet = ui.win(E.sinInternet, U(), '');
+assert.match(sinInternet, /Conecta esta PC a internet\. Reintentamos en <span class="mono" id="retry" data-r="pr">0:25<\/span>\./);
+assert.match(sinInternet, /El código aparece con conexión/);
+assert.doesNotMatch(sinInternet, /class="qr"/);
+assert.match(ui.win(E.noventa, U(), ''), /Más de 90 días sin conexión<\/b><span>Vincúlala de nuevo\./);
+assert.equal(ui.structure(E.vincular), ui.structure(Object.assign({}, E.vincular, {pair: Object.assign({}, E.vincular.pair, {left: 100})})));
+
+// Vinculada (D-28.4), rechazada (D-28.5), quitada (D-31.2).
+const vinculada = ui.win(E.vinculada, U(), '');
+assert.match(vinculada, /Vinculada a la casa de Rosa Huamán/);
+assert.match(vinculada, /Aprobó Carmen a las <span class="mono">10:31<\/span> · <b>Sala-Rosa<\/b>/);
+assert.match(vinculada, /Ahora elige las cámaras en la app<\/b>/);
+assert.match(vinculada, /Detectamos 3 cámaras/);
+assert.match(vinculada, /Falta el consentimiento de Rosa/);
+assert.match(vinculada, /data-act="toEstado"/);
+const rechazada = ui.win(E.rechazada, U(), '');
+assert.match(rechazada, /No se vinculó esta PC/);
+assert.match(rechazada, /Alguien eligió «No reconozco esta PC» en la app\./);
+assert.match(rechazada, /data-act="otherCode">.*Mostrar otro código/);
+const quitada = ui.win(E.quitada, U(), '');
+assert.match(quitada, /Se quitó de la casa de Rosa Huamán/);
+assert.match(quitada, /La familia la quitó desde la app a las <span class="mono">11:20<\/span>\.<\/p>/);
+assert.match(quitada, /data-act="pairAgain">.*Vincular de nuevo/);
+
+// A linked PC: «Desvincular esta PC» in «Cámaras» and its dialog (CA-31.4, CA-31.6).
+const pcCamaras = ui.win(E.pcPrincipal, U({tab:'camaras'}), '');
+assert.match(pcCamaras, /Esta PC: Sala-Rosa/);
+assert.match(pcCamaras, /Vinculada por Carmen el 23\/09\/2026/);
+assert.match(pcCamaras, /data-act="unlinkAsk">.*Desvincular<\/button>/);
+assert.match(pcCamaras, /Sin usar/);
+assert.doesNotMatch(ui.win(E.tres, U({tab:'camaras'}), ''), /unlinkAsk/);  // an installation
+const dialogo = ui.win(E.pcPrincipal, U({tab:'camaras', dlg:'unlink'}), '');
+assert.match(dialogo, /role="dialog" aria-modal="true"/);
+assert.match(dialogo, /¿Desvincular esta PC\?/);
+assert.match(dialogo, /La familia recibirá un aviso\./);
+assert.match(dialogo, /Borrar también los datos de esta PC \(3,2 GB\)/);
+assert.match(dialogo, /Movimientos, video y clips\.<\/span>/);
+assert.match(dialogo, /data-act="dlgClose">Cancelar/);
+assert.match(dialogo, /data-act="unlinkDo">.*Desvincular<\/button>/);
+assert.equal(ui.transition(E.vinculada, E.pcPrincipal), null);
+
+// Several cameras: the violet light while the app previews a webcam (CA-29.7), «Elegir aquí».
+const mirando = ui.win(E.pcMirando, U({tab:'camaras'}), '');
+assert.match(mirando, /class="cpick peeking"/);
+assert.match(mirando, /Un familiar la mira para elegirla<\/span>/);
+assert.doesNotMatch(mirando, /· No se graba/);
+const mirandoEstado = ui.win(E.pcMirando, U(), '');
+assert.match(mirandoEstado, /Un familiar mira la Logitech C920 para elegirla<\/b><\/div><span class="itip end" data-tip="peek">/);
+tip(mirandoEstado, 'privacidad', 'No se graba. Queda en el registro de accesos que ve la familia en la app.');
+assert.doesNotMatch(mirandoEstado, /No se graba · queda registrado/);
+assert.match(mirando, /data-act="hereOn">.*Elegir aquí \(si estás instalando\)/);
+const aqui = ui.win(E.pcPrincipal, U({tab:'camaras', here:true, sel:'id-2', rooms:[{id:'a-1', nombre:'Cocina', camaras:[{id:'x', pc:'Cocina-Rosa', estaPc:false}]}], pick:{room:'Sala', otherOn:false, other:'', err:null}}), '');
+assert.match(aqui, /Elegir aquí, si estás instalando/);
+assert.match(aqui, /Elige la habitación de cada cámara\. La familia lo verá en la app\./);
+assert.match(aqui, /data-act="hereOff">.*Volver/);
+assert.match(aqui, /<span class="rooms-l"><span id="rooms-l">¿En qué habitación está\?<\/span><span class="itip start" data-tip="bath">/);
+assert.match(aqui, /role="group" aria-labelledby="rooms-l"/);
+assert.match(aqui, /aria-disabled="true" title="Ya tiene cámara en la PC Cocina-Rosa"><span>Cocina<\/span><small>Ya tiene cámara · Cocina-Rosa<\/small>/);
+assert.match(aqui, /class="chip2 sel" aria-pressed="true" data-act="pickRoom" data-arg="Sala"/);
+assert.match(aqui, /data-act="useCam">.*Usar esta cámara/);
+tip(aqui, 'habitaciones', 'Por privacidad, no se admiten cámaras en el baño.');
+assert.doesNotMatch(aqui, /class="help-l"/);
+assert.match(ui.win(E.pcPrincipal, U({tab:'camaras', here:true, sel:'id-2', rooms:[], pick:{room:null, otherOn:true, other:'Baño', err:'bath'}}), ''), /role="alert">.*<span>Por privacidad, no se admiten cámaras en el baño\.<\/span>/);  // the error stays visible
+const duplicada = ui.win(E.pcPrincipal, U({tab:'camaras', here:true, sel:'id-2', rooms:[], pick:{room:null, otherOn:true, other:'sala', err:'dup', errRoom:'Sala', errPc:'Sala-Rosa'}}), '');
+assert.match(duplicada, /Sala ya tiene cámara \(PC Sala-Rosa\)\. Una cámara por habitación\./);
+assert.match(duplicada, /id="room-other" value="sala"/);
+const listo = o => Object.assign({}, o, {listo: true});
+assert.equal(ui.transition(listo(E.pcPrincipal), listo(E.pcConSala)).text, 'La familia eligió la Webcam USB HD para la Sala');
+assert.equal(ui.transition(listo(E.pcConSala), listo(E.pcPrincipal)).text, 'La familia dejó de usar la Webcam USB HD: ya no cuida la Sala.');
+// Avanzado (US-32 to US-34): off by default, then the live log, the meters and the activity.
+const apagado = ui.win(E.avanzadoApagado, U({tab:'avanzado'}), '');
+assert.match(apagado, /id="tab-avanzado" aria-selected="true"/);
+assert.match(apagado, /Qué detecta cada cámara y por qué avisa\. Nada sale de esta PC\./);
+assert.match(apagado, /role="switch" aria-checked="false" aria-labelledby="adv-l" data-act="advToggle"/);
+assert.doesNotMatch(apagado, /Registro en vivo/);
+assert.doesNotMatch(apagado, /Exportar diagnóstico/);
+assert.match(apagado, /Aún no hay actividad<\/b>/);
+const ADV = o => U(Object.assign({tab:'avanzado', adv:{sub:'registro', cam:'c1'}, log:{filters:{persona:true, evento:true, descarte:true, conexion:true, programa:true}, q:'', paused:false, cut:0, open:null, lines:{}}, meters:{}, acts:[], actScope:'pc', diag:{step:'intro'}}, o||{}));
+const lineas = [{id:1, t:'10:41:50', k:'persona', tone:'persona', i:'person', m:'Persona detectada en la Sala', x:'2026-09-23T10:41:50.111-05:00 INFO pose persona=1'},
+  {id:2, t:'10:41:52', k:'evento', tone:'caida', i:'warn', m:'Caída: en el suelo. Aviso enviado', x:'2026-09-23T10:41:52.000-05:00 WARN clasificador fase=CAIDA'}];
+const vacio = ui.win(E.avanzado, ADV(), '');
+assert.match(vacio, /<b id="adv-l">Modo avanzado<\/b><\/span><span class="itip start" data-tip="adv">/);
+tip(vacio, 'modo avanzado', 'Nada sale de esta PC: el registro y los medidores solo se ven aquí.');
+assert.match(vacio, /Aún no pasa nada en esta cámara/);
+assert.match(vacio, /data-act="diagOpen">.*Exportar diagnóstico/);
+assert.match(vacio, /role="radiogroup" aria-labelledby="cam-l"><button role="radio" aria-checked="true" data-act="advCam" data-arg="c1">Sala/);
+const conLineas = ui.win(E.avanzado, ADV({log:{filters:{persona:true, evento:true, descarte:true, conexion:true, programa:true}, q:'', paused:false, cut:0, open:2, lines:{c1:lineas}}}), '');
+assert.match(conLineas, /role="log" aria-label="Registro en vivo de Sala"/);
+assert.match(conLineas, /<div class="lline caida"><time>10:41:52<\/time>/);
+assert.match(conLineas, /<span class="code">2026-09-23T10:41:52\.000-05:00 WARN clasificador fase=CAIDA<\/span>/);
+assert.match(conLineas, /data-act="copyTech" data-arg="2">.*Copiar/);
+assert.match(conLineas, /aria-label="Ver línea técnica">Técnica/);
+assert.match(conLineas, /<span class="cnt" id="cnt-evento">1<\/span>/);
+const buscada = ui.win(E.avanzado, ADV({log:{filters:{persona:true, evento:true, descarte:true, conexion:true, programa:true}, q:'escalera', paused:false, cut:0, open:null, lines:{c1:lineas}}}), '');
+assert.match(buscada, /No hay líneas con «escalera»/);
+const pausada = ui.win(E.avanzado, ADV({log:{filters:{persona:true, evento:true, descarte:true, conexion:true, programa:true}, q:'', paused:true, cut:1, open:null, lines:{c1:lineas}}}), '');
+assert.match(pausada, /En pausa · <span id="log-new">1 línea nueva<\/span>/);
+const medidores = ui.win(E.avanzado, ADV({adv:{sub:'medidores', cam:'c1'}, meters:{c1:{motivo:null, fps:7.9, cpu:34, demora:0.09, persona:true, m1:0.034, m2:38.2, m3:0.84, umbralV:0.01, umbralAngulo:45, umbralRazon:1, umbralVisibilidad:0.5, fase:1, ventana:0.62, ventanaTotal:1.48, suelo:0, confirmacion:30, visibilidad:{Nariz:0.9, Hombros:0.86, Caderas:0.74, Tobillos:0.38}, esqueleto:{h:[0.5,0.2], aL:[0.48,0.8], aR:[0.52,0.8], hL:[0.48,0.5], hR:[0.52,0.5]}}}}), '');
+assert.match(medidores, /7,9<small>fps<\/small>/);
+assert.match(medidores, /Objetivo: 8 fps/);
+assert.match(medidores, /<span>Uso del procesador<\/span><b>34 %<\/b>/);
+assert.match(medidores, /Descenso de la cadera \(M1\).*0,034<small>cuerpos\/s<\/small>/);
+assert.match(medidores, /Avisa por debajo de 45°/);
+assert.match(medidores, /class="ph cur inestable" aria-current="step">.*Posible caída/);
+assert.match(medidores, /Ventana de caída <b>0,62 s<\/b>/);
+assert.match(medidores, /class="pbar low"><span>Tobillos<\/span>/);
+tip(medidores, 'vista local', 'El esqueleto solo se ve en esta PC: no se graba ni sale de la casa.');
+assert.match(medidores, /class="itip start pv-lock" data-tip="skel-lock"/);
+assert.match(medidores, /<h3>.*Fase<span class="itip start" data-tip="fase">/);
+tip(medidores, 'fases', 'Avisa si sigue en el suelo tras 1,48 s; confirma a los 30 s.');
+assert.match(medidores, /<h3>.*Puntos del cuerpo<span class="itip end" data-tip="plow">/);
+tip(medidores, 'visibilidad', 'Visibilidad de 0 a 1. Por debajo de 0,5 el punto no cuenta.');
+assert.doesNotMatch(medidores, /class="plow"|class="msub mt8"|Solo se ve en esta PC<\/span>/);
+assert.match(medidores, /<g class="skel">/);
+const sinPersona = ui.win(E.avanzado, ADV({adv:{sub:'medidores', cam:'c1'}, meters:{c1:{motivo:'sin_persona'}}}), '');
+assert.match(sinPersona, /Sin persona en la imagen/);
+assert.match(sinPersona, /Vuelven cuando la cámara vea a alguien\./);
+assert.match(ui.win(E.avanzado, ADV({adv:{sub:'medidores', cam:'c1'}, meters:{c1:{motivo:'pausa', pausa:'11:42'}}}), ''), /En pausa hasta las 11:42/);
+const actividad = ui.win(E.avanzado, ADV({adv:{sub:'actividad', cam:'c1'}, acts:[{d:'Hoy', t:'10:42', m:'Desde esta PC: se activó el modo avanzado', who:'pc', pend:true}]}), '');
+assert.match(actividad, /<h3 class="actday">Hoy<\/h3>/);
+assert.match(actividad, /Pendiente de enviar/);
+tip(actividad, 'registro de actividad', 'Nadie puede editar ni borrar esta lista.');
+assert.doesNotMatch(actividad, /class="actfoot"/);
+const diag = ui.win(E.avanzado, ADV({dlg:'diag', diag:{step:'intro', nombre:'te-tengo-diagnostico-Sala-Rosa-2026-09-23.zip'}}), '');
+assert.match(diag, /Un archivo para el equipo de soporte\./);
+assert.match(diag, /Contraseñas ni accesos/);
+assert.match(diag, /Puntos del cuerpo/);
+assert.match(diag, /te-tengo-diagnostico-Sala-Rosa-2026-09-23\.zip/);
+assert.match(ui.win(E.avanzado, ADV({dlg:'diag', diag:{step:'done', ruta:'/Docs/x.zip', tamano:'1,4 MB'}}), ''), /Diagnóstico guardado · 1,4 MB/);
+assert.match(ui.win(E.avanzado, ADV({dlg:'diag', diag:{step:'err', nombre:'x.zip'}}), ''), /No pudimos guardar en esa carpeta<\/b><span>No quedó ningún archivo\. Elige otra\./);
+// «Almacenamiento» (US-38, US-35): always visible, video off, the consent gates movements.
+const store = {carpeta:'C:\\Users\\Rosa\\AppData\\Local\\TeTengoCaptura\\Datos', uso:{movimientos:1.1e9, video:0, clips:0.2e9}, limite:50e9, estado:null, liberado:null,
+  ajustes:{carpeta:null, movimientos:true, dias_movimientos:90, video:false, dias_video:7, clips:true, dias_clips:null, limite_gb:50}, permisoMovimientos:true, nube:30, revocado:false, hayVideo:false};
+const conStore = o => Object.assign({}, E.avanzadoApagado, {store: Object.assign({}, store, o || {})});
+const ST = o => U(Object.assign({tab:'avanzado', adv:{sub:'almacenamiento', cam:'c1'}, log:{filters:{}, q:'', paused:false, cut:0, open:null, lines:{}}, meters:{}, acts:[], actScope:'pc'}, o||{}));
+const almacen = ui.win(conStore(), ST(), '');
+assert.match(almacen, /data-act="advSub" data-arg="almacenamiento"/);
+assert.match(almacen, /<b>1,3 GB<\/b><span>de 50 GB<\/span>/);
+assert.match(almacen, /Movimientos: 30 días \(lo eligió la familia\)\. Video: nunca\./);
+assert.match(almacen, /Qué se guarda aquí/);
+assert.match(almacen, /Solo Te Tengo Captura puede leerlos\./);
+assert.match(almacen, /role="switch" aria-checked="false" aria-labelledby="st-vid" data-act="stVid"/);
+assert.match(almacen, /aria-checked="true"[^>]*data-arg="dias_clips\|null">Nunca borrar/);
+assert.match(almacen, /<h3>Límite de espacio<span class="itip up start" data-tip="cap">/);
+tip(almacen, 'límite de espacio', 'Al llegar, borramos lo más antiguo: primero video, luego movimientos.');
+assert.doesNotMatch(almacen, /class="capnote"/);
+const sinPermiso = ui.win(conStore({permisoMovimientos:false, nube:null}), ST(), '');
+assert.match(sinPermiso, /Requiere el permiso de Rosa \(se registra en la app\)\./);
+assert.match(sinPermiso, /Movimientos: desactivado\. Video: nunca\./);
+assert.match(ui.win(conStore({estado:'lleno'}), ST(), ''), /No podemos guardar en la carpeta<\/b><span>Revisa el espacio del disco\. Detección y avisos siguen\./);
+assert.match(ui.win(conStore({estado:'limite', liberado:'01/10'}), ST(), ''), /Borramos el video del 01\/10 para liberar espacio/);
+assert.match(ui.win(conStore({revocado:true}), ST(), ''), /¿Borrar los movimientos de esta PC \(1,1&nbsp;GB\)\?/);
+assert.match(ui.win(conStore(), ST({dlg:'video'}), ''), /Se queda en esta PC, nunca se sube\. 480p a 8 fps, en partes de 10 min\. Ocupa mucho espacio\./);
+const movida = ui.transition(conStore({estado:'moviendo'}), conStore({carpeta:'D:\\TeTengo\\Datos'}));
+assert.equal(movida.text, 'Datos movidos a la carpeta nueva.');
+// «Ver qué pasó» (US-39): skeleton from the PC's movements, events on the timeline, stretches without data.
+const T0 = new Date(2026, 8, 23, 10, 40, 0).getTime();
+const poseDePie = [0.5,0.2, 0.47,0.3, 0.53,0.3, 0.46,0.4, 0.54,0.4, 0.45,0.5, 0.55,0.5, 0.48,0.55, 0.52,0.55, 0.48,0.7, 0.52,0.7, 0.48,0.85, 0.52,0.85];
+const rpBase = {open:true, cam:'c1', day:'2026-09-23', hour:'10:40', zoom:'10', w0:T0 - 360000, t:T0, playing:false, speed:1, video:false, state:null,
+  info:{permitida:true, camaras:[{id:'c1', room:'Sala', dias:[{valor:'2026-09-23', texto:'Hoy, 23/09/2026', corto:'miércoles 23/09'}], desde:'24/08/2026', desdeMs:T0 - 30*86400000, hastaMs:T0 + 60000}]},
+  win:{desde:T0 - 360000, hasta:T0 + 240000, hayDatos:true, video:false, eventos:[{t:T0 + 72000, k:'caida', l:'Caída'}],
+    huecos:[{a:T0 - 300000, b:T0 - 120000, motivo:'Sin persona en la imagen', corto:'Sin persona'}]},
+  poses:{desde:T0 - 10000, hasta:T0 + 110000, t:[T0], p:[poseDePie], f:[0], claves:['h','sL','sR','eL','eR','wL','wR','hL','hR','kL','kR','aL','aR']}};
+const RP = o => ADV({rp:Object.assign({}, rpBase, o||{})});
+const rep = ui.win(E.avanzado, RP(), '');
+assert.match(rep, /Ver qué pasó<\/h1>/);
+assert.match(rep, /Sala · miércoles 23\/09/);
+assert.match(rep, /Solo puntos del cuerpo, nunca video<span class="itip start" data-tip="rp">/);
+tip(rep, 'privacidad', 'Ver la repetición queda en el registro de accesos.');
+assert.doesNotMatch(rep, /· Queda en el registro de accesos/);
+assert.match(rep, /<b><span id="rp-vl">Sobre el video guardado<\/span><\/b><span>No hay video de ese momento\.<\/span>/);  // no video: the state stays visible
+const conVideo = ui.win(E.avanzado, RP({video:true, win:Object.assign({}, rpBase.win, {video:true})}), '');
+assert.match(conVideo, /Video guardado solo en esta PC<span class="itip start" data-tip="rp">/);
+tip(conVideo, 'privacidad', 'El video nunca sale de esta PC. Ver la repetición queda en el registro de accesos.');
+assert.match(conVideo, /<b><span id="rp-vl">Sobre el video guardado<\/span><span class="itip up start" data-tip="rp-vid">/);
+tip(conVideo, 'video guardado', 'El video nunca sale de esta PC.');
+assert.match(conVideo, /role="switch" aria-checked="true" aria-labelledby="rp-vl"/);
+assert.doesNotMatch(conVideo, /Nunca sale de esta PC\./);
+assert.match(rep, /class="rp-phase " id="rp-phase" aria-live="polite">.*De pie/);
+assert.match(rep, /<g class="skel"><line /);
+assert.match(rep, /aria-label="Caída, 10:41:12"/);
+assert.match(rep, /<span class="ev gap"[^>]*>Sin persona<\/span>/);
+assert.match(rep, /Datos desde el 24\/08\/2026\./);
+assert.match(rep, /Eventos \(1\)/);
+assert.match(rep, /data-act="rpSpeed" aria-label="Velocidad: 1×"/);
+assert.match(ui.win(E.avanzado, RP({t:T0 - 200000}), ''), /class="rp-phase gap"[^>]*>.*Sin persona en la imagen/);
+assert.match(ui.win(E.avanzado, RP({state:'old'}), ''), /Ya no hay movimientos de ese momento\.<\/b><span>Hay datos desde el 24\/08\/2026\. Elige otra fecha\./);
+assert.match(ui.win(E.avanzado, RP({info:{permitida:false, camaras:[]}}), ''), /Falta el permiso de Rosa para guardar movimientos<\/b><span>Se registra en la app: Privacidad › Guardar movimientos\./);
+assert.match(ui.win(E.avanzado, ADV(), ''), /data-act="replayOpen">.*Ver qué pasó/);
+// Actualizaciones (US-43): the band on every tab, «Acerca de», the dialogs (screens 65 to 86).
+const UPD = {os:'windows', ver:'0.4.3', latest:'0.5.0', minima:false, notes:['Detecta mejor las caídas con poca luz.'], date:'22/09/2026', mb:86, download:true,
+  page:'tetengo.reqsai.tech/descargas', dmg:'te-tengo-captura.dmg', st:null, pct:0, why:null, ready:false, free:null, drive:'C:', checking:false, last:'hoy 10:30', auto:true, updated:null};
+const conUpd = o => Object.assign({}, E.tres, {upd:Object.assign({}, UPD, o||{})});
+const banda = ui.win(conUpd(), U(), '');
+assert.match(banda, /class="upband" role="status" id="upband">.*<b>Hay una versión nueva \(0\.5\.0\)<\/b>/);
+assert.match(banda, /data-act="updNotes">Qué cambió<\/button><button class="btn btn-primary btn-xs" data-act="updGo">.*Descargar<\/button>/);
+assert.match(banda, /class="ab-open up" id="sub-acerca" aria-pressed="false" data-act="toAbout" aria-label="Acerca de: versión 0\.4\.3, hay una versión nueva"/);
+assert.doesNotMatch(ui.win(conUpd({latest:null}), U(), ''), /upband/);
+assert.doesNotMatch(ui.win(conUpd({latest:null}), U(), ''), /ab-open up/);
+assert.match(ui.win(conUpd({download:false}), U(), ''), /data-act="updGo">.*Ir a la descarga<\/button>/);
+assert.match(ui.win(conUpd({minima:true}), U(), ''), /<b>Actualiza Te Tengo para seguir recibiendo alertas<\/b>/);
+const bajando = ui.win(conUpd({st:'dl', pct:42}), U(), '');
+assert.match(bajando, /Descargando la versión 0\.5\.0…/);
+assert.match(bajando, /data-r="ubp"/);
+assert.match(bajando, /aria-valuenow="42"/);
+assert.match(bajando, /42 %/);
+assert.match(bajando, /La detección sigue mientras se descarga \(86 MB\)\./);
+assert.match(bajando, /data-act="updCancel">Cancelar<\/button>/);
+assert.equal(ui.structure(conUpd({st:'dl', pct:42})), ui.structure(conUpd({st:'dl', pct:43})));
+assert.match(ui.win(conUpd({st:'verify'}), U(), ''), /Verificando la descarga…<\/b>.*suma SHA-256/);
+assert.match(ui.win(conUpd({st:'restart'}), U(), ''), /Reiniciando para actualizar…<\/b><span>Se mantienen la vinculación, las cámaras y los datos\.<\/span>/);
+assert.match(ui.win(conUpd({st:'wait', why:'alerta', ready:true}), U(), ''), /class="upband wait".*Se actualizará cuando termine la alerta<\/b><span>La versión 0\.5\.0 ya está descargada y verificada\.<\/span>/);
+assert.match(ui.win(conUpd({st:'wait', why:'vivo', ready:true}), U(), ''), /Se actualizará cuando termine la vista en vivo/);
+assert.match(ui.win(conUpd({st:'net'}), U(), ''), /Sin internet: no se puede descargar la versión 0\.5\.0<\/b>.*Sigues con la versión 0\.4\.3\. No se instaló nada\..*Reintentar/);
+assert.match(ui.win(conUpd({st:'fail'}), U(), ''), /No se pudo descargar la versión 0\.5\.0/);
+assert.match(ui.win(conUpd({st:'bad'}), U(), ''), /No se pudo verificar la descarga\. No se instaló\.<\/b>.*Borramos el archivo y sigues con la versión 0\.4\.3\. Inténtalo más tarde\./);
+assert.match(ui.win(conUpd({st:'disk', free:90}), U(), ''), /Falta espacio para la descarga<\/b><span>Libera 90 MB en el disco C:\.<\/span>/);
+// «Acerca de» inside Avanzado.
+const ACERCA = o => U(Object.assign({tab:'avanzado', adv:{sub:'acerca', cam:null}}, o || {}));
+const acerca = ui.win(conUpd(), ACERCA(), '');
+assert.match(acerca, /<h2 class="t-h2">Te Tengo Captura<\/h2><p class="t-meta">Versión <span class="mono">0\.4\.3<\/span> · instalada<\/p>/);
+assert.match(acerca, /Última búsqueda: hoy <span class="mono">10:30<\/span>/);
+assert.match(acerca, /Busca sola al abrir el programa y una vez al día\./);
+assert.match(acerca, /<b id="upd-auto-l">Actualizar automáticamente<\/b><span>De madrugada, si no hay una alerta\.<\/span>/);
+assert.match(acerca, /Instala la versión nueva a las 03:00 si no hay una alerta ni una vista en vivo\./);
+assert.match(acerca, /role="switch" aria-checked="true" aria-labelledby="upd-auto-l"/);
+assert.match(acerca, /aria-pressed="true" data-act="toAbout"/);
+const ultima = ui.win(conUpd({latest:null}), ACERCA(), '');
+assert.match(ultima, /Tienes la última versión \(0\.4\.3\)/);
+assert.match(ultima, /data-act="updCheck">.*Buscar actualizaciones<\/button>/);
+assert.match(ui.win(conUpd({latest:null, checking:true}), ACERCA(), ''), /Buscando actualizaciones…/);
+assert.match(ui.win(conUpd({os:'mac', download:false, auto:false}), ACERCA(), ''), /En Mac, por ahora se actualiza a mano<\/b><span>Es temporal, hasta que la app esté firmada por Apple\./);
+// Dialogs: «Qué cambió» and the three steps on a Mac.
+const notas = ui.win(conUpd(), U({dlg:'updNotes'}), '');
+assert.match(notas, /Qué cambió en la versión 0\.5\.0<\/h2><p id="dlg-notes-d">Publicada el 22\/09\/2026 · 86 MB<\/p>/);
+assert.match(notas, /Detecta mejor las caídas con poca luz\./);
+assert.match(notas, /data-act="dlgClose">Cerrar<\/button>/);
+const pasos = ui.win(conUpd({os:'mac', download:false}), U({dlg:'updMac'}), '');
+assert.match(pasos, /Actualizar a la versión 0\.5\.0<\/h2><p id="dlg-mac-d">Abrimos <b>tetengo\.reqsai\.tech\/descargas<\/b> en tu navegador\. Baja el archivo y:/);
+assert.match(pasos, /Abre <b class="code">te-tengo-captura\.dmg<\/b>/);
+assert.match(pasos, /Arrastra Te Tengo Captura a <b>Aplicaciones<\/b>/);
+assert.match(pasos, /Elige <b>Reemplazar<\/b>/);
+assert.match(pasos, /data-act="dlgClose">Entendido<\/button>/);
+assert.equal(ui.BOOT_STEPS[3], 'Terminando la actualización…');
 console.log('ok');

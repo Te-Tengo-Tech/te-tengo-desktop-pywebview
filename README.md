@@ -29,6 +29,7 @@ USB webcam → 480p · 8 fps · JPEG 80 → MediaPipe Pose (VIDEO mode) → kine
 - **Consent and pauses are hard gates:** without consent, or while the family has paused the camera, the webcam is closed and nothing is classified or buffered (CA-05.2, CA-22.1). Capture resumes on its own (CA-22.3).
 - **No event is lost:** events go to a SQLite outbox first and are sent with retries; `eventoId` (UUID v7) makes resending safe. Clips are deleted after upload.
 - **Offline:** the window shows «Sin internet · reintentando en N s»; events made offline arrive later.
+- **Updates (US-43):** the agent asks `GET /api/versiones` at startup, once a day and on «Buscar actualizaciones» (Avanzado › Acerca de, the «i» next to the PC's name). A new version shows a band with «Qué cambió» and «Descargar»; on Windows the installer is downloaded, checked with its SHA-256 and run silently (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /RELANZAR`), and the new version opens by itself with the link, the cameras and the data in place. «Actualizar automáticamente» (on by default, Windows only) does it between 03:00 and 06:00. Nothing restarts during a fall alert or a live view. On a Mac «Ir a la descarga» opens the downloads page. Details: [docs/RELEASES.md](docs/RELEASES.md#updates-of-the-agent-us-43).
 
 Details: [docs/architecture.md](docs/architecture.md). Formulas and sources: [docs/classification-spec.md](docs/classification-spec.md).
 
@@ -56,7 +57,7 @@ make modelo                            # downloads pose_landmarker_lite.task int
 uv run te-tengo-captura --backend-falso --config config.ejemplo.toml
 ```
 
-`--backend-falso` runs the agent against an in-memory backend that implements the whole contract, so the window shows «Enviando» without the API. Other options:
+`--backend-falso` runs the agent against an in-memory backend that implements the whole contract, so the window shows «Te Tengo cuida la sala» without the API. Other options:
 
 | Option | Purpose |
 |---|---|
@@ -71,7 +72,9 @@ uv run te-tengo-captura --backend-falso --config config.ejemplo.toml
 
 ## Configuration
 
-The project team writes a fixed TOML file: `%APPDATA%\TeTengoCaptura\config.toml` on Windows (platform config directory, app name `TeTengoCaptura`), or `--config <path>`. Every field is documented in [config.ejemplo.toml](config.ejemplo.toml): API URL, installation credential, webcam index and name, household, room and installation date. Without a `[clasificacion]` table, the agent uses the calibrated thresholds of [docs/validation.md](docs/validation.md). A missing field stops the agent with a Spanish message naming it. The backend can adjust thresholds remotely (`GET /api/agente/configuracion`, hourly).
+A new PC needs no file: it links with the phone (QR or 8-letter code, US-28; [docs/INSTALLATION.md](docs/INSTALLATION.md), section 0) and keeps its tokens in the OS credential store. `--api-url` (or a `config.toml` with only `api_url`) points it to another API; `uv run te-tengo-captura --backend-falso` with no `--config` shows the link screen and approves itself after a few seconds.
+
+Installations made before PC links keep working: the project team writes a fixed TOML file: `%APPDATA%\TeTengoCaptura\config.toml` on Windows (platform config directory, app name `TeTengoCaptura`), or `--config <path>`. Every field is documented in [config.ejemplo.toml](config.ejemplo.toml): API URL, installation credential, webcam index and name, household, room and installation date. Without a `[clasificacion]` table, the agent uses the calibrated thresholds of [docs/validation.md](docs/validation.md). A missing field stops the agent with a Spanish message naming it. The backend can adjust thresholds remotely (`GET /api/agente/configuracion`, hourly).
 
 Installing on a household PC (installation credential, configuration, webcam position, verification, troubleshooting, autostart and a local end-to-end test): [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
@@ -167,7 +170,7 @@ Protocol, results per activity and limitations: [docs/validation.md](docs/valida
 
 ## Status
 
-Version 0.4.3. The agent is complete except for what needs real hardware (webcam, display, Windows packaging run); the live view publishes to MediaMTX on the API's request (`docs/AGENT_CONTRACT.md`, "Live view"). Open items: [docs/BLOCKERS.md](docs/BLOCKERS.md). Changes: [CHANGELOG.md](CHANGELOG.md).
+Version 0.5.0. The agent is complete except for what needs real hardware (webcam, display, Windows packaging run); the live view publishes to MediaMTX on the API's request (`docs/AGENT_CONTRACT.md`, "Live view"). Open items: [docs/BLOCKERS.md](docs/BLOCKERS.md). Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 

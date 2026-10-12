@@ -4,6 +4,9 @@ The first instance holds an exclusive OS lock on ``instancia.lock`` in the data 
 OS releases it if the process dies) and listens on a loopback socket on a random port. The port
 and a random token are written to ``instancia.json``. A second launch fails to take the lock,
 sends the token to that port and exits; the first instance then shows its window.
+
+On Windows the running agent also holds the named mutex ``MUTEX``: a silent update's
+installer waits until it is gone, so it never replaces the program while it runs (US-43).
 """
 
 import json
@@ -19,6 +22,20 @@ from typing import IO
 logger = logging.getLogger(__name__)
 
 MENSAJE = "mostrar"
+MUTEX = "TeTengoCapturaEnEjecucion"  # keep in sync with packaging/te-tengo-captura.iss
+
+
+def crear_mutex(nombre: str = MUTEX, kernel32: object | None = None) -> int | None:
+    """Windows: the named mutex the installer waits for; the OS frees it when the process
+    exits. ``None`` elsewhere."""
+    if kernel32 is None:
+        if sys.platform != "win32":
+            return None
+        import ctypes
+
+        kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 (Windows only)
+    manejador = kernel32.CreateMutexW(None, False, nombre)  # type: ignore[attr-defined]
+    return int(manejador) if manejador else None
 
 
 def _bloquear(archivo: IO[str]) -> bool:
@@ -43,6 +60,7 @@ class Instancia:
         self._candado: IO[str] | None = None
         self._servidor: socket.socket | None = None
         self._token = secrets.token_hex(16)
+        self._mutex: int | None = None
 
     def adquirir(self, al_mostrar: Callable[[], None]) -> bool:
         """``True`` if this is the only instance; then ``al_mostrar`` runs on each relaunch."""
@@ -52,6 +70,7 @@ class Instancia:
             archivo.close()
             return False
         self._candado = archivo
+        self._mutex = crear_mutex()
         servidor = socket.create_server(("127.0.0.1", 0))
         self._servidor = servidor
         datos = {"puerto": servidor.getsockname()[1], "token": self._token}

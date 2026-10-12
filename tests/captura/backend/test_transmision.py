@@ -281,3 +281,36 @@ def test_detener_cierra_la_conexion_abierta(
     canal.detener(espera_s=5)
     assert not canal._hilo.is_alive()
     assert not canal.conectado
+
+
+def test_desvincular_por_el_canal(api: ApiFalsa, tokens: Tokens, receptor: Receptor) -> None:
+    motivos: queue.Queue[str] = queue.Queue()
+    canal = CanalTransmision(
+        tokens, api.url, receptor, reintento_inicial_s=0.05, al_desvincular=motivos.put
+    )
+    canal.iniciar()
+    try:
+        api.conexion().send(json.dumps({"desvincular": True}))
+        assert motivos.get(timeout=5) == "desvincular"
+        assert receptor.siguiente() == ("detener",)  # nothing is published any more
+    finally:
+        canal.detener()
+
+
+def test_401_pc_desvinculada_en_el_saludo(tokens: Tokens, receptor: Receptor) -> None:
+    class Rechazo:
+        status_code = 401
+        body = json.dumps({"codigo": "PC_DESVINCULADA"}).encode()
+
+    def conectar(url: str, token: str) -> Any:
+        from websockets.exceptions import InvalidStatus
+
+        raise InvalidStatus(Rechazo())  # type: ignore[arg-type]
+
+    motivos: list[str] = []
+    canal = CanalTransmision(
+        tokens, "http://api", receptor, conectar=conectar, al_desvincular=motivos.append
+    )
+    canal.conectar_una_vez()
+    assert motivos == ["PC_DESVINCULADA"]
+    assert tokens.renovados == []  # an unlinked PC does not register again
