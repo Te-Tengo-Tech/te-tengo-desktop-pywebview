@@ -18,6 +18,7 @@ Every agent token is checked on every request: the tokens of a PC that left the 
 | `POST /api/agente/eventos` | Detected event (body below); idempotent by `eventoId` | US-11 to US-21 |
 | `POST /api/agente/eventos/{eventoId}/clip` | Returns a pre-signed S3 PUT URL to upload the 6 s + 6 s clip | US-18 |
 | `GET /api/agente/configuracion` | Current classification thresholds and agent version, so agents can update themselves | — |
+| `GET /api/versiones` | The latest published version of Te Tengo Captura per system, its installer and SHA-256 (public; API contract §12) | US-43 |
 | `POST /api/agente/eventos/{eventoId}/clip/puntos` | Pre-signed PUT URL for the body landmarks of the event's clip | US-36 |
 | `POST /api/agente/eventos/{eventoId}/clip/puntos/ligero` | Pre-signed PUT URL for the same landmarks in the light replay format | US-36 |
 | `GET /api/agente/movimientos/estado` | Whether movements may be stored, on the PC and in the cloud (camera or PC token) | US-35, US-37 |
@@ -30,7 +31,7 @@ Every agent token is checked on every request: the tokens of a PC that left the 
 | `POST /api/agente/token` | PC link: polls for the tokens, and renews them (RFC 6749 token endpoint; no token) | US-28 |
 | `POST /api/agente/token/revocacion` | PC link: revokes the refresh token, which unlinks the PC (RFC 7009; no token) | US-31 |
 | `GET /api/agente/pc` | The PC's link: household, older adult, who approved it, consent (PC token) | US-28 |
-| `POST /api/agente/pc/senal` | The PC's heartbeat, with its version and system (PC token) | US-30 |
+| `POST /api/agente/pc/senal` | The PC's heartbeat, with its version, system and automatic updates (PC token) | US-30, US-43 |
 | `DELETE /api/agente/pc` | «Desvincular esta PC» (PC token); the family is notified | US-31 |
 | `PUT /api/agente/pc/camaras/inventario` | The webcams the PC detects; returns their rooms and the tokens of those in use (PC token) | US-29 |
 | `GET /api/agente/pc/camaras` | The PC's webcams, their rooms and tokens, e.g. after reconnecting (PC token) | US-29 |
@@ -97,7 +98,17 @@ Every agent token is checked on every request: the tokens of a PC that left the 
 → `201 {urlSubida, cabeceras: {nombre: valor}, expiraEn}`: a pre-signed URL valid for 10 minutes. The agent then sends `PUT urlSubida` with exactly those headers (e.g. `Content-Type`; the map may be empty) and the MP4 body. The clip belongs to the alert the event created or updated; the app sees it once the storage has the object. Errors: `404 EVENTO_NO_ENCONTRADO` if the event is unknown or created no alert.
 
 **Configuration** — `GET /api/agente/configuracion` → `200 {versionAgente, umbrales: {…}}`, where `umbrales` uses the field names of `Umbrales` in the detection package (`docs/classification-spec.md`); unknown or missing fields keep the agent's local values.
-- Both come from the backend configuration: `versionAgente` from `tetengo.agente.version-publicada` (`TT_AGENTE_VERSION_PUBLICADA`, default `0.2.0`, the current agent release; the agent only logs a difference) and `umbrales` from the `tetengo.agente.umbrales` map, **empty by default**, so every agent keeps the thresholds calibrated at installation until the team publishes calibrated values.
+- `versionAgente` is the latest published Windows version of `GET /api/versiones` (below); while nothing is published there, the backend's `tetengo.agente.version-publicada` (`TT_AGENTE_VERSION_PUBLICADA`, default `0.2.0`). The agent only logs a difference: updates use `GET /api/versiones`.
+- `umbrales` comes from the `tetengo.agente.umbrales` map, **empty by default**, so every agent keeps the thresholds calibrated at installation until the team publishes calibrated values.
+
+**Updates (US-43)** — `GET /api/versiones` (no token; API contract §12) → `200 {windows, mac, apk, play, ios, pwa, paginaDescargas}`; the PC reads `windows` or `mac`: `{version, versionMinima | null, url | null, sha256 | null, tamanoBytes | null, publicadaEn | null, notas: [string]}`.
+- **When:** at startup and once a day (CA-43.1), and when the person chooses «Buscar actualizaciones». Without internet it tries again at the next check; it never stops detection.
+- **Windows (CA-43.2):** download `url`, check its SHA-256 against `sha256`, and only if it matches run the installer silently (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`), which replaces the program and opens it again; configuration, link (tokens), cameras and data stay. A mismatch, a failed download or a full disk deletes the file and installs nothing.
+- **Automatically (CA-43.7):** «Actualizar automáticamente», on by default on Windows, installs the new version at 03:00 (the PC's local time) with no alert in progress and no live view or preview open.
+- **macOS (CA-43.3):** only the notice and `paginaDescargas`; nothing is downloaded or installed until the disk image is notarized.
+- **Never during an alert or a live view** (CA-43.9): the notice and the restart wait until they end.
+- **Minimum version (CA-43.8):** an installed version below `versionMinima` shows «Actualiza Te Tengo para seguir recibiendo alertas» with the way to update; detection goes on.
+- **Reported:** the heartbeat sends `actualizacionAutomatica` (below) and, after an update, the PC reports `PC_ACTUALIZADA` in its activity («Activity log»).
 
 **Token expiry:** with an installation credential, any `401` other than `CREDENCIAL_INVALIDA` and `PC_DESVINCULADA` makes the agent register again with its installation credential (an expired or invalid token answers `401 SESION_EXPIRADA`). A linked PC renews its tokens instead (see "PC link"). Agent tokens only open `/api/agente/**`; family members' tokens get `403` there.
 
@@ -186,7 +197,7 @@ grant_type=refresh_token&refresh_token=<refresh_token>&client_id=te-tengo-captur
 
 **The PC's own endpoints** (its access token):
 - `GET /api/agente/pc` → `200 PcDelAgente = {pcId, hogarId, nombre, nombreAdultoMayor, vinculadaEn, vinculadaPor | null, consentimientoVigente}`. D-28.4: «Esta PC quedó vinculada a la casa de Rosa Huamán · Aprobada por Carmen a las 10:31»; with `consentimientoVigente: false` the PC says it waits for the consent and sends no video (CA-28.1). `vinculadaPor` is the approver's name, null for installations.
-- `POST /api/agente/pc/senal` every 30 s, like the cameras' heartbeat, with an optional `{versionAgente, sistemaOperativo}` → `200 PcDelAgente`. It keeps the PC «En línea» in the app even with no camera in use (CA-30.2); camera heartbeats count too.
+- `POST /api/agente/pc/senal` every 30 s, like the cameras' heartbeat, with an optional `{versionAgente, sistemaOperativo, actualizacionAutomatica}` → `200 PcDelAgente`. It keeps the PC «En línea» in the app even with no camera in use (CA-30.2); camera heartbeats count too. `actualizacionAutomatica` (boolean, US-43, CA-43.7): whether «Actualizar automáticamente» is on; the app shows it as `Pc.actualizacionAutomatica` (omitted keeps the last value).
 - `DELETE /api/agente/pc` → `204`: «Desvincular esta PC» (CA-31.3). The API revokes the PC's tokens, retires its cameras and sends push `PC_DESVINCULADA` to the family; the PC then deletes its credentials and shows the link code. Add `?datosLocalesBorrados=true` when the person also checked «Borrar también los datos guardados en esta PC» (CA-31.6): the PC deletes its data folder (movements, video and clips) itself; the API only records it in the activity log (`DATOS_LOCALES_ELIMINADOS`). Without it the folder stays, encrypted. Revoking the refresh token does the same and works without a valid access token:
 
 **Unlink with the refresh token** — `POST /api/agente/token/revocacion` (RFC 7009)
@@ -301,7 +312,7 @@ The API logs on its own every change it sees (the PC linked or unlinked, a camer
     "momentoHasta": "2026-10-10T15:46:00Z", "duracionSegundos": 180 } ] }
 ```
 → `200 {registrados, repetidos}`.
-- `tipo`: `MODO_AVANZADO_ACTIVADO`, `MODO_AVANZADO_DESACTIVADO` (CA-32.1), `GUARDADO_LOCAL_CAMBIADO` (US-38: folder, a type on or off, its period, the space limit; one entry per setting), `DATOS_LOCALES_ELIMINADOS` (e.g. the local movements after a revocation, CA-35.4) or `REPETICION_VISTA` (below). Anything else is `400 VALIDACION` (`campos["cambios[i].tipo"]`).
+- `tipo`: `MODO_AVANZADO_ACTIVADO`, `MODO_AVANZADO_DESACTIVADO` (CA-32.1), `GUARDADO_LOCAL_CAMBIADO` (US-38: folder, a type on or off, its period, the space limit; one entry per setting), `DATOS_LOCALES_ELIMINADOS` (e.g. the local movements after a revocation, CA-35.4), `PC_ACTUALIZADA` (US-43, CA-43.2: after installing an update, `objeto` `Te Tengo Captura`, `valorAnterior` the old version and `valorNuevo` the new one), `ACTUALIZACION_AUTOMATICA_ACTIVADA` / `ACTUALIZACION_AUTOMATICA_DESACTIVADA` (CA-43.7: «Actualizar automáticamente», `objeto` `Actualizar automáticamente`) or `REPETICION_VISTA` (below). Anything else is `400 VALIDACION` (`campos["cambios[i].tipo"]`).
 - `REPETICION_VISTA` (US-39, CA-39.3): someone replayed a camera's movements **on the PC** («Ver qué pasó»). Reported under the same rule as the app: only when the replay was played or scrubbed, not when it was only opened. `ocurridoEn` is when the replay was opened; `camaraId` a camera of this PC (otherwise `campos["cambios[i].camaraId"]`); `objeto` the room as the PC showed it (optional: the camera's current room); `momentoDesde` < `momentoHasta` the moment replayed, not in the future (`campos["cambios[i].momentoDesde"]` / `["…momentoHasta"]`); `duracionSegundos` (≥ 0) how long it was watched (`campos["cambios[i].duracionSegundos"]`). The PC has no member identity: the log says it was done on the PC. The API stores the moment as an ISO-8601 interval in `valorAnterior` (`"2026-10-10T15:36:00Z/2026-10-10T15:46:00Z"`) and the seconds in `valorNuevo` (`"180"`), and the app shows it in «Actividad» and in the access log (API contract §10). These four fields are ignored for the other types.
 - `id`: a UUID the PC generates once per change; sending a change again (after a timeout, or the whole offline queue) stores it once (`repetidos`). `ocurridoEn`: when it happened on the PC, not more than 5 minutes ahead of the server. `objeto` up to 120 characters, `valorAnterior` and `valorNuevo` up to 200. At most 100 changes per request.
 - The family sees them in the app as «Desde la PC Sala-Rosa: …»; the PC shows the household's log with `GET /api/actividad` only through the app (the PC has no member token).

@@ -69,6 +69,11 @@ class VentanaEstado:
         if self._cargada.is_set() and not self._saliendo:
             self._ventana.evaluate_js(script_actualizar(estado.a_json()))
 
+    def accion(self, nombre: str) -> None:
+        """Runs one of the page's actions (``ttg.accion``), e.g. from the tray menu."""
+        if self._cargada.is_set() and not self._saliendo:
+            self._ventana.evaluate_js(f"window.ttg && window.ttg.accion({json.dumps(nombre)})")
+
     def elegir_destino(self, nombre: str) -> Path | None:
         """The system's «Guardar como» with ``nombre`` proposed; ``None`` if cancelled."""
         import webview

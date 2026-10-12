@@ -13,6 +13,12 @@
 ;   place and nothing is registered twice; the uninstaller removes it;
 ; - optionally copies the installation file: /CONFIG="C:\ruta\config.toml" (never overwrites one);
 ; - stops this user's running agent before installing over it and before uninstalling;
+; - silent update started by the agent itself (US-43, src/te_tengo_captura/actualizaciones/):
+;     te-tengo-captura-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /RELANZAR /LOG=<file>
+;   waits until the agent has exited (its named mutex is gone; at most 60 s, then it is stopped
+;   without touching its process tree, which holds this installer), installs, and opens the agent
+;   again whether it is an installation (config.toml) or a linked PC (no config.toml). It never
+;   touches config.toml, the data folder or the PC's tokens (Windows Credential Manager);
 ; - on uninstall, asks whether to also delete the configuration, the outbox and the logs.
 
 #ifndef AppVersion
@@ -35,6 +41,8 @@
 ; (src/te_tengo_captura/autoinicio.py): keep them in sync.
 #define AppDirName "TeTengoCaptura"
 #define RunValueName "TeTengoCaptura"
+; The named mutex the running agent holds (src/te_tengo_captura/instancia.py, MUTEX).
+#define AppMutexName "TeTengoCapturaEnEjecucion"
 
 [Setup]
 ; Never change AppId: it identifies the installation for upgrades and uninstall.
@@ -90,7 +98,10 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 ; Without a configuration file the agent cannot start, so it is only launched when there is one.
 ; Silent upgrades relaunch it as well (no skipifsilent).
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; \
-  Flags: nowait postinstall; Check: HayConfiguracion
+  Flags: nowait postinstall; Check: HayConfiguracion and not SeDebeRelanzar
+; A silent update started by the agent (/RELANZAR, US-43): always open it again, also a linked PC
+; with no configuration file. Not a postinstall entry, so it runs in silent mode too.
+Filename: "{app}\{#AppExe}"; Flags: nowait; Check: SeDebeRelanzar
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
@@ -101,33 +112,72 @@ begin
   Result := ExpandConstant('{param:CONFIG}') <> '';
 end;
 
+{ /RELANZAR: a silent update started by the running agent (US-43). }
+function SeDebeRelanzar: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/RELANZAR') = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
 function HayConfiguracion: Boolean;
 begin
   Result := FileExists(ExpandConstant('{userappdata}\{#AppDirName}\config.toml'));
 end;
 
 { Stops this user's running agent, so its files can be replaced or removed. The outbox is SQLite,
-  which survives a forced stop; pending events are sent on the next start. }
-procedure DetenerAgente;
+  which survives a forced stop; pending events are sent on the next start. With Arbol its child
+  processes go too; a silent update never does that: this installer is one of them. }
+procedure DetenerAgente(Arbol: Boolean);
 var
   Codigo: Integer;
+  Opciones: String;
 begin
+  Opciones := '/F ';
+  if Arbol then
+    Opciones := Opciones + '/T ';
   Exec(ExpandConstant('{sys}\taskkill.exe'),
-    '/F /T /IM {#AppExe} /FI "USERNAME eq ' + GetUserNameString + '"',
+    Opciones + '/IM {#AppExe} /FI "USERNAME eq ' + GetUserNameString + '"',
     '', SW_HIDE, ewWaitUntilTerminated, Codigo);
   Sleep(1000);
 end;
 
+{ A silent update: the agent started this installer and is closing itself (it holds the named
+  mutex while it runs). Wait for it, at most 60 s. }
+procedure EsperarQueSalgaElAgente;
+var
+  Intentos: Integer;
+begin
+  Intentos := 0;
+  while CheckForMutexes('{#AppMutexName}') and (Intentos < 120) do
+  begin
+    Sleep(500);
+    Intentos := Intentos + 1;
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  DetenerAgente;
+  if SeDebeRelanzar then
+  begin
+    EsperarQueSalgaElAgente;
+    DetenerAgente(False);
+  end
+  else
+    DetenerAgente(True);
   Result := '';
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
-    DetenerAgente;
+    DetenerAgente(True);
   if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
     if MsgBox('¿Eliminar también la configuración y los datos de {#AppName} en esta PC?' + #13#10#13#10 +
       'Se borrarán el archivo de instalación, los eventos que aún no se enviaron y los registros. ' +

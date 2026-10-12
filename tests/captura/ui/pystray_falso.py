@@ -6,8 +6,22 @@ from typing import Any
 
 
 class MenuItem:
-    def __init__(self, texto: str, accion: Callable[[], Any], default: bool = False) -> None:
-        self.text, self.accion, self.default = texto, accion, default
+    def __init__(
+        self,
+        texto: str | Callable[[Any], str],
+        accion: Callable[[], Any],
+        default: bool = False,
+        visible: bool | Callable[[Any], bool] = True,
+    ) -> None:
+        self._texto, self.accion, self.default, self._visible = texto, accion, default, visible
+
+    @property
+    def text(self) -> str:
+        return self._texto(self) if callable(self._texto) else self._texto
+
+    @property
+    def visible(self) -> bool:
+        return self._visible(self) if callable(self._visible) else self._visible
 
 
 class Menu:
@@ -22,6 +36,10 @@ class Icon:
         self.name, self.icon, self.title, self.menu = nombre, icon, title, menu
         self.notificaciones: list[tuple[str, str]] = []
         self.corriendo = False
+        self.menus_actualizados = 0
+
+    def update_menu(self) -> None:
+        self.menus_actualizados += 1
 
     def run_detached(self) -> None:
         self.corriendo = True

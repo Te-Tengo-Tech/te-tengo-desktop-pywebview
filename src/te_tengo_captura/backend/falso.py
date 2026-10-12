@@ -22,6 +22,7 @@ import httpx
 
 from te_tengo_captura.backend import cliente as rutas
 from te_tengo_captura.backend import pc as rutas_pc
+from te_tengo_captura.backend import versiones as rutas_versiones
 from te_tengo_captura.backend.modelos import MotivoCaptura, iso_utc
 from te_tengo_captura.vinculacion import oauth as rutas_oauth
 
@@ -52,6 +53,21 @@ class BackendFalso:
     nombre_habitacion: str | None = None  # set by the first registration
 
     version_agente: str = "1.0.0"
+    # GET /api/versiones (US-43): what the team published; nothing by default.
+    versiones: dict[str, Any] = field(
+        default_factory=lambda: {
+            "windows": None,
+            "mac": None,
+            "apk": None,
+            "play": None,
+            "ios": None,
+            "pwa": None,
+            "paginaDescargas": None,
+        }
+    )
+    sin_versiones: bool = False  # an older API without the path: 404
+    # Installers served at http://almacen.falso/instaladores/<name> (GET).
+    instaladores: dict[str, bytes] = field(default_factory=dict)
     umbrales: dict[str, Any] = field(default_factory=dict)
 
     # Failure injection.
@@ -336,10 +352,20 @@ class BackendFalso:
             if solicitud.url.host == HOST_ALMACEN:
                 if self.almacen_falla is not None:
                     return httpx.Response(self.almacen_falla)
+                if solicitud.method == "GET" and solicitud.url.path.startswith("/instaladores/"):
+                    contenido = self.instaladores.get(
+                        solicitud.url.path.removeprefix("/instaladores/")
+                    )
+                    return httpx.Response(200 if contenido is not None else 404, content=contenido)
                 return self._subir(solicitud)
             if solicitud.headers.get("Api-Version") != rutas.API_VERSION:
                 return _problema(400, "VERSION_NO_SOPORTADA", "Falta Api-Version: 1")
             ruta, metodo = solicitud.url.path, solicitud.method
+            if (metodo, ruta) == ("GET", rutas_versiones.RUTA_VERSIONES):
+                # Public: no token is needed nor checked (contract, "Updates (US-43)").
+                if self.sin_versiones:
+                    return _problema(404, "RUTA_NO_ENCONTRADA", ruta)
+                return httpx.Response(200, json=self.versiones)
             if metodo == "POST" and ruta in (
                 rutas_oauth.RUTA_VINCULACION,
                 rutas_oauth.RUTA_TOKEN,
@@ -506,6 +532,9 @@ class BackendFalso:
                 "GUARDADO_LOCAL_CAMBIADO",
                 "DATOS_LOCALES_ELIMINADOS",
                 "REPETICION_VISTA",
+                "PC_ACTUALIZADA",
+                "ACTUALIZACION_AUTOMATICA_ACTIVADA",
+                "ACTUALIZACION_AUTOMATICA_DESACTIVADA",
             }
             if len(cambios) > 100 or any(c.get("tipo") not in permitidos for c in cambios):
                 return _problema(400, "VALIDACION", "Cambio inválido")

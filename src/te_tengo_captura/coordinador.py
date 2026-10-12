@@ -20,6 +20,11 @@ Moves:
   left pending until there is internet), the credentials and, if asked, the data saved on the PC
   are deleted, and the code is shown again.
 
+It also owns the updates of the program (US-43, ``actualizaciones/``): it tells them whether a
+fall alert, a live view or a preview is open (they wait for it), records ``PC_ACTUALIZADA`` and
+the «Actualizar automáticamente» switch in the activity log, and adds the band's state to the
+window's.
+
 The coordinator also runs the state notifier: every second the window, the tray icon and the
 system notices get an ``EstadoVentana`` (``suscribir``). Moves triggered by a worker thread run
 in their own thread, so no thread ever waits for itself to stop.
@@ -41,6 +46,11 @@ from typing import Any
 import httpx
 
 from te_tengo_captura.actividad import RegistroActividad, para_la_ventana
+from te_tengo_captura.actualizaciones.actualizador import (
+    Actualizador,
+    Plataforma,
+    plataforma_actual,
+)
 from te_tengo_captura.agente import Agente
 from te_tengo_captura.agente_pc import (
     AgentePc,
@@ -54,6 +64,7 @@ from te_tengo_captura.almacen.repeticion import Repeticion
 from te_tengo_captura.backend.errores import ErrorBackendError
 from te_tengo_captura.backend.modelos import EstadoMovimientos, iso_utc
 from te_tengo_captura.backend.pc import ClientePc
+from te_tengo_captura.backend.versiones import ClienteVersiones
 from te_tengo_captura.captura.dispositivos import Dispositivo, listar_dispositivos
 from te_tengo_captura.diagnostico import exportar, nombre_archivo
 from te_tengo_captura.diario import Diario
@@ -132,9 +143,12 @@ class Coordinador:
         registros: Path | None = None,
         llavero: Llavero | None = None,
         carpeta_datos: Path | None = None,
+        plataforma: Plataforma | str | None = "auto",
     ) -> None:
         """``fabrica`` builds the agents of a linked PC's cameras (US-29); ``diario`` keeps the
-        advanced mode's live log (US-32); ``registros`` is the log folder (diagnostic, US-34)."""
+        advanced mode's live log (US-32); ``registros`` is the log folder (diagnostic, US-34);
+        ``plataforma`` is the update channel (US-43): ``"auto"`` for this system's, ``None``
+        for none."""
         self.version = version
         self.diario = diario or Diario()
         self._registros = registros
@@ -176,11 +190,23 @@ class Coordinador:
         self._hilo_revocacion = threading.Thread(
             target=self._revocar_pendiente, name="revocacion", daemon=True
         )
+        # Updates of the program (US-43): ``GET /api/versiones`` needs no token.
+        self._versiones = ClienteVersiones(api_url, transporte)
+        self.actualizador = Actualizador(
+            version,
+            directorio_datos,
+            self._versiones.versiones,
+            _plataforma(plataforma),
+            zona=zona,
+            bloqueo=self.motivo_de_espera,
+            transporte=transporte,
+        )
 
     # ------------------------------------------------------------------ lifecycle
 
     def iniciar(self) -> None:
         self._directorio.mkdir(parents=True, exist_ok=True)
+        self._anotar_version()
         self.diario.activo = self.modo_avanzado
         self.almacen.iniciar(self._consultar_movimientos)
         if self._instalacion is not None:
@@ -196,9 +222,12 @@ class Coordinador:
                 self._iniciar_vinculacion()
         self._hilo_revocacion.start()
         self._hilo_estado.start()
+        self.actualizador.iniciar()
 
     def detener(self) -> None:
         self._detenido.set()
+        self.actualizador.detener()
+        self._versiones.cerrar()
         with self._candado:
             self._detener_modo()
         self.almacen.detener()
@@ -249,7 +278,12 @@ class Coordinador:
                 Pantalla.PRINCIPAL,
                 e.bandeja,
                 e,
-                {**e.a_json(), "advanced": self._avanzado, "store": self.almacen.estado()},
+                {
+                    **e.a_json(),
+                    "advanced": self._avanzado,
+                    "store": self.almacen.estado(),
+                    "upd": self.actualizador.a_json(),
+                },
             )
         if pc is not None:
             e = pc.estado()
@@ -270,6 +304,7 @@ class Coordinador:
                     "dataBytes": self._tamano_datos(),
                     "advanced": self._avanzado,
                     "store": self.almacen.estado(),
+                    "upd": self.actualizador.a_json(),
                 },
             )
         if vinculador is not None and vinculador.fase is Fase.RECHAZADA:
@@ -403,6 +438,54 @@ class Coordinador:
         except ErrorBackendError:
             return {"ok": False, "codigo": "PC_DESVINCULADA"}
         return {"ok": r.ok, "codigo": r.codigo}
+
+    # ------------------------------------------------------------------ updates (US-43)
+
+    def motivo_de_espera(self) -> str | None:
+        """CA-43.9: ``"alerta"`` while a camera's fall alert is in progress, ``"vivo"`` while a
+        live view (or its pre-warm), a preview from the app or this window's preview is open."""
+        agentes = list(self._agentes().values())
+        if any(a.alerta.en_curso for a in agentes):
+            return "alerta"
+        if any(
+            a.en_vivo.solicitada_desde is not None or a.en_vivo.preparada or a.vista_previa.pedida
+            for a in agentes
+        ):
+            return "vivo"
+        pc = self.pc
+        if pc is not None and (pc.camaras.mirando or pc.camaras.previa_local_abierta):
+            return "vivo"
+        return None
+
+    def cambiar_actualizacion_automatica(self, activar: bool) -> bool:
+        """«Actualizar automáticamente» (CA-43.7); the change goes to the activity log."""
+        antes = self.actualizador.automatica
+        ahora = self.actualizador.cambiar_automatica(activar)
+        if ahora != antes:
+            self.actividad.anotar(
+                "Desde esta PC: se activó la actualización automática"
+                if ahora
+                else "Desde esta PC: se desactivó la actualización automática",
+                tipo="ACTUALIZACION_AUTOMATICA_ACTIVADA"
+                if ahora
+                else "ACTUALIZACION_AUTOMATICA_DESACTIVADA",
+                objeto="Actualizar automáticamente",
+            )
+        return ahora
+
+    def _anotar_version(self) -> None:
+        """«Esta PC se actualizó a X» (``PC_ACTUALIZADA``, CA-43.2), once after a newer version
+        starts here, whether it came from the automatic update or by hand."""
+        cambio = self.actualizador.registrar_version()
+        if cambio is not None:
+            anterior, nueva = cambio
+            self.actividad.anotar(
+                f"Esta PC se actualizó a {nueva}",
+                tipo="PC_ACTUALIZADA",
+                objeto="Te Tengo Captura",
+                anterior=anterior,
+                nuevo=nueva,
+            )
 
     # ------------------------------------------------------------------ advanced (US-32 to US-34)
 
@@ -780,6 +863,7 @@ class Coordinador:
             fabrica=self._fabrica,
             actividad=self.actividad,
             almacen_local=self.almacen,
+            actualizacion_automatica=self.actualizador.actualizacion_automatica,
         )
         self.pc.iniciar()
         self.almacen.pedir_permiso()
@@ -902,6 +986,12 @@ class Coordinador:
             except Exception:
                 logger.exception("Error al enviar la desvinculación pendiente")
             self._detenido.wait(REVOCACION_REINTENTO_S)
+
+
+def _plataforma(valor: Plataforma | str | None) -> Plataforma | None:
+    if valor == "auto":
+        return plataforma_actual()
+    return Plataforma(valor) if valor else None
 
 
 def _iniciales(nombre: str) -> str:

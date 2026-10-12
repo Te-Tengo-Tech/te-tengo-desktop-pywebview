@@ -129,8 +129,10 @@ def test_icono_de_bandeja(pystray: PystrayFalso) -> None:
     bandeja = IconoBandeja(lambda: llamadas.append("abrir"), lambda: llamadas.append("salir"))
     icono_ = pystray.iconos[0]
     assert icono_.menu is not None
-    abrir, salir = icono_.menu.items
+    abrir, descargar, buscar, salir = icono_.menu.items
     assert (abrir.text, abrir.default) == ("Abrir Te Tengo Captura", True)
+    assert not descargar.visible  # only with a new version (US-43)
+    assert buscar.text == "Buscar actualizaciones"
     assert salir.text == "Salir"
     abrir.accion()
     salir.accion()

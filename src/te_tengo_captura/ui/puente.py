@@ -45,6 +45,12 @@ class Acciones:
     cerrar_repeticion: Callable[[str, int, int, float], dict[str, Any]] = lambda _c, _d, _h, _s: {
         "ok": False
     }
+    # Updates (US-43).
+    buscar_actualizaciones: Callable[[], dict[str, Any]] = lambda: {"ok": False}
+    descargar_actualizacion: Callable[[], dict[str, Any]] = lambda: {"ok": False}
+    cancelar_actualizacion: Callable[[], dict[str, Any]] = lambda: {"ok": False}
+    ir_a_la_descarga: Callable[[], dict[str, Any]] = lambda: {"ok": False}
+    actualizacion_automatica: Callable[[bool], bool] = lambda _activar: False
 
 
 class Puente:
@@ -174,6 +180,26 @@ class Puente:
         return self._acciones.cerrar_repeticion(
             str(camara), int(desde), int(hasta), float(segundos)
         )
+
+    def buscarActualizaciones(self) -> dict[str, Any]:  # noqa: N802 (JavaScript name)
+        """«Buscar actualizaciones» (CA-43.1): ``ok`` is false only without internet."""
+        return self._acciones.buscar_actualizaciones()
+
+    def descargarActualizacion(self) -> dict[str, Any]:  # noqa: N802 (JavaScript name)
+        """«Descargar» (Windows, CA-43.2) or «Ir a la descarga» (``pagina``)."""
+        return self._acciones.descargar_actualizacion()
+
+    def cancelarActualizacion(self) -> dict[str, Any]:  # noqa: N802 (JavaScript name)
+        """«Cancelar» the download; the current version stays."""
+        return self._acciones.cancelar_actualizacion()
+
+    def irALaDescarga(self) -> dict[str, Any]:  # noqa: N802 (JavaScript name)
+        """«Ir a la descarga»: the downloads page in the browser (Mac, CA-43.3)."""
+        return self._acciones.ir_a_la_descarga()
+
+    def actualizarAutomaticamente(self, activar: bool) -> dict[str, bool]:  # noqa: N802
+        """The «Actualizar automáticamente» switch (CA-43.7)."""
+        return {"on": self._acciones.actualizacion_automatica(bool(activar))}
 
     def cambiarAlmacenamiento(self, cambios: dict[str, Any]) -> dict[str, Any]:  # noqa: N802
         """A switch, a period or the space limit of «Almacenamiento» (CA-38.1)."""

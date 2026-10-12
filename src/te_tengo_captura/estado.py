@@ -565,6 +565,14 @@ def aviso_sin_vincular(estado: EstadoAgente | None) -> Notificacion:
     return Notificacion("Sigue funcionando en segundo plano", texto)
 
 
+def aviso_version_nueva(version: str, mac: bool = False) -> Notificacion:
+    """``osToast(S, 'update')`` (screen 67, US-43): one notice per new version."""
+    return Notificacion(
+        f"Hay una versión nueva: {version}",
+        "Ábrelo para ir a la descarga." if mac else "Ábrelo para descargarla. La detección sigue.",
+    )
+
+
 def aviso_pc_quitada(hora: str) -> Notificacion:
     """``osToast(S, 'removed')``: the PC was removed from the household in the app (D-31.2)."""
     return Notificacion(

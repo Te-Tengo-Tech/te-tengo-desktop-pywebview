@@ -29,6 +29,7 @@ USB webcam → 480p · 8 fps · JPEG 80 → MediaPipe Pose (VIDEO mode) → kine
 - **Consent and pauses are hard gates:** without consent, or while the family has paused the camera, the webcam is closed and nothing is classified or buffered (CA-05.2, CA-22.1). Capture resumes on its own (CA-22.3).
 - **No event is lost:** events go to a SQLite outbox first and are sent with retries; `eventoId` (UUID v7) makes resending safe. Clips are deleted after upload.
 - **Offline:** the window shows «Sin internet · reintentando en N s»; events made offline arrive later.
+- **Updates (US-43):** the agent asks `GET /api/versiones` at startup, once a day and on «Buscar actualizaciones» (Avanzado › Acerca de, the «i» next to the PC's name). A new version shows a band with «Qué cambió» and «Descargar»; on Windows the installer is downloaded, checked with its SHA-256 and run silently (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /RELANZAR`), and the new version opens by itself with the link, the cameras and the data in place. «Actualizar automáticamente» (on by default, Windows only) does it between 03:00 and 06:00. Nothing restarts during a fall alert or a live view. On a Mac «Ir a la descarga» opens the downloads page. Details: [docs/RELEASES.md](docs/RELEASES.md#updates-of-the-agent-us-43).
 
 Details: [docs/architecture.md](docs/architecture.md). Formulas and sources: [docs/classification-spec.md](docs/classification-spec.md).
 

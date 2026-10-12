@@ -2,7 +2,7 @@
 
 * ``GET /api/agente/pc``: the household and who approved the link (D-28.4).
 * ``POST /api/agente/pc/senal`` every 30 s: keeps the PC «En línea» in the app even with no
-  camera in use (CA-30.2).
+  camera in use (CA-30.2), with whether «Actualizar automáticamente» is on (US-43, CA-43.7).
 * ``DELETE /api/agente/pc``: «Desvincular esta PC» (CA-31.3), with ``datosLocalesBorrados`` when
   the person also deleted the data saved on the PC (CA-31.6).
 * The PC's webcams (US-29): ``PUT …/camaras/inventario`` (the whole list it detects),
@@ -76,8 +76,17 @@ class ClientePc:
     def pc(self) -> PcDelAgente:
         return leer_modelo(PcDelAgente, self.autenticado("GET", RUTA_PC))
 
-    def senal(self, version_agente: str, sistema_operativo: str) -> PcDelAgente:
-        cuerpo = SenalPc(version_agente=version_agente, sistema_operativo=sistema_operativo)
+    def senal(
+        self,
+        version_agente: str,
+        sistema_operativo: str,
+        actualizacion_automatica: bool | None = None,
+    ) -> PcDelAgente:
+        cuerpo = SenalPc(
+            version_agente=version_agente,
+            sistema_operativo=sistema_operativo,
+            actualizacion_automatica=actualizacion_automatica,
+        )
         respuesta = self.autenticado("POST", RUTA_SENAL_PC, json=cuerpo.json_api())
         return leer_modelo(PcDelAgente, respuesta)
 

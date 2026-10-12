@@ -191,6 +191,7 @@ Cases the prototype has no screen for. Each is shown with an existing state (`do
 | Configuration | `%APPDATA%\TeTengoCaptura\config.toml` | `~/Library/Application Support/TeTengoCaptura/config.toml` | `~/.config/TeTengoCaptura/config.toml` |
 | Outbox and pending clips (`envios.sqlite3`, `clips/`, `estado_captura.json`) | `%LOCALAPPDATA%\TeTengoCaptura\` | `~/Library/Application Support/TeTengoCaptura/` | `~/.local/share/TeTengoCaptura/` |
 | Logs (`te-tengo-captura.log`, 1 MB × 5, no secrets, no images) | `%LOCALAPPDATA%\TeTengoCaptura\Logs\` | `~/Library/Logs/TeTengoCaptura/` | `~/.local/state/TeTengoCaptura/log/` |
+| Updates (`actualizaciones.json`; while updating, `actualizaciones/` with the downloaded installer and Inno Setup's `instalacion.log`, and `actualizacion.json`) | `%LOCALAPPDATA%\TeTengoCaptura\` | `~/Library/Application Support/TeTengoCaptura/` | `~/.local/share/TeTengoCaptura/` |
 | Local storage (`movimientos/`, `video/`, `clips/`, `indice.sqlite3`; every file encrypted, `.ttg`) | `%LOCALAPPDATA%\TeTengoCaptura\Datos\` | `~/Library/Application Support/TeTengoCaptura/Datos/` | `~/.local/share/TeTengoCaptura/Datos/` |
 
 The macOS and Linux paths are the `platformdirs` defaults for the app name `TeTengoCaptura` (`src/te_tengo_captura/rutas.py`). `--datos <dir>` and `--logs <dir>` override them.

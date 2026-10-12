@@ -42,6 +42,7 @@ def ejecutar(agente: Coordinador, detener: threading.Event | None = None) -> Non
     parar = detener or threading.Event()
     anteriores = _atender_senales(parar)
     agente.suscribir(RegistroDeEstado())
+    agente.actualizador.al_salir = parar.set  # a silent update's installer opens it again
     try:
         agente.iniciar()
         logger.info("Sin interfaz: el agente corre hasta Ctrl+C o SIGTERM")

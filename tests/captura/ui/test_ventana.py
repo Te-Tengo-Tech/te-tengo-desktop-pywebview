@@ -63,15 +63,23 @@ def test_actualiza_la_pagina_solo_cuando_cargo(
 
 
 def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
-    webview: WebviewFalso, configuracion: Configuracion, monkeypatch: pytest.MonkeyPatch
+    webview: WebviewFalso,
+    configuracion: Configuracion,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     pystray = PystrayFalso()
     monkeypatch.setitem(sys.modules, "pystray", pystray)
+    from te_tengo_captura.actualizaciones.actualizador import Actualizador
     from te_tengo_captura.ui import arranque
     from te_tengo_captura.ui.aplicacion import ejecutar
 
     class AgenteFalso:
         version = "1.0.0"
+        actualizador = Actualizador("1.0.0", tmp_path, lambda: None)
+
+        def cambiar_actualizacion_automatica(self, activar: bool) -> bool:
+            return activar
 
         def __init__(self) -> None:
             self.eventos: list[str] = []
@@ -175,7 +183,7 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     assert webview.iniciado
     assert Path(webview.opciones["icon"]).is_file()  # window icon on Linux
     assert agente.eventos == ["iniciar", "publicar", "detener"]
-    assert len(agente.oyentes) == 3  # window, tray icon and notifications
+    assert len(agente.oyentes) == 4  # window, tray icon, notifications and new versions
     inicio, estado = webview.ventanas
     assert inicio.destruida  # the splash gives way to the status window
     assert inicio.scripts[-1] == "window.ttg && window.ttg.arranqueFin()"
@@ -193,7 +201,7 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         )
     ]
     assert bandeja.menu is not None
-    abrir, salir = bandeja.menu.items
+    abrir, _descargar, _buscar, salir = bandeja.menu.items
     abrir.accion()
     assert estado.visible
     salir.accion()
