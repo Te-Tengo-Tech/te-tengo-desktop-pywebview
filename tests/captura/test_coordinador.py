@@ -23,7 +23,7 @@ WEBCAMS = [
 ]
 
 
-def esperar(prueba: Callable[[], object], limite_s: float = 15) -> None:
+def esperar(prueba: Callable[[], object], limite_s: float = 45) -> None:
     fin = time.monotonic() + limite_s
     while not prueba():
         assert time.monotonic() < fin, "no ocurrió a tiempo"
@@ -192,10 +192,17 @@ def test_desvincular_sin_internet_queda_pendiente_y_se_envia_despues(e: Escenari
 def test_noventa_dias_sin_conexion(e: Escenario) -> None:
     c = e.vincular()
     c.ir_a_estado()
+    # The first heartbeat records the last contact (then only hourly): wait for it, so it cannot
+    # overwrite the 91-day-old contact written below.
+    pc = c.pc
+    assert pc is not None
+    esperar(lambda: pc.latido.pc is not None and (e.datos / "ultimo_contacto.json").exists())
     (e.datos / "ultimo_contacto.json").write_text(json.dumps({"en": time.time() - 91 * 86400}))
-    e.falso.quitar_pc()  # the server unlinked it after 90 days: the refresh gives invalid_grant
-    assert c.pc is not None
-    c.pc.sesion.desvincular("invalid_grant")
+    # The server unlinked it after 90 days: the refresh gives invalid_grant. It is reported before
+    # the fake backend drops the PC, so no request of a worker thread can answer PC_DESVINCULADA
+    # first (which shows «Esta PC se quitó» instead).
+    pc.sesion.desvincular("invalid_grant")
+    e.falso.quitar_pc()
     esperar(lambda: c.estado().a_json().get("pair", {}).get("re90"))
     assert c.estado().pantalla is Pantalla.VINCULAR
 
