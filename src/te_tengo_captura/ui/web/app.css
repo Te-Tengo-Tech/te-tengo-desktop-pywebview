@@ -1019,3 +1019,50 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--ground)}
 /* the splash window is the .boot card itself */
 body.arranque{background:var(--ground)}
 body.arranque .boot{left:0;top:0;margin:0;width:100%;height:100%;border-radius:0;box-shadow:none}
+
+/* ---------- Actualizaciones (US-43): franja, Acerca de, novedades y pasos de Mac (prototipo) ---------- */
+.upband{display:flex;align-items:center;gap:12px;min-height:54px;padding:8px 28px;background:var(--morado-soft);box-shadow:0 1px 0 var(--line);flex:none;position:relative;z-index:2}
+.upband.warn{background:var(--aviso-soft)}
+.upband.wait{background:var(--pausa-soft)}
+.ub-i{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--morado);color:#fff}
+.ub-i svg{width:18px;height:18px}
+.ub-i .spin{width:16px;height:16px;border-width:2.2px}
+.upband.warn .ub-i{background:var(--aviso)}
+.upband.wait .ub-i{background:var(--pausa)}
+.upband .grow{flex:1;min-width:0}
+.upband b{display:block;font-size:14.5px;line-height:1.3;font-weight:600;color:var(--ink)}
+.upband .grow>span{display:block;font-size:13px;line-height:1.35;color:var(--ink-2);margin-top:1px}
+.ub-p{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+.ub-bar{height:6px;border-radius:3px;background:rgba(75,46,131,.14);margin-top:6px;overflow:hidden;max-width:520px}
+.ub-bar i{display:block;height:100%;border-radius:3px;background:var(--morado);transform-origin:left center;transition:transform .15s linear}
+.ub-n{font-size:13.5px;font-weight:600;color:var(--ink-2);min-width:42px;text-align:right}
+.ub-btns{display:flex;gap:6px;flex:none}
+.about{display:grid;gap:12px;align-content:start}
+.ab-main{display:flex;gap:18px;align-items:flex-start;padding:20px 22px}
+.ab-main .grow{flex:1;min-width:0}
+.ab-icon .appicon{width:56px;height:56px}
+.ab-st{display:flex;align-items:center;gap:10px;margin-top:14px}
+.ab-st b{font-size:15.5px;font-weight:600}
+.ab-st .spin{color:var(--morado);margin:0 8px}
+.ab-last{display:flex;align-items:center;gap:2px;margin-top:8px}
+.ab-btns{display:flex;flex-direction:column;gap:6px;align-items:stretch;flex:none}
+.ab-card{display:flex;align-items:center;gap:14px;padding:14px 18px}
+.ab-card .grow{flex:1;min-width:0}
+.ab-card b{display:block;font-size:15px;font-weight:600}
+.ab-card .grow>span{display:block;font-size:13.5px;color:var(--ink-3);margin-top:1px}
+.notes{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:8px}
+.notes li{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;line-height:1.4}
+.notes li svg{width:18px;height:18px;flex:none;margin-top:1px;color:var(--calma)}
+.keep{display:flex;gap:8px;align-items:flex-start;margin-top:16px;padding:10px 12px;border-radius:12px;background:var(--ground);font-size:13.5px;line-height:1.4;color:var(--ink-2)}
+.keep svg{width:16px;height:16px;flex:none;margin-top:2px;color:var(--morado)}
+.macsteps{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:10px}
+.macsteps li{display:flex;gap:12px;align-items:center;font-size:14.5px}
+.macsteps .n{width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;font-weight:700;font-size:13.5px;display:grid;place-items:center;flex:none}
+.macsteps .code{font-family:var(--code);font-weight:500;font-size:13.5px}
+.dlg-h p b{color:var(--ink)}
+.ab-open{appearance:none;border:0;background:transparent;color:var(--ink-2);width:36px;height:36px;border-radius:10px;display:grid;place-items:center;cursor:pointer;position:relative;margin-left:8px;padding:0}
+.ab-open svg,.tb-pc .ab-open svg{width:20px;height:20px;color:inherit}
+.ab-open:hover{background:var(--ground-2);color:var(--morado)}
+.ab-open[aria-pressed=true]{background:var(--morado-soft);color:var(--morado)}
+.ab-open.up::after{content:"";position:absolute;right:5px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--coral);box-shadow:0 0 0 2px var(--card)}
+.upband:has(.itip.open){overflow:visible}

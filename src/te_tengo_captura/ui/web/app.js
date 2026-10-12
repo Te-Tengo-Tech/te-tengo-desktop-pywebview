@@ -7,7 +7,9 @@
    ttg.actualizar(); this file renders it, keeps what only the window knows (the open tab, the
    selected camera, the folded sections) and calls the bridge window.pywebview.api:
    estado(), minimizar(), cerrar(), buscarWebcam(), reintentarAhora(), vistaPrevia(clave),
-   otroCodigo(), vincularDeNuevo(), irAEstado(), desvincular(borrarDatos). */
+   otroCodigo(), vincularDeNuevo(), irAEstado(), desvincular(borrarDatos), and the updates of
+   US-43: buscarActualizaciones(), descargarActualizacion(), cancelarActualizacion(),
+   irALaDescarga(), actualizarAutomaticamente(activar). */
 (function(global){
   'use strict';
 
@@ -244,14 +246,61 @@
   function tabs(E){ return [['estado','pulse','Estado'], ['camaras','cam','Cámaras'], ['avanzado','sliders','Avanzado']]; }
   function tabbar(E, U){
     const t = x => '<button class="tab'+(U.tab===x[0]?' sel':'')+'" role="tab" id="tab-'+x[0]+'" aria-selected="'+(U.tab===x[0])+'" aria-controls="panel" tabindex="'+(U.tab===x[0]?0:-1)+'" data-act="tab" data-arg="'+x[0]+'">'+ic(x[1])+'<span>'+x[2]+'</span></button>';
+    const u = E.upd, up = updAvail(E), ver = u ? u.ver : (E.version || '');
+    const about = u ? '<button class="ab-open'+(up?' up':'')+'" id="sub-acerca" aria-pressed="'+(U.tab==='avanzado' && !(U.rp && U.rp.open) && U.adv.sub==='acerca')+'" data-act="toAbout" aria-label="Acerca de: versión '+esc(ver)+(up?', hay una versión nueva':'')+'" title="Acerca de · versión '+esc(ver)+'">'+ic('info')+'</button>' : '';
     return '<nav class="tabbar" aria-label="Te Tengo Captura"><div class="tabs" role="tablist" aria-label="Secciones">'+tabs(E).map(t).join('')+'</div>'+
-      '<span class="tb-pc">'+ic('monitor')+'<span>Esta PC: <b>'+esc(E.pc.nombre)+'</b></span></span></nav>';
+      '<span class="tb-pc">'+ic('monitor')+'<span>Esta PC: <b>'+esc(E.pc.nombre)+'</b></span>'+about+'</span></nav>';
+  }
+
+  /* =================== Actualizaciones (US-43) ===================
+     The band under the tabs (on every tab), «Avanzado › Acerca de» and the dialogs. Python
+     (te_tengo_captura/actualizaciones/actualizador.py) decides; the copy is the prototype's. */
+  const KEEP = 'Se mantienen la vinculación, las cámaras y los datos.';
+  function updAvail(E){ const u = E.upd; return !!(u && (u.latest || u.minima)); }
+  function updBtn(u, cls){ const ir = !u.download; return '<button class="btn btn-primary '+cls+'" data-act="updGo">'+ic(ir?'link':'download')+(ir?'Ir a la descarga':'Descargar')+'</button>'; }
+  function updTitle(u){ return u.minima ? 'Actualiza Te Tengo para seguir recibiendo alertas' : 'Hay una versión nueva ('+esc(u.latest)+')'; }
+  function updBand(E){
+    const u = E.upd; if(!u || (!updAvail(E) && u.st!=='restart')) return '';
+    const v = esc(u.latest || ''), ver = esc(u.ver);
+    const B = (cls, icon, inner, btns) => '<div class="upband'+(cls?' '+cls:'')+'" role="status" id="upband"><span class="ub-i">'+icon+'</span>'+inner+(btns?'<div class="ub-btns">'+btns+'</div>':'')+'</div>';
+    const notes = u.latest ? '<button class="btn btn-ghost btn-xs" data-act="updNotes">Qué cambió</button>' : '';
+    const retry = '<button class="btn btn-secondary btn-xs" data-act="updGo">'+ic('refresh')+'Reintentar</button>';
+    const kept = infoTip('Sigues con la versión '+ver+'. No se instaló nada.', 'versión actual', {k:'upd-kept', end:1});
+    switch(u.st){
+      case 'dl': return B('', ic('download'), '<div class="ub-p" data-r="ubp"><div class="grow"><b>Descargando la versión '+v+'…</b><div class="ub-bar" role="progressbar" aria-label="Descarga" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+u.pct+'"><i style="transform:scaleX('+(u.pct/100)+')"></i></div></div>'+
+        '<span class="ub-n mono">'+u.pct+' %</span></div>'+(u.mb ? infoTip('La detección sigue mientras se descarga ('+u.mb+' MB).', 'descarga', {k:'upd-dl', end:1}) : ''), '<button class="btn btn-ghost btn-xs" data-act="updCancel">Cancelar</button>');
+      case 'verify': return B('', '<span class="spin"></span>', '<div class="grow"><b>Verificando la descarga…</b></div>'+infoTip('Comprobamos que el archivo es el que publicó Te Tengo (suma SHA-256).', 'verificación', {k:'upd-sha', end:1}));
+      case 'restart': return B('', '<span class="spin"></span>', '<div class="grow"><b>Reiniciando para actualizar…</b><span>'+KEEP+'</span></div>');
+      case 'wait': return B('wait', ic('clock'), '<div class="grow"><b>Se actualizará cuando termine '+(u.why==='alerta' ? 'la alerta' : 'la vista en vivo')+'</b>'+(u.ready ? '<span>La versión '+v+' ya está descargada y verificada.</span>' : '')+'</div>', notes);
+      case 'net': return B('warn', ic('wifiOff'), '<div class="grow"><b>Sin internet: no se puede descargar la versión '+v+'</b></div>'+kept, retry);
+      case 'fail': return B('warn', ic('warn'), '<div class="grow"><b>No se pudo descargar la versión '+v+'</b></div>'+kept, retry);
+      case 'bad': return B('warn', ic('warn'), '<div class="grow"><b>No se pudo verificar la descarga. No se instaló.</b></div>'+infoTip('Borramos el archivo y sigues con la versión '+ver+'. Inténtalo más tarde.', 'verificación', {k:'upd-bad', end:1}), retry);
+      case 'disk': return B('warn', ic('drive'), '<div class="grow"><b>Falta espacio para la descarga</b>'+(u.free ? '<span>Libera '+u.free+' MB en el disco '+esc(u.drive)+'.</span>' : '')+'</div>', retry);
+    }
+    return B('', ic('download'), '<div class="grow"><b>'+updTitle(u)+'</b></div>', notes+updBtn(u, 'btn-xs'));
+  }
+  function aboutView(E, U){
+    const u = E.upd; if(!u) return '';
+    const up = updAvail(E), checking = u.checking || U.checking, busy = ['dl', 'verify', 'restart'].includes(u.st);
+    let st;
+    if(checking) st = '<p class="ab-st" role="status"><span class="spin"></span><b>Buscando actualizaciones…</b></p>';
+    else if(up) st = '<p class="ab-st up" role="status"><span class="ci">'+ic('download')+'</span><b>'+updTitle(u)+'</b></p>';
+    else st = '<p class="ab-st ok" role="status"><span class="ci calma">'+ic('check')+'</span><b>Tienes la última versión ('+esc(u.ver)+')</b></p>';
+    const btns = '<div class="ab-btns">'+(up && !checking ? updBtn(u, 'btn-sm').replace('data-act="updGo"', 'data-act="updGo"'+(busy?' disabled':''))+(u.latest ? '<button class="btn btn-ghost btn-sm" data-act="updNotes">Qué cambió</button>' : '')
+        : '<button class="btn btn-secondary btn-sm" data-act="updCheck"'+(checking||busy?' disabled':'')+'>'+ic('refresh')+'Buscar actualizaciones</button>')+'</div>';
+    const auto = u.os==='mac'
+      ? '<div class="card ab-card ab-mac"><span class="ci">'+ic('info')+'</span><div class="grow"><b>En Mac, por ahora se actualiza a mano</b><span>Es temporal, hasta que la app esté firmada por Apple.</span></div></div>'
+      : u.os==='windows' ? '<div class="card ab-card"><span class="ci">'+ic('refresh')+'</span><div class="grow"><b id="upd-auto-l">Actualizar automáticamente</b><span>De madrugada, si no hay una alerta.</span></div>'+
+          infoTip('Instala la versión nueva a las 03:00 si no hay una alerta ni una vista en vivo.', 'actualizar automáticamente', {k:'upd-auto', end:1, up:1})+sw(u.auto, 'updAuto', 'upd-auto-l')+'</div>' : '';
+    const last = u.last ? u.last.replace(/ (\d\d:\d\d)$/, ' <span class="mono">$1</span>') : null;
+    return '<div class="about"><div class="card ab-main"><span class="ab-icon">'+appIcon()+'</span><div class="grow"><h2 class="t-h2">Te Tengo Captura</h2><p class="t-meta">Versión <span class="mono">'+esc(u.ver)+'</span>'+(up ? ' · instalada' : '')+'</p>'+st+
+        (last ? '<p class="t-meta ab-last"><span>Última búsqueda: '+last+'</span>'+infoTip('Busca sola al abrir el programa y una vez al día.', 'búsqueda de versiones', {k:'upd-when', start:1})+'</p>' : '')+'</div>'+btns+'</div>'+auto+'</div>';
   }
   function scrMain(E, U, enter){
     const tab = tabs(E).some(x => x[0]===U.tab) ? U.tab : 'estado';
     const replay = tab==='avanzado' && U.rp && U.rp.open;
     const panel = tab==='camaras' ? panelCamaras(E, U) : tab==='avanzado' ? (replay ? panelReplay(E, U) : panelAvanzado(E, U)) : panelEstado(E, U);
-    return sec('main', enter, tabbar(E, Object.assign({}, U, {tab:tab}))+'<div class="panel '+tab+(replay?' replay':'')+'" id="panel" role="tabpanel" aria-labelledby="tab-'+tab+'">'+panel+'</div>');
+    return sec('main', enter, tabbar(E, Object.assign({}, U, {tab:tab}))+updBand(E)+'<div class="panel '+tab+(replay?' replay':'')+'" id="panel" role="tabpanel" aria-labelledby="tab-'+tab+'">'+panel+'</div>');
   }
 
   /* ---------- Estado: el resumen y una fila por cámara ---------- */
@@ -510,7 +559,7 @@
     '</div></div></div>';
   }
   function advSubs(E){ return (E.advanced ? [['registro','terminal','Registro en vivo'], ['medidores','gauge','Medidores']] : []).concat([['actividad','list','Actividad'], ['almacenamiento','drive','Almacenamiento']]); }
-  function advSub(E, U){ const subs = advSubs(E); return subs.some(x => x[0]===U.adv.sub) ? U.adv.sub : (E.advanced ? 'registro' : 'actividad'); }
+  function advSub(E, U){ const subs = advSubs(E); if(U.adv.sub==='acerca' && E.upd) return 'acerca'; return subs.some(x => x[0]===U.adv.sub) ? U.adv.sub : (E.advanced ? 'registro' : 'actividad'); }
   function panelAvanzado(E, U){
     const sub = advSub(E, U), on = !!E.advanced, cam = advCam(E, U), camSel = on && (sub==='registro' || sub==='medidores');
     const seg = '<div class="seg2" role="tablist" aria-label="Avanzado">'+advSubs(E).map(x => '<button role="tab" id="sub-'+x[0]+'" aria-selected="'+(x[0]===sub)+'" tabindex="'+(x[0]===sub?0:-1)+'" data-act="advSub" data-arg="'+x[0]+'">'+(on?'':ic(x[1]))+x[2]+'</button>').join('')+'</div>';
@@ -521,7 +570,7 @@
           (camSel && cams.length ? '<span class="cam-l" id="cam-l">Cámara</span><div class="seg2 sm" role="radiogroup" aria-labelledby="cam-l">'+cams.map(c => '<button role="radio" aria-checked="'+(cam && c.id===cam.id)+'" data-act="advCam" data-arg="'+esc(c.id)+'">'+esc(c.room)+'</button>').join('')+'</div>' : '')+'</div>'
       : '<div class="card advcard"><span class="ci lg">'+ic('sliders')+'</span><div class="grow"><b id="adv-l">Modo avanzado</b><span>Qué detecta cada cámara y por qué avisa. Nada sale de esta PC.</span></div>'+sw(false, 'advToggle', 'adv-l')+'</div>';
     const sinCamara = '<div class="logempty">'+ic('cam')+'<b>Aún no pasa nada en esta cámara</b></div>';
-    const body = sub==='registro' ? (cam ? logView(E, U, cam) : sinCamara) : sub==='medidores' ? (cam ? metersView(E, U, cam) : sinCamara) : sub==='almacenamiento' ? storageView(E, U) : actView(E, U);
+    const body = sub==='registro' ? (cam ? logView(E, U, cam) : sinCamara) : sub==='medidores' ? (cam ? metersView(E, U, cam) : sinCamara) : sub==='almacenamiento' ? storageView(E, U) : sub==='acerca' ? aboutView(E, U) : actView(E, U);
     return '<h1 class="sr" id="scr-h" tabindex="-1">Avanzado</h1><div class="advhead">'+seg+btns+'</div>'+mode+'<div class="advbody" role="tabpanel" aria-labelledby="sub-'+sub+'">'+body+'</div>';
   }
 
@@ -651,6 +700,19 @@
         esc(E.home.first)+' ya no autoriza guardarlos (lo registró la familia). No guardamos nuevos y los de la nube se borran. Las alertas siguen.', '',
         '<button class="btn btn-secondary" data-act="revokeKeep">Conservar</button><button class="btn btn-danger" data-act="revokeWipe">'+ic('trash')+'Borrar</button>');
     }
+    if(U.dlg==='updNotes' && E.upd && E.upd.latest){
+      const u = E.upd, sub = [u.date ? 'Publicada el '+esc(u.date) : '', u.mb ? u.mb+' MB' : ''].filter(Boolean).join(' · ');
+      return dlgBox('dlg-notes', '<span class="ci lg">'+ic('list')+'</span>', 'Qué cambió en la versión '+esc(u.latest), sub,
+        '<ul class="notes">'+u.notes.map(x => '<li>'+ic('check')+esc(x)+'</li>').join('')+'</ul><p class="keep">'+ic('lock')+KEEP+'</p>',
+        '<button class="btn btn-secondary" data-act="dlgClose">Cerrar</button>'+(!['dl','verify','restart','wait'].includes(u.st) ? updBtn(u, '') : ''));
+    }
+    if(U.dlg==='updMac' && E.upd && E.upd.latest){
+      const u = E.upd;
+      return dlgBox('dlg-mac', '<span class="ci lg">'+ic('download')+'</span>', 'Actualizar a la versión '+esc(u.latest), 'Abrimos <b>'+esc(u.page || '')+'</b> en tu navegador. Baja el archivo y:',
+        '<ol class="macsteps"><li><span class="n">1</span><span>Abre <b class="code">'+esc(u.dmg)+'</b></span></li><li><span class="n">2</span><span>Arrastra Te Tengo Captura a <b>Aplicaciones</b></span></li><li><span class="n">3</span><span>Elige <b>Reemplazar</b></span></li></ol>'+
+        '<p class="keep">'+ic('info')+'Es temporal, hasta que la app esté firmada por Apple. '+KEEP+'</p>',
+        '<button class="btn btn-primary" data-act="dlgClose">Entendido</button>');
+    }
     if(U.dlg==='diag'){
       const d = U.diag, nombre = d.nombre || '';
       const file = '<div class="filebox">'+ic('doc')+'<span class="code">'+esc(d.step==='done' ? d.ruta : nombre)+'</span>'+(d.step==='done' ? '<small>'+esc(d.tamano)+'</small>' : '')+'</div>';
@@ -681,7 +743,7 @@
   }
 
   /* ---------- arranque: ventana de inicio (core.js) ---------- */
-  const BOOT_STEPS = ['Iniciando…', 'Abriendo las cámaras…', 'Conectando con Te Tengo…'];
+  const BOOT_STEPS = ['Iniciando…', 'Abriendo las cámaras…', 'Conectando con Te Tengo…', 'Terminando la actualización…'];
   function bootMark(){ return symbolSVG(false, 'class="sp-mark"'); }
   function bootWin(o){
     o = o||{}; const pct = o.pct==null ? 34 : o.pct, step = o.step||0;
@@ -719,10 +781,11 @@
     const o = Object.assign({}, E, {retry:0});
     if(E.health) o.health = Object.assign({}, E.health, {detalle_html:''});
     if(E.pair) o.pair = Object.assign({}, E.pair, {left:0, retry:0});
+    if(E.upd) o.upd = Object.assign({}, E.upd, {pct:0});  // the download's progress is patched
     return JSON.stringify(o);
   }
 
-  const api = { ITIP, infoTip, panelReplay, rpPhase, timeline, storageView, panelAvanzado, metersInner, actView, ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
+  const api = { ITIP, infoTip, updBand, aboutView, dialog, panelReplay, rpPhase, timeline, storageView, panelAvanzado, metersInner, actView, ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
 
   /* ---------- DOM: render with focus, folded sections and scroll preserved ---------- */
   if(typeof document === 'undefined'){ if(typeof module !== 'undefined') module.exports = api; return; }
@@ -730,7 +793,7 @@
   const $ = id => document.getElementById(id);
   let E = null, first = true, toastTimer = null, preview = null, previewSrc = null;
   const U = {tab:'estado', sel:null, open:{}, toast:null, dlg:null, unlinkWipe:false, busy:false, here:false, rooms:null, pick:{room:null, otherOn:false, other:'', err:null},
-    rp:{open:false}, adv:{sub:'actividad', cam:null}, log:{filters:{persona:true, evento:true, descarte:true, conexion:true, programa:true}, q:'', paused:false, cut:0, open:null, lines:{}, ultimo:0}, meters:{}, acts:null, actScope:'pc', diag:{step:'intro'}};
+    rp:{open:false}, adv:{sub:'actividad', cam:null}, checking:false, updToast:false, log:{filters:{persona:true, evento:true, descarte:true, conexion:true, programa:true}, q:'', paused:false, cut:0, open:null, lines:{}, ultimo:0}, meters:{}, acts:null, actScope:'pc', diag:{step:'intro'}};
   let opener = null;
   const bridge = () => (global.pywebview && global.pywebview.api) || null;
 
@@ -842,6 +905,7 @@
       if(E.pair && E.pair.renewed && E.pair.code !== (prev.pair && prev.pair.code)) announce('Código nuevo');
     }
     else patch();
+    if(E.upd && E.upd.updated && !U.updToast && E.screen==='main'){ U.updToast = true; toast('ok', 'check', 'Te Tengo Captura se actualizó a '+E.upd.updated); }
     if(E.pair && prev && prev.pair && prev.pair.left > 60 && E.pair.left <= 60 && E.pair.left > 0) announce('El código vence en 1 minuto');
   }
   function announce(text){ const a = $('pair-ann'); if(a){ a.textContent = ''; setTimeout(() => { a.textContent = text; }, 30); } }
@@ -963,6 +1027,33 @@
         else render();
       });
     },
+    toAbout(){ if(U.rp.open) ACT.replayClose(); U.tab = 'avanzado'; U.here = false; U.adv.sub = 'acerca'; render(); const b = $('sub-acerca'); if(b) b.focus({preventScroll:true}); },
+    updNotes(el){ opener = el; U.dlg = 'updNotes'; render(); },
+    updGo(){
+      U.dlg = null;
+      call('descargarActualizacion').then(r => {
+        if(r && r.pagina){
+          if(E.upd && E.upd.os==='mac') U.dlg = 'updMac';
+          toast('ok', 'link', 'Abrimos '+r.pagina+' en el navegador.');
+        } else refrescar();
+      });
+    },
+    updCancel(){ call('cancelarActualizacion').then(r => { const v = (r && r.version) || (E.upd && E.upd.ver) || ''; refrescar(); toast('ok', 'x', 'Descarga cancelada. Sigues con la versión '+v+'.'); }); },
+    updCheck(){
+      U.checking = true; render();
+      call('buscarActualizaciones').then(r => {
+        U.checking = false;
+        if(!r || !r.ok) toast('warn', 'wifiOff', 'Sin internet. No pudimos buscar.');
+        else if(!r.nueva) toast('ok', 'check', 'Tienes la última versión ('+r.version+').');
+        refrescar();
+      });
+    },
+    updAuto(){
+      call('actualizarAutomaticamente', !E.upd.auto).then(r => {
+        E.upd.auto = !!(r && r.on); U.acts = null;
+        toast('ok', 'refresh', E.upd.auto ? 'Se actualizará sola a las 03:00, si no hay una alerta.' : 'Las actualizaciones esperan a que elijas «Descargar».');
+      });
+    },
     retryNow(){
       call('reintentarAhora').then(r => { if(r && !r.ok) toast('warn', 'wifiOff', 'Aún sin internet.'); });
     },
@@ -978,6 +1069,13 @@
     const t = e.target.closest('[data-act]');
     if(t && ACT[t.dataset.act] && !t.disabled && t.getAttribute('aria-disabled') !== 'true'){ e.preventDefault(); ACT[t.dataset.act](t); }
   });
+  function refrescar(){ call('estado').then(s => { if(s) actualizar(s); }); }
+  /* actions started outside the page (the tray menu): «Descargar la versión X», «Buscar actualizaciones» */
+  function accion(nombre){
+    if(!E || E.screen!=='main') return;
+    if(nombre==='updCheck'){ ACT.toAbout(); ACT.updCheck(); }
+    else if(nombre==='updGo') ACT.updGo();
+  }
   function tamano(b){ b = Number(b) || 0; return b >= 1e6 ? num(b/1e6, 1)+' MB' : Math.max(1, Math.round(b/1e3))+' KB'; }
   function copiarTexto(texto){ const t = document.createElement('textarea'); t.value = texto; document.body.appendChild(t); t.select(); try{ document.execCommand('copy'); }catch(e){} t.remove(); }
   function loadActs(){ call('actividad').then(r => { U.acts = r || []; if(U.tab==='avanzado') render(); }); }
@@ -1209,7 +1307,7 @@
   }
   function arranqueFin(){ const b = document.querySelector('.boot'); if(b) b.classList.add('out'); }
 
-  global.ttg = { actualizar, arranque, arranqueFin };
+  global.ttg = { actualizar, arranque, arranqueFin, accion };
   if(document.body.dataset.pagina === 'arranque'){
     $('app').innerHTML = bootWin({play:true, pct:0, step:0});
   } else {
