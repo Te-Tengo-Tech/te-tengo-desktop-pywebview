@@ -163,3 +163,21 @@ Pantallas de `pantallas.html` (nombre de la galería) → historias y criterios.
 | 63 Error al guardar | US-34 | CA-34.3 |
 
 Trabajo futuro (`pantallas-trabajo-futuro.html`, fuera de alcance según el brief, §8): 01 Dos cámaras en la misma habitación y 02 Vista combinada en 3D (opciones B y C de varias cámaras por habitación; hoy lo impide CA-29.3), 03 y 04 Varias personas.
+
+## Ayudas en ícono ?
+
+Las líneas fijas de privacidad y de ayuda pasan a un ícono «?» (24 px, 44 px de toque). Clic, cursor encima o foco del teclado muestran el texto en una tarjeta. Escape, un clic fuera o desplazar la cierran. Pasaron a ícono (11 lugares):
+
+- Estado, banda «está viendo en vivo»: queda «Desde las 10:42»; «no se graba · queda registrado» va al ícono.
+- Aviso «Carmen mira esta cámara para elegirla» («No se graba · queda registrado»). La fila de la cámara deja «· No se graba».
+- Vista previa de la cámara: «Solo se ve en esta PC» pasa a un candado solo con ícono, que abre la ayuda. Suma «Usa la vista previa para revisar el encuadre.».
+- Esqueleto de Medidores: el mismo candado.
+- «¿En qué habitación está?»: «Por privacidad, no se admiten cámaras en el baño.» (el error del baño sigue a la vista).
+- «Cámaras conectadas», con 3 o más cámaras: «Si la detección va lenta, pasa alguna cámara a otra PC.» (en las dos vistas).
+- Medidores: «Fase» (1,48 s y 30 s) y «Puntos del cuerpo» (visibilidad 0–1, mínimo 0,5).
+- Modo avanzado activo: «Nada sale de esta PC.».
+- Actividad: «Nadie puede editar ni borrar esta lista.».
+- Almacenamiento, «Límite de espacio»: qué se borra primero.
+- Ver qué pasó: «· Queda en el registro de accesos», en la tira y en «Sobre el video guardado» («Nunca sale de esta PC.»).
+
+Siguen a la vista: los errores y avisos (sin internet, disco lleno, cámara desconectada), los estados que son la información («en pausa hasta las 11:42», «No hay video de ese momento.»), el texto de las tarjetas de Almacenamiento y el aviso de Windows «No se graba · queda registrado.», porque una notificación del sistema no admite ayudas.
