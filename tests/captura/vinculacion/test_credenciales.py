@@ -62,6 +62,24 @@ def test_revocacion_pendiente() -> None:
     assert "renovacion-1" not in repr(pendiente)
     almacen.borrar_revocacion()
     assert almacen.leer_revocacion() is None
+    almacen.guardar_revocacion(RevocacionPendiente("renovacion-2", True, "restablecida"))
+    assert almacen.leer_revocacion() == RevocacionPendiente("renovacion-2", True, "restablecida")
+
+
+def test_borrar_todo_quita_tokens_revocacion_y_clave_de_datos() -> None:
+    llavero = LlaveroEnMemoria()
+    almacen = AlmacenCredenciales(llavero)
+    almacen.guardar(CredencialesPc("acceso", 1.0, "renovacion", "pc-1", "hogar-1"))
+    almacen.guardar_revocacion(RevocacionPendiente("vieja", False))
+    anterior = almacen.id_instalacion()
+    llavero.set_password("TeTengoCaptura", "clave-datos", "Y2xhdmU=")
+    llavero.set_password("OtroPrograma", "x", "y")
+    almacen.borrar_todo()
+    assert almacen.leer() is None
+    assert almacen.leer_revocacion() is None
+    assert llavero.get_password("TeTengoCaptura", "clave-datos") is None
+    assert llavero.get_password("OtroPrograma", "x") == "y"
+    assert almacen.id_instalacion() != anterior  # a reset PC is a new PC  # nothing else is touched
 
 
 class LlaveroRoto:

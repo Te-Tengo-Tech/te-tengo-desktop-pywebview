@@ -58,6 +58,7 @@ class CredencialesPc:
 class RevocacionPendiente:
     refresh_token: str = field(repr=False)
     datos_locales_borrados: bool
+    motivo: str | None = None  # ``restablecida`` or ``desinstalada`` (activity log)
 
 
 def llavero_del_sistema() -> Llavero:
@@ -137,8 +138,11 @@ class AlmacenCredenciales:
         datos = self._leer_json(CUENTA_REVOCACION)
         if datos is None or "refresh_token" not in datos:
             return None
+        motivo = datos.get("motivo")
         return RevocacionPendiente(
-            str(datos["refresh_token"]), bool(datos.get("datos_locales_borrados", False))
+            str(datos["refresh_token"]),
+            bool(datos.get("datos_locales_borrados", False)),
+            str(motivo) if motivo else None,
         )
 
     def guardar_revocacion(self, pendiente: RevocacionPendiente) -> None:
@@ -147,11 +151,26 @@ class AlmacenCredenciales:
             {
                 "refresh_token": pendiente.refresh_token,
                 "datos_locales_borrados": pendiente.datos_locales_borrados,
+                "motivo": pendiente.motivo,
             },
         )
 
     def borrar_revocacion(self) -> None:
         self._borrar(CUENTA_REVOCACION)
+
+    def borrar_todo(self) -> None:
+        """«Restablecer esta PC» and uninstall: the tokens, a pending revocation, the installation
+        id (unlike an unlink, a reset leaves a truly new PC: a new id on the next code) and the
+        local data key."""
+        from te_tengo_captura.almacen.cifrado import SERVICIO as SERVICIO_DATOS
+        from te_tengo_captura.almacen.cifrado import USUARIO as CUENTA_DATOS
+
+        for cuenta in (CUENTA_ACCESO, CUENTA_RENOVACION, CUENTA_REVOCACION, CUENTA_INSTALACION):
+            self._borrar(cuenta)
+        try:
+            self._sistema().delete_password(SERVICIO_DATOS, CUENTA_DATOS)
+        except Exception:
+            logger.debug("No había clave de datos que borrar")
 
     # ------------------------------------------------------------------ internals
 

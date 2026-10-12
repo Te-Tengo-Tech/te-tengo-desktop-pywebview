@@ -2,13 +2,18 @@
 
 Startup: the splash shows the real startup steps, then the status window appears. Closing or
 minimizing the window hides it to the tray (the first time with a system notification); the
-tray menu opens it again, downloads a new version or looks for one (US-43), or exits. To install
-an update the updater calls ``salir`` once the installer started.
+tray menu opens it again, downloads a new version or looks for one (US-43), or asks to exit:
+«Salir» stops fall detection, so the window asks to confirm it first. To install an update the
+updater calls ``salir`` once the installer started (no question). «Restablecer esta PC» and, on a
+Mac, «Desinstalar» (the reset, then the app bundle goes to the Trash) live in «Avanzado ›
+Acerca de».
 """
 
 import logging
 import os
+import sys
 import tempfile
+import threading
 from collections.abc import MutableMapping
 from pathlib import Path
 
@@ -52,7 +57,6 @@ def mostrar_icono_en_el_dock(ruta: Path) -> None:
 def mostrar_en_carpeta(ruta: str) -> None:
     """Opens the file manager on the saved file (Explorer, Finder or the desktop's)."""
     import subprocess
-    import sys
 
     archivo = Path(ruta)
     if sys.platform == "win32":
@@ -63,12 +67,42 @@ def mostrar_en_carpeta(ruta: str) -> None:
         subprocess.Popen(["xdg-open", str(archivo.parent)])
 
 
+def paquete_de_la_app(ejecutable: str | None = None) -> Path | None:
+    """``/Applications/Te Tengo Captura.app`` when running from the packaged app."""
+    if ejecutable is None:
+        if not getattr(sys, "frozen", False):
+            return None
+        ejecutable = sys.executable
+    for carpeta in Path(ejecutable).parents:
+        if carpeta.suffix == ".app":
+            return carpeta
+    return None
+
+
+def mover_a_la_papelera(paquete: Path | None) -> bool:
+    """macOS: moves the app to the Trash (``NSFileManager``); ``False`` if it could not."""
+    if paquete is None or sys.platform != "darwin":
+        return False
+    try:
+        from Foundation import NSURL, NSFileManager
+
+        ok, _url, error = NSFileManager.defaultManager().trashItemAtURL_resultingItemURL_error_(
+            NSURL.fileURLWithPath_(str(paquete)), None, None
+        )
+    except Exception:
+        logger.warning("No se pudo mover la app a la Papelera", exc_info=True)
+        return False
+    if not ok:
+        logger.warning("No se pudo mover la app a la Papelera: %s", error)
+    return bool(ok)
+
+
 class Aplicacion:
     def __init__(self, agente: Coordinador) -> None:
         self._agente = agente
         self._icono = IconoBandeja(
             abrir=self.abrir,
-            salir=self.salir,
+            salir=self.pedir_salir,
             descargar=lambda: self._desde_la_bandeja("updGo"),
             buscar=lambda: self._desde_la_bandeja("updCheck"),
         )
@@ -108,6 +142,9 @@ class Aplicacion:
                 cancelar_actualizacion=agente.actualizador.cancelar,
                 ir_a_la_descarga=agente.actualizador.ir_a_la_descarga,
                 actualizacion_automatica=agente.cambiar_actualizacion_automatica,
+                salir=self.salir,
+                restablecer=agente.restablecer,
+                desinstalar=self._desinstalar,
             ),
         )
         self._inicio = arranque.VentanaArranque(agente.version)
@@ -140,9 +177,24 @@ class Aplicacion:
     def ocultar(self) -> None:
         self._ventana.ocultar()
 
+    def pedir_salir(self) -> None:
+        """«Salir» in the tray: the window opens and asks to confirm it."""
+        self._desde_la_bandeja("salir")
+
     def salir(self) -> None:
-        logger.info("Salir desde la bandeja")
+        logger.info("Salir: se detiene la detección de caídas")
         self._ventana.destruir()
+
+    def _desinstalar(self) -> dict[str, object]:
+        """«Desinstalar» on a Mac: there is no uninstaller for an ``.app``."""
+        resultado: dict[str, object] = dict(self._agente.restablecer("desinstalada"))
+        if not resultado.get("ok"):
+            return resultado
+        papelera = mover_a_la_papelera(paquete_de_la_app())
+        resultado["papelera"] = papelera
+        if papelera:
+            threading.Timer(3.0, self.salir).start()  # the window says goodbye first
+        return resultado
 
     def _exportar_diagnostico(self) -> dict[str, object]:
         destino = self._ventana.elegir_destino(self._agente.nombre_diagnostico())

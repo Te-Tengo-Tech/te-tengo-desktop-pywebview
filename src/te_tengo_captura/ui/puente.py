@@ -51,6 +51,10 @@ class Acciones:
     cancelar_actualizacion: Callable[[], dict[str, Any]] = lambda: {"ok": False}
     ir_a_la_descarga: Callable[[], dict[str, Any]] = lambda: {"ok": False}
     actualizacion_automatica: Callable[[bool], bool] = lambda _activar: False
+    # «Salir», «Restablecer esta PC» and «Desinstalar» (Mac).
+    salir: Callable[[], None] = lambda: None
+    restablecer: Callable[[], dict[str, Any]] = lambda: {"ok": False}
+    desinstalar: Callable[[], dict[str, Any]] = lambda: {"ok": False}
 
 
 class Puente:
@@ -200,6 +204,18 @@ class Puente:
     def actualizarAutomaticamente(self, activar: bool) -> dict[str, bool]:  # noqa: N802
         """The «Actualizar automáticamente» switch (CA-43.7)."""
         return {"on": self._acciones.actualizacion_automatica(bool(activar))}
+
+    def salir(self) -> None:
+        """«Salir» confirmed in the window: the agent stops and fall detection with it."""
+        self._acciones.salir()
+
+    def restablecer(self) -> dict[str, Any]:
+        """«Restablecer esta PC»: unlink it, delete everything it kept, show the link code."""
+        return self._acciones.restablecer()
+
+    def desinstalar(self) -> dict[str, Any]:
+        """«Desinstalar» (Mac): the reset, then the app goes to the Trash and exits."""
+        return self._acciones.desinstalar()
 
     def cambiarAlmacenamiento(self, cambios: dict[str, Any]) -> dict[str, Any]:  # noqa: N802
         """A switch, a period or the space limit of «Almacenamiento» (CA-38.1)."""

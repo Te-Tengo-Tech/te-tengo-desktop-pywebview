@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -37,6 +38,11 @@ class RegistroFalso:
     def SetValueEx(self, clave: object, nombre: str, reservado: int, tipo: int, valor: str) -> None:  # noqa: N802
         self.valores[nombre] = valor
         self.escrituras.append((nombre, valor))
+
+    def DeleteValue(self, clave: object, nombre: str) -> None:  # noqa: N802
+        if nombre not in self.valores:
+            raise FileNotFoundError(nombre)
+        del self.valores[nombre]
 
 
 @pytest.fixture
@@ -78,3 +84,29 @@ def test_no_hace_nada_fuera_de_windows_ni_desde_el_codigo_fuente(
     assert autoinicio.comando() is None
     assert not autoinicio.registrar(registro, "win32")
     assert registro.escrituras == []
+
+
+def test_quitar_la_entrada_run_al_restablecer() -> None:
+    registro = RegistroFalso({"TeTengoCaptura": "x", "Otro": "y"})
+    assert autoinicio.quitar(registro, "win32")
+    assert registro.valores == {"Otro": "y"}
+    assert not autoinicio.quitar(registro, "win32")  # nothing left to remove
+    assert not autoinicio.quitar(RegistroFalso(error=PermissionError("denegado")), "win32")
+
+
+@pytest.mark.parametrize(
+    ("plataforma", "archivo"),
+    [
+        ("darwin", "Library/LaunchAgents/pe.tetengo.captura.plist"),
+        ("linux", ".config/autostart/te-tengo-captura.desktop"),
+    ],
+)
+def test_quitar_el_launch_agent_o_el_autostart(
+    tmp_path: Path, plataforma: str, archivo: str
+) -> None:
+    ruta = tmp_path / archivo
+    ruta.parent.mkdir(parents=True)
+    ruta.write_text("x")
+    assert autoinicio.quitar(plataforma=plataforma, inicio=tmp_path)
+    assert not ruta.exists()
+    assert not autoinicio.quitar(plataforma=plataforma, inicio=tmp_path)

@@ -34,8 +34,8 @@ assert.match(html, /Logitech C920/);
 assert.match(html, /Datos de la instalación/);
 assert.match(html, /<dt>Instalación<\/dt><dd>22\/09\/2026<\/dd>/);
 assert.match(html, /<dt>Programa<\/dt><dd>Te Tengo Captura 0\.5\.0<\/dd>/);
-assert.match(html, /Cámaras, pausas, consentimiento y alertas: en la app/);
-assert.match(html, /Se inicia con Windows/);
+// No bottom bar: the real window draws no OS chrome (taskbar, clock) and no footer band.
+assert.doesNotMatch(html, /scr-foot|taskbar|tk-clock/);
 assert.doesNotMatch(html, /details class="inst" data-k="inst" open/);  // folded by default
 assert.match(ui.win(E.tres, U({open:{inst:true}}), ''), /data-k="inst" open/);
 
@@ -381,3 +381,39 @@ assert.match(pasos, /Elige <b>Reemplazar<\/b>/);
 assert.match(pasos, /data-act="dlgClose">Entendido<\/button>/);
 assert.equal(ui.BOOT_STEPS[3], 'Terminando la actualización…');
 console.log('ok');
+
+// «Restablecer esta PC» (and «Desinstalar» on a Mac) in «Avanzado › Acerca de», behind a dialog.
+{
+  const linked = Object.assign({}, E.tres, {unlink:true, dataBytes:3.2e9, upd:{ver:'0.5.0', os:'windows', notes:[]}});
+  const about = ui.win(linked, U({tab:'avanzado', adv:{sub:'acerca', cam:null}}), '');
+  assert.match(about, /<b>Restablecer esta PC<\/b>/);
+  assert.match(about, /data-act="resetAsk">Restablecer…<\/button>/);
+  assert.doesNotMatch(about, /uninstallAsk/);  // Windows has its uninstaller
+  const mac = Object.assign({}, linked, {upd:{ver:'0.5.0', os:'mac', notes:[]}});
+  assert.match(ui.win(mac, U({tab:'avanzado', adv:{sub:'acerca', cam:null}}), ''), /data-act="uninstallAsk">Desinstalar…<\/button>/);
+  const reset = ui.dialog(linked, U({dlg:'reset'}));
+  assert.match(reset, /¿Restablecer esta PC\?/);
+  assert.match(reset, /Se dejan de detectar caídas en Sala, Dormitorio y Pasillo\. La familia recibirá un aviso y la PC desaparecerá de la app\./);
+  assert.match(reset, /Movimientos, video y clips \(3,2 GB\)/);
+  assert.match(reset, /El inicio con Windows/);
+  assert.match(reset, /data-act="resetDo"/);
+  const uninstall = ui.dialog(mac, U({dlg:'uninstall'}));
+  assert.match(uninstall, /¿Desinstalar Te Tengo Captura\?/);
+  assert.match(uninstall, /El inicio con la Mac/);
+  assert.match(uninstall, /la app se mueve a la Papelera/);
+  assert.match(ui.dialog(mac, U({dlg:'trash'})), /Arrastra <b>Te Tengo Captura<\/b> a la Papelera/);
+}
+
+// «Salir» from the tray asks first: it stops fall detection; closing the window does not.
+{
+  const salir = ui.dialog(E.tres, U({dlg:'salir'}));
+  assert.match(salir, /¿Salir de Te Tengo Captura\?/);
+  assert.match(salir, /Se dejan de detectar caídas en Sala, Dormitorio y Pasillo\./);
+  assert.match(salir, /sigue cuidando desde la bandeja/);
+  assert.match(salir, /data-act="close">Cerrar la ventana<\/button>/);
+  assert.match(salir, /data-act="quitDo">.*Salir<\/button>/);
+  assert.match(ui.dialog(E.vincular, U({dlg:'salir'})), /Se dejan de detectar caídas\. /);
+}
+
+// After linking: Te Tengo must stay on.
+assert.match(ui.win(E.vinculada, U(), ''), /Deja Te Tengo encendido<\/b><span>Se inicia solo con la PC\. Al cerrar la ventana, sigue en la bandeja junto al reloj\./);

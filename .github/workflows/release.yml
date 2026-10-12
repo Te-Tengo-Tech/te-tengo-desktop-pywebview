@@ -423,6 +423,25 @@ jobs:
           if (Test-Path $atajo) { throw "El acceso directo sigue después de desinstalar" }
           Write-Host "Desinstalado sin restos"
 
+          # Again, with the data of a used install, uninstalling with /RESTABLECER (what «Sí» does):
+          # te-tengo-captura.exe --restablecer deletes config.toml, the data folder and the logs.
+          $p = Start-Process $instalador.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "La segunda instalación terminó con $($p.ExitCode)" }
+          $config = Join-Path $env:APPDATA "TeTengoCaptura"
+          $datos = Join-Path $env:LOCALAPPDATA "TeTengoCaptura"
+          New-Item -ItemType Directory -Force (Join-Path $datos "Datos\movimientos"), (Join-Path $datos "Logs"), $config | Out-Null
+          Set-Content (Join-Path $config "config.toml") 'api_url = "http://127.0.0.1:9"'
+          Set-Content (Join-Path $datos "envios.sqlite3") "x"
+          Set-Content (Join-Path $datos "Datos\movimientos\a.ttg") "x"
+          Set-Content (Join-Path $datos "Logs\te-tengo-captura.log") "x"
+          $u = Start-Process (Join-Path $app "unins000.exe") -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/RESTABLECER","/LOG=desinstalacion.log" -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "El desinstalador con /RESTABLECER terminó con $($u.ExitCode)" }
+          for ($i = 0; $i -lt 60 -and (Test-Path $app); $i++) { Start-Sleep -Seconds 1 }
+          Get-Content desinstalacion.log -ErrorAction SilentlyContinue | Select-String "restablecer"
+          if (Test-Path $config) { throw "La configuración sigue después de restablecer" }
+          if (Test-Path $datos) { throw "Los datos siguen después de restablecer" }
+          Write-Host "Restablecida y desinstalada sin restos"
+
       - name: Stable name and checksum
         shell: bash
         run: |
