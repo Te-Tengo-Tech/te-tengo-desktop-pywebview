@@ -154,9 +154,10 @@ OAuth 2.0 Device Authorization Grant (RFC 8628) with rotating refresh tokens (RF
 
 **1. Ask for a code** — `POST /api/agente/vinculacion`
 ```
-client_id=te-tengo-captura&nombre_pc=Sala-Rosa&sistema_operativo=Windows%2011%20Home&version_agente=0.5.0
+client_id=te-tengo-captura&nombre_pc=Sala-Rosa&sistema_operativo=Windows%2011%20Home&version_agente=0.5.0&id_instalacion=0192f0c4-7b1e-7cc0-9a51-3f5e2d8b4a10
 ```
 - `nombre_pc` (required, 1–60 characters; the computer's name), `sistema_operativo` (optional, up to 60) and `version_agente` (optional, up to 40) are what the app shows before approving (CA-28.4). `scope` is ignored.
+- `id_instalacion` (optional, a UUID): the PC's installation id. The PC generates it once, keeps it in the operating system's credential store and sends the same one with every code request; **it is not a credential and is kept when the PC deletes its tokens** (unlinking, `PC_DESVINCULADA`). With it the app can answer «Esta PC ya está vinculada» (`409 PC_YA_VINCULADA`, API_CONTRACT.md) when the owner scans the code of a PC that is still linked, instead of linking it twice. Not a UUID: `invalid_request`.
 - → `200`
 ```json
 { "device_code": "<43 chars, secret>", "user_code": "KQWT-MXHD",

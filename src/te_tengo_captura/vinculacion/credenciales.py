@@ -6,7 +6,10 @@ Windows Credential Manager, the macOS Keychain or the Linux Secret Service, thro
 * ``pc-renovacion``: the refresh token with the PC's and household's ids;
 * ``pc-acceso``: the access token and when it expires;
 * ``pc-revocacion-pendiente``: a refresh token the PC must still revoke because it was unlinked
-  from the PC while offline (US-31); it is sent as soon as there is internet.
+  from the PC while offline (US-31); it is sent as soon as there is internet;
+* ``pc-instalacion``: the PC's installation id, a UUID generated once and sent with every link
+  code request (``id_instalacion``), so the app can say «Esta PC ya está vinculada». It is not a
+  credential and survives unlinking: ``borrar`` keeps it.
 
 Each value is small JSON (Windows limits a credential to 2560 bytes). The refresh token is
 written before the access token, so a crash between both leaves a renewable state. Nothing here
@@ -15,6 +18,7 @@ is ever logged.
 
 import json
 import logging
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -24,6 +28,7 @@ SERVICIO = "TeTengoCaptura"
 CUENTA_RENOVACION = "pc-renovacion"
 CUENTA_ACCESO = "pc-acceso"
 CUENTA_REVOCACION = "pc-revocacion-pendiente"
+CUENTA_INSTALACION = "pc-instalacion"
 
 
 class Llavero(Protocol):
@@ -111,6 +116,20 @@ class AlmacenCredenciales:
     def borrar(self) -> None:
         for cuenta in (CUENTA_ACCESO, CUENTA_RENOVACION):
             self._borrar(cuenta)
+
+    # ------------------------------------------------------------------ installation id
+
+    def id_instalacion(self) -> str:
+        """The PC's installation id; generated and stored the first time."""
+        datos = self._leer_json(CUENTA_INSTALACION)
+        if datos is not None:
+            try:
+                return str(uuid.UUID(str(datos["id"])))
+            except (KeyError, ValueError):
+                logger.warning("Id de instalación ilegible; se genera otro")
+        nuevo = str(uuid.uuid4())
+        self._escribir(CUENTA_INSTALACION, {"id": nuevo})
+        return nuevo
 
     # ------------------------------------------------------------------ pending revocation
 

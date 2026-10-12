@@ -71,8 +71,10 @@ class Vinculador:
         version_agente: str,
         al_vincular: Callable[[TokensPc], None],
         reloj: Callable[[], float] = time.monotonic,
+        id_instalacion: str | None = None,
     ) -> None:
         self._oauth = oauth
+        self._id_instalacion = id_instalacion
         self._nombre = nombre_pc
         self._sistema = sistema_operativo
         self._version = version_agente
@@ -151,7 +153,9 @@ class Vinculador:
 
     def _pedir(self, ahora: float) -> None:
         try:
-            codigo = self._oauth.pedir_codigo(self._nombre, self._sistema, self._version)
+            codigo = self._oauth.pedir_codigo(
+                self._nombre, self._sistema, self._version, self._id_instalacion
+            )
         except ErrorBackendError as error:
             self._sin_conexion(error, ahora)
             return
