@@ -8,10 +8,11 @@ name: Rollback
 #   Actions → Rollback → Run workflow (branch main) → version x.y.z
 #     verificar   the release vX.Y.Z exists and is published (not a draft or a pre-release)
 #     rollback    environment `produccion` (approval): download, SHA-256 checks, R2 upload with a
-#                 download check, per switch (ENABLE_WINDOWS_INSTALLER, ENABLE_MAC_DMG)
+#                 download check, per switch (ENABLE_WINDOWS_INSTALLER, ENABLE_MAC_DMG), and that
+#                 channel's version for the apps (versiones/<canal>.json, US-43)
 #
 # The agent has no server database to restore: see docs/RELEASES.md for its local outbox and for
-# TT_AGENTE_VERSION_PUBLICADA in the API. Rolling back to the current release (the same bytes) is the
+# the published version the apps read (GET /api/versiones). Rolling back to the current release (the same bytes) is the
 # rehearsal of this workflow (docs/RELEASES.md, Rollback rehearsal).
 #
 # Secrets: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID of the `produccion` environment, read only by
@@ -127,7 +128,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          sparse-checkout: .github/scripts
+          sparse-checkout: |
+            .github/scripts
+            NOVEDADES.md
+          sparse-checkout-cone-mode: false
       - name: Download and verify the binaries
         run: .github/scripts/descargar_candidata.sh "$ORIGEN" candidata
       # publicar_r2.sh downloads each public URL again and compares its SHA-256 with the verified file.
@@ -139,6 +143,16 @@ jobs:
         run: >-
           .github/scripts/publicar_r2.sh candidata/r2/te-tengo-captura-setup.exe
           te-tengo-captura-setup.exe application/vnd.microsoft.portable-executable
+      # US-43: the apps compare against the version R2 serves again (installed newer versions are
+      # not offered the older one). NOVEDADES.md of main may lack its section: no notes then.
+      - name: Windows version for the apps
+        if: vars.ENABLE_WINDOWS_INSTALLER == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: >-
+          .github/scripts/publicar_version.sh windows "${TAG#v}"
+          "${DESCARGAS_BASE_URL%/}/te-tengo-captura-setup.exe" candidata/r2/te-tengo-captura-setup.exe
       - name: macOS disk image to R2
         if: vars.ENABLE_MAC_DMG == 'true'
         env:
@@ -150,10 +164,12 @@ jobs:
             exit 0
           fi
           .github/scripts/publicar_r2.sh candidata/r2/te-tengo-captura.dmg te-tengo-captura.dmg application/x-apple-diskimage
+          .github/scripts/publicar_version.sh mac "${TAG#v}" "${DESCARGAS_BASE_URL%/}/te-tengo-captura.dmg" \
+            candidata/r2/te-tengo-captura.dmg
       - name: Next steps
         run: |
           {
             echo
             echo "R2 serves \`$TAG\` again. Installed agents keep their version: reinstall them by hand where needed."
-            echo "Set \`TT_AGENTE_VERSION_PUBLICADA=${TAG#v}\` in the API, and fix forward with a \`hotfix/x.y.z\` branch (docs/RELEASES.md)."
+            echo "The apps see \`${TAG#v}\` as the latest version (\`GET /api/versiones\`, within 5 min). Fix forward with a \`hotfix/x.y.z\` branch (docs/RELEASES.md)."
           } >> "$GITHUB_STEP_SUMMARY"

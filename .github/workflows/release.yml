@@ -908,7 +908,7 @@ jobs:
             echo
             echo "\`release-gate\` checks that merging puts exactly this tree into \`main\` and that the candidate passed staging (or staging is off). Merge with a merge commit. Merging runs \`produccion.yml\` on main: it finds this candidate by the tree of main, waits for an approval on \`produccion\`, verifies the SHA-256 and uploads the same files to the production keys without rebuilding. Only if something went to production does it tag \`v$VERSION\` and create the GitHub Release$adjuntos, then open the back-merge pull request to develop."
             echo
-            echo "A new push to \`$GITHUB_REF_NAME\` builds the next candidate and updates this description. After the release, set \`TT_AGENTE_VERSION_PUBLICADA=$VERSION\` in the API (docs/RELEASES.md)."
+            echo "A new push to \`$GITHUB_REF_NAME\` builds the next candidate and updates this description. Production also publishes the version for the apps (\`versiones/windows.json\`, \`versiones/mac.json\`; US-43): add its family-facing notes to \`NOVEDADES.md\` before merging (docs/RELEASES.md)."
           } > "$RUNNER_TEMP/cuerpo.md"
           cat "$RUNNER_TEMP/cuerpo.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Mint the release bot token
