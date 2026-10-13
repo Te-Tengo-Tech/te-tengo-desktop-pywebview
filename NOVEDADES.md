@@ -8,6 +8,8 @@
 
 ## [Unreleased]
 
+## [0.6.0]
+
 - Nuevo «Restablecer esta PC» en «Acerca de»: la desvincula y borra todo lo que guardó.
 - Al desinstalar, la PC también se quita de la casa y se borran sus datos.
 - «Salir» ahora pide confirmación, porque deja de detectar caídas.
