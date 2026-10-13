@@ -2,8 +2,8 @@
 ; (docs/RELEASES.md). It needs no administrator rights.
 ;
 ;   uv run pyinstaller packaging/te-tengo-captura.spec --noconfirm
-;   iscc /DAppVersion=0.5.0 packaging\te-tengo-captura.iss
-;   → dist\instalador\te-tengo-captura-0.5.0-instalador.exe
+;   iscc /DAppVersion=0.6.0 packaging\te-tengo-captura.iss
+;   → dist\instalador\te-tengo-captura-0.6.0-instalador.exe
 ;
 ; What it does, consistent with docs/INSTALLATION.md:
 ; - installs dist\te-tengo-captura\ into %LOCALAPPDATA%\Programs\TeTengoCaptura (per user);
@@ -19,7 +19,14 @@
 ;   without touching its process tree, which holds this installer), installs, and opens the agent
 ;   again whether it is an installation (config.toml) or a linked PC (no config.toml). It never
 ;   touches config.toml, the data folder or the PC's tokens (Windows Credential Manager);
-; - on uninstall, asks whether to also delete the configuration, the outbox and the logs.
+; - on uninstall, asks whether to restablish the PC as well (the default answer is «Sí»; silent
+;   uninstalls do it only with /RESTABLECER): before removing the program it runs
+;     te-tengo-captura.exe --restablecer --sin-interfaz --motivo desinstalada
+;   which unlinks the PC in the API if there is internet (the family's app removes it and its
+;   activity says «La PC … se desinstaló»), deletes its tokens and data key from Windows Credential
+;   Manager, config.toml, the data folder and the logs, and the autostart entry. Offline it still
+;   deletes everything here, and the app shows the PC «Sin conexión» until the owner removes it;
+; - the finish page reminds that Te Tengo must stay on and starts with Windows.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -77,6 +84,11 @@ SetupLogging=yes
 
 [Languages]
 Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
+
+[Messages]
+; Draft copy (docs/BLOCKERS.md): detection only works while the program runs.
+FinishedLabel=Te Tengo Captura quedó instalado.%n%nDéjalo encendido: solo detecta caídas mientras está abierto. Se inicia solo con Windows y, al cerrar la ventana, sigue en la bandeja junto al reloj.
+FinishedLabelNoIcons=Te Tengo Captura quedó instalado.%n%nDéjalo encendido: solo detecta caídas mientras está abierto. Se inicia solo con Windows y, al cerrar la ventana, sigue en la bandeja junto al reloj.
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -174,16 +186,63 @@ begin
   Result := '';
 end;
 
+{ /RESTABLECER: a silent uninstall that also restablishes the PC. }
+function SeDebeRestablecer: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/RESTABLECER') = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+{ Draft copy (docs/BLOCKERS.md). «Sí» is the default: an uninstalled PC should not stay in the
+  family's app as if it still looked after someone. }
+function PreguntarRestablecer: Boolean;
+begin
+  if UninstallSilent then
+    Result := SeDebeRestablecer
+  else
+    Result := MsgBox('¿Quitar también esta PC de la casa y borrar sus datos?' + #13#10#13#10 +
+      'Te Tengo dejará de detectar caídas con esta PC. La familia recibirá un aviso y la PC ' +
+      'desaparecerá de la app. Se borrarán los accesos guardados, la configuración, los ' +
+      'movimientos, video y clips, los avisos que aún no se enviaron y los registros.' + #13#10#13#10 +
+      'Elige «No» solo si vas a volver a instalarlo en esta PC.',
+      mbConfirmation, MB_YESNO) = IDYES;
+end;
+
+{ The agent itself unlinks the PC (the API, if there is internet) and deletes its tokens, its
+  configuration, its data and its logs: te-tengo-captura.exe --restablecer (docs/INSTALLATION.md,
+  "Uninstall"). It is a windowed exe, so Exec waits for it to exit; its HTTP calls time out. }
+procedure Restablecer;
+var
+  Codigo: Integer;
+begin
+  if not Exec(ExpandConstant('{app}\{#AppExe}'), '--restablecer --sin-interfaz --motivo desinstalada',
+    '', SW_HIDE, ewWaitUntilTerminated, Codigo) then
+    Log('No se pudo ejecutar --restablecer')
+  else
+    Log('--restablecer terminó con ' + IntToStr(Codigo));
+  { Whatever the agent could not delete (a file in use, an old version without --restablecer). }
+  DelTree(ExpandConstant('{userappdata}\{#AppDirName}'), True, True, True);
+  DelTree(ExpandConstant('{localappdata}\{#AppDirName}'), True, True, True);
+end;
+
+var
+  DebeRestablecer: Boolean;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
+  begin
     DetenerAgente(True);
-  if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
-    if MsgBox('¿Eliminar también la configuración y los datos de {#AppName} en esta PC?' + #13#10#13#10 +
-      'Se borrarán el archivo de instalación, los eventos que aún no se enviaron y los registros. ' +
-      'Elige «No» si vas a volver a instalarlo.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
-    begin
-      DelTree(ExpandConstant('{userappdata}\{#AppDirName}'), True, True, True);
-      DelTree(ExpandConstant('{localappdata}\{#AppDirName}'), True, True, True);
-    end;
+    { Asked before the program is removed: the reset needs te-tengo-captura.exe. }
+    DebeRestablecer := PreguntarRestablecer;
+    if DebeRestablecer then
+      Restablecer;
+  end;
 end;

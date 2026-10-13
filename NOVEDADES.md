@@ -7,3 +7,9 @@
 - The lines are copy: they need the same approval as any other label (docs/BLOCKERS.md). A version without a section is published without notes, and the apps hide «Qué cambió».
 
 ## [Unreleased]
+
+## [0.6.0]
+
+- Nuevo «Restablecer esta PC» en «Acerca de»: la desvincula y borra todo lo que guardó.
+- Al desinstalar, la PC también se quita de la casa y se borran sus datos.
+- «Salir» ahora pide confirmación, porque deja de detectar caídas.

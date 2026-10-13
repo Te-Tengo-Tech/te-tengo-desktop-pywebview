@@ -488,10 +488,11 @@ class AgentePc:
             return False
         return self.latido.en_linea is True
 
-    def desvincular(self, datos_locales_borrados: bool) -> bool:
-        """«Desvincular esta PC»; ``True`` if the API heard it now, ``False`` if it is pending."""
+    def desvincular(self, datos_locales_borrados: bool, motivo: str | None = None) -> bool:
+        """«Desvincular esta PC» (or «Restablecer esta PC» with ``motivo``); ``True`` if the API
+        heard it now, ``False`` if it is pending."""
         try:
-            self._cliente.desvincular(datos_locales_borrados)
+            self._cliente.desvincular(datos_locales_borrados, motivo)
             logger.info("Esta PC se desvinculó desde la PC")
             return True
         except PcDesvinculadaError:
@@ -500,12 +501,14 @@ class AgentePc:
             logger.warning("No se pudo desvincular con la API (%s); se revoca el token", error)
         refresh = self.sesion.refresh_token()
         try:
-            self._oauth.revocar(refresh, datos_locales_borrados)
+            self._oauth.revocar(refresh, datos_locales_borrados, motivo)
             logger.info("Esta PC se desvinculó revocando su token")
             return True
         except ErrorBackendError as error:
             logger.warning("Desvinculación pendiente de enviar (%s)", error)
-            self._almacen.guardar_revocacion(RevocacionPendiente(refresh, datos_locales_borrados))
+            self._almacen.guardar_revocacion(
+                RevocacionPendiente(refresh, datos_locales_borrados, motivo)
+            )
             return False
 
     # ------------------------------------------------------------------ internals
@@ -531,7 +534,7 @@ def enviar_revocacion_pendiente(almacen: AlmacenCredenciales, oauth: ClienteOAut
     if pendiente is None:
         return True
     try:
-        oauth.revocar(pendiente.refresh_token, pendiente.datos_locales_borrados)
+        oauth.revocar(pendiente.refresh_token, pendiente.datos_locales_borrados, pendiente.motivo)
     except ErrorBackendError as error:
         logger.info("La desvinculación sigue pendiente de enviar (%s)", error)
         return False

@@ -1,4 +1,5 @@
 import json
+import uuid
 
 import pytest
 
@@ -61,6 +62,24 @@ def test_revocacion_pendiente() -> None:
     assert "renovacion-1" not in repr(pendiente)
     almacen.borrar_revocacion()
     assert almacen.leer_revocacion() is None
+    almacen.guardar_revocacion(RevocacionPendiente("renovacion-2", True, "restablecida"))
+    assert almacen.leer_revocacion() == RevocacionPendiente("renovacion-2", True, "restablecida")
+
+
+def test_borrar_todo_quita_tokens_revocacion_y_clave_de_datos() -> None:
+    llavero = LlaveroEnMemoria()
+    almacen = AlmacenCredenciales(llavero)
+    almacen.guardar(CredencialesPc("acceso", 1.0, "renovacion", "pc-1", "hogar-1"))
+    almacen.guardar_revocacion(RevocacionPendiente("vieja", False))
+    anterior = almacen.id_instalacion()
+    llavero.set_password("TeTengoCaptura", "clave-datos", "Y2xhdmU=")
+    llavero.set_password("OtroPrograma", "x", "y")
+    almacen.borrar_todo()
+    assert almacen.leer() is None
+    assert almacen.leer_revocacion() is None
+    assert llavero.get_password("TeTengoCaptura", "clave-datos") is None
+    assert llavero.get_password("OtroPrograma", "x") == "y"
+    assert almacen.id_instalacion() != anterior  # a reset PC is a new PC  # nothing else is touched
 
 
 class LlaveroRoto:
@@ -81,3 +100,21 @@ def test_almacen_no_disponible() -> None:
     with pytest.raises(AlmacenNoDisponibleError):
         almacen.guardar(CREDENCIALES)
     almacen.borrar()  # best effort
+
+
+def test_id_de_instalacion_se_genera_una_vez_y_sobrevive_a_la_desvinculacion() -> None:
+    llavero = LlaveroEnMemoria()
+    almacen = AlmacenCredenciales(llavero)
+    primero = almacen.id_instalacion()
+    assert str(uuid.UUID(primero)) == primero
+    almacen.guardar(CREDENCIALES)
+    almacen.borrar()  # unlinking deletes the tokens, never the installation id
+    assert AlmacenCredenciales(llavero).id_instalacion() == primero
+
+
+def test_id_de_instalacion_ilegible_se_reemplaza() -> None:
+    llavero = LlaveroEnMemoria()
+    llavero.set_password(SERVICIO, "pc-instalacion", json.dumps({"id": "no-es-uuid"}))
+    nuevo = AlmacenCredenciales(llavero).id_instalacion()
+    assert nuevo != "no-es-uuid"
+    assert AlmacenCredenciales(llavero).id_instalacion() == nuevo

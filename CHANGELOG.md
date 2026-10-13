@@ -4,6 +4,16 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-12
+
+### Added
+- **«Restablecer esta PC»** in «Avanzado › Acerca de», behind a dialog that lists what is deleted: the PC unlinks itself (`DELETE /api/agente/pc?datosLocalesBorrados=true&motivo=restablecida`; offline the revocation waits until there is internet), deletes its tokens and the data key from the OS credential store, `config.toml`, everything in the data folder (also a moved one) and the start with the system, and shows the link code again.
+- **Uninstall that unlinks** (Windows): the uninstaller asks «¿Quitar también esta PC de la casa y borrar sus datos?» and runs the new `te-tengo-captura.exe --restablecer --sin-interfaz --motivo desinstalada` before removing the program, which also deletes the logs; silent uninstalls do it with `/RESTABLECER`. The family's app removes the PC and its activity says «se desinstaló». **«Desinstalar»** on a Mac does the reset and moves the `.app` to the Trash.
+- **Te Tengo must stay on:** «Salir» in the tray opens the window and asks to confirm it, because it stops fall detection («Cerrar la ventana» keeps it in the tray); after linking the window says «Deja Te Tengo encendido», and so does the installer's finish page.
+
+### Removed
+- The bottom band of the «Estado» tab («Cámaras, pausas, consentimiento y alertas: en la app · Se inicia con Windows»), which looked like the simulated taskbar of the prototype's desktop, and the unused CSS of that simulated desktop (taskbar, clock, tray and system notices).
+
 ## [0.5.0] - 2026-10-11
 
 ### Added

@@ -227,8 +227,11 @@
             : '<div class="notice info next">'+ic('mobile')+'<div><b>Ahora elige las cámaras en la app</b><span class="path">Ajustes'+ic('chevR')+'PCs y cámaras'+ic('chevR')+esc(E.pc.nombre)+'</span></div></div>')+
       foundList(E)+
       (!E.consent ? '<div class="notice warn">'+ic('doc')+'<div><b>Falta el consentimiento de '+esc(E.home.first)+'</b><span>Hasta registrarlo en la app, las cámaras no se usan.</span></div></div>' : '')+
+      STAY_ON+
       '<div class="actions"><button class="btn btn-primary btn-lg" data-act="toEstado">'+ic('pulse')+'Ir a Estado</button></div></div>');
   }
+  /* draft copy (docs/BLOCKERS.md): detection only works while Te Tengo runs */
+  const STAY_ON = '<div class="notice info stay-on">'+ic('power')+'<div><b>Deja Te Tengo encendido</b><span>Se inicia solo con la PC. Al cerrar la ventana, sigue en la bandeja junto al reloj.</span></div></div>';
   function scrRechazada(E, U, enter){
     return sec('', enter, '<div class="result"><span class="ci lg pausa">'+ic('x')+'</span>'+
       '<h1 class="t-title" id="scr-h" tabindex="-1">No se vinculó esta PC</h1>'+
@@ -293,8 +296,12 @@
       : u.os==='windows' ? '<div class="card ab-card"><span class="ci">'+ic('refresh')+'</span><div class="grow"><b id="upd-auto-l">Actualizar automáticamente</b><span>De madrugada, si no hay una alerta.</span></div>'+
           infoTip('Instala la versión nueva a las 03:00 si no hay una alerta ni una vista en vivo.', 'actualizar automáticamente', {k:'upd-auto', end:1, up:1})+sw(u.auto, 'updAuto', 'upd-auto-l')+'</div>' : '';
     const last = u.last ? u.last.replace(/ (\d\d:\d\d)$/, ' <span class="mono">$1</span>') : null;
+    const reset = '<div class="card ab-card ab-reset"><span class="ci caida">'+ic('trash')+'</span><div class="grow"><b>Restablecer esta PC</b><span>La desvincula y borra todo lo que guardó, como recién instalada.</span></div>'+
+        '<button class="btn btn-danger-ghost btn-sm" data-act="resetAsk">Restablecer…</button></div>'+
+      (u.os==='mac' ? '<div class="card ab-card ab-reset"><span class="ci caida">'+ic('x')+'</span><div class="grow"><b>Desinstalar</b><span>Restablece esta PC y mueve Te Tengo Captura a la Papelera.</span></div>'+
+        '<button class="btn btn-danger-ghost btn-sm" data-act="uninstallAsk">Desinstalar…</button></div>' : '');
     return '<div class="about"><div class="card ab-main"><span class="ab-icon">'+appIcon()+'</span><div class="grow"><h2 class="t-h2">Te Tengo Captura</h2><p class="t-meta">Versión <span class="mono">'+esc(u.ver)+'</span>'+(up ? ' · instalada' : '')+'</p>'+st+
-        (last ? '<p class="t-meta ab-last"><span>Última búsqueda: '+last+'</span>'+infoTip('Busca sola al abrir el programa y una vez al día.', 'búsqueda de versiones', {k:'upd-when', start:1})+'</p>' : '')+'</div>'+btns+'</div>'+auto+'</div>';
+        (last ? '<p class="t-meta ab-last"><span>Última búsqueda: '+last+'</span>'+infoTip('Busca sola al abrir el programa y una vez al día.', 'búsqueda de versiones', {k:'upd-when', start:1})+'</p>' : '')+'</div>'+btns+'</div>'+auto+reset+'</div>';
   }
   function scrMain(E, U, enter){
     const tab = tabs(E).some(x => x[0]===U.tab) ? U.tab : 'estado';
@@ -334,8 +341,7 @@
     const list = E.cams.length ? '<ul class="crows" aria-label="Cámaras de esta PC">'+E.cams.map(camRow).join('')+'</ul>' : '';
     return '<header class="cam-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Vivienda de '+esc(E.home.who)+'</h1>'+(E.home.addr ? '<p class="t-meta mt4">'+ic('home')+esc(E.home.addr)+'</p>' : '')+'</div></header>'+
       health(E)+peekNotice(E)+list+
-      '<div class="card instcard">'+det(U, 'inst', '', ic('lock')+'Datos de la instalación', instData(E))+'</div>'+
-      '<p class="scr-foot">'+ic('mobile')+'<span class="ft">Cámaras, pausas, consentimiento y alertas: en la app</span><span class="sep"></span>'+ic('power')+'<span>Se inicia con Windows</span></p>';
+      '<div class="card instcard">'+det(U, 'inst', '', ic('lock')+'Datos de la instalación', instData(E))+'</div>';
   }
 
   /* ---------- Cámaras: las webcams de esta PC y su vista previa local ---------- */
@@ -683,7 +689,30 @@
     return '<div class="dlg-back"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="'+id+'-t"'+(text?' aria-describedby="'+id+'-d"':'')+' id="'+id+'"><div class="dlg-h">'+icon+'<div><h2 id="'+id+'-t">'+title+'</h2>'+(text?'<p id="'+id+'-d">'+text+'</p>':'')+'</div></div>'+body+'<div class="dlg-actions">'+actions+'</div></div></div>';
   }
   function num1(n){ return n.toFixed(1).replace('.', ','); }
+  /* «Restablecer esta PC», «Desinstalar» (Mac) and «Salir»: draft copy (docs/BLOCKERS.md) */
+  function roomsOf(E){ return (E.cams || []).map(c => c.room).filter(Boolean); }
+  function stopsText(E){ const r = roomsOf(E); return 'Se dejan de detectar caídas'+(r.length ? ' en '+esc(listY(r)) : '')+'. '; }
+  function wipeList(E){
+    const gbs = num1((E.dataBytes || 0) / 1e9), sys = E.upd && E.upd.os==='mac' ? 'la Mac' : 'Windows';
+    return '<ul class="notes wipe">'+['Los accesos de esta PC a Te Tengo', 'La configuración', 'Movimientos, video y clips'+(E.dataBytes ? ' ('+gbs+' GB)' : ''), 'Los avisos que aún no se enviaron', 'El inicio con '+sys].map(x => '<li>'+ic('trash')+x+'</li>').join('')+'</ul>';
+  }
+  function resetDialog(E, U){
+    const mac = U.dlg==='uninstall';
+    return dlgBox(mac ? 'dlg-uninstall' : 'dlg-reset', '<span class="ci lg caida">'+ic(mac ? 'x' : 'trash')+'</span>', mac ? '¿Desinstalar Te Tengo Captura?' : '¿Restablecer esta PC?',
+      stopsText(E)+'La familia recibirá un aviso y la PC desaparecerá de la app. Se borra:',
+      wipeList(E)+'<p class="keep">'+ic('info')+(mac ? 'Después, la app se mueve a la Papelera.' : 'Después verás el código para vincularla de nuevo.')+'</p>',
+      '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-danger" data-act="'+(mac ? 'uninstallDo' : 'resetDo')+'"'+(U.busy?' disabled':'')+'>'+ic(mac ? 'x' : 'trash')+(mac ? 'Desinstalar' : 'Restablecer')+'</button>');
+  }
   function dialog(E, U){
+    if((U.dlg==='reset' || U.dlg==='uninstall') && E.screen==='main') return resetDialog(E, U);
+    if(U.dlg==='salir') return dlgBox('dlg-salir', '<span class="ci lg aviso">'+ic('power')+'</span>', '¿Salir de Te Tengo Captura?',
+      stopsText(E)+'La familia no recibirá alertas hasta que lo vuelvas a abrir.',
+      '<div class="notice info">'+ic('info')+'<div><b>¿Solo quieres ocultar la ventana?</b><span>Ciérrala: Te Tengo sigue cuidando desde la bandeja, junto al reloj.</span></div></div>',
+      '<button class="btn btn-secondary" data-act="close">Cerrar la ventana</button><button class="btn btn-danger" data-act="quitDo">'+ic('power')+'Salir</button>');
+    if(U.dlg==='trash') return dlgBox('dlg-trash', '<span class="ci lg calma">'+ic('check')+'</span>', 'Falta un paso',
+      'Esta PC se restableció. Quita la app a mano:',
+      '<ol class="macsteps"><li><span class="n">1</span><span>Elige <b>Salir</b> en el ícono de Te Tengo, junto al reloj</span></li><li><span class="n">2</span><span>Abre <b>Aplicaciones</b> en el Finder</span></li><li><span class="n">3</span><span>Arrastra <b>Te Tengo Captura</b> a la Papelera</span></li></ol>',
+      '<button class="btn btn-primary" data-act="dlgClose">Entendido</button>');
     if(U.dlg==='unlink' && E.screen==='main'){
       const rooms = E.cams.map(c => c.room), gb = (E.dataBytes || 0) / 1e9;
       return dlgBox('dlg-unlink', '<span class="ci lg caida">'+ic('unlink')+'</span>', '¿Desvincular esta PC?',
@@ -938,7 +967,7 @@
   }
   const ACT = {
     minimize(){ call('minimizar'); },
-    close(){ call('cerrar'); },
+    close(){ if(U.dlg==='salir'){ U.dlg = null; render(); } call('cerrar'); },
     tab(el){ if(U.rp.open && el.dataset.arg!=='avanzado') ACT.replayClose(); U.tab = el.dataset.arg; render(); const t = $('tab-'+U.tab); if(t) t.focus({preventScroll:true}); if(U.tab==='avanzado') loadActs(); },
     toCams(){ U.tab = 'camaras'; render(); const t = $('tab-camaras'); if(t) t.focus({preventScroll:true}); },
     selCam(el){ U.sel = el.dataset.arg; previewSrc = null; U.pick = {room:null, otherOn:false, other:'', err:null}; render(); },
@@ -1017,6 +1046,26 @@
     otherCode(){ call('otroCodigo').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },
     pairAgain(){ call('vincularDeNuevo').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },
     unlinkAsk(el){ opener = el; U.dlg = 'unlink'; U.unlinkWipe = false; render(); },
+    resetAsk(el){ opener = el; U.dlg = 'reset'; render(); },
+    uninstallAsk(el){ opener = el; U.dlg = 'uninstall'; render(); },
+    resetDo(){
+      U.busy = true; render();
+      call('restablecer').then(r => {
+        U.busy = false; U.dlg = null; opener = null;
+        if(r && r.ok){ U.tab = 'estado'; U.adv.sub = 'actividad'; toast('ok', 'check', r.avisada ? 'PC restablecida. La familia recibió un aviso.' : 'PC restablecida. La app la mostrará sin conexión hasta que haya internet.'); refrescar(); }
+        else render();
+      });
+    },
+    uninstallDo(){
+      U.busy = true; render();
+      call('desinstalar').then(r => {
+        U.busy = false; opener = null;
+        if(r && r.ok && r.papelera){ U.dlg = null; toast('ok', 'check', 'Te Tengo Captura se movió a la Papelera. Se cerrará en unos segundos.'); }
+        else if(r && r.ok){ U.dlg = 'trash'; refrescar(); }
+        else { U.dlg = null; render(); }
+      });
+    },
+    quitDo(){ U.dlg = null; render(); call('salir'); },
     dlgClose(){ closeDlg(); },
     unlinkDo(){
       U.busy = true; render();
@@ -1072,6 +1121,7 @@
   function refrescar(){ call('estado').then(s => { if(s) actualizar(s); }); }
   /* actions started outside the page (the tray menu): «Descargar la versión X», «Buscar actualizaciones» */
   function accion(nombre){
+    if(nombre==='salir'){ if(E){ U.dlg = 'salir'; render(); const b = document.querySelector('[data-act="quitDo"]'); if(b) b.focus({preventScroll:true}); } return; }
     if(!E || E.screen!=='main') return;
     if(nombre==='updCheck'){ ACT.toAbout(); ACT.updCheck(); }
     else if(nombre==='updGo') ACT.updGo();

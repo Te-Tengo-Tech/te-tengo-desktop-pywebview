@@ -2,6 +2,7 @@ import json
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,9 @@ def test_el_puente_expone_solo_los_metodos_del_contrato() -> None:
         "cancelarActualizacion",
         "irALaDescarga",
         "actualizarAutomaticamente",
+        "salir",
+        "restablecer",
+        "desinstalar",
     }
     assert puente.estado() == {"situacion": "cuidando"}
     assert puente.vistaPrevia("sala") == {"jpeg": "/9hqcGVn"}
@@ -76,6 +80,39 @@ def test_el_puente_expone_solo_los_metodos_del_contrato() -> None:
     assert llamadas.ocultar == 2  # both hide to the tray, neither stops the agent
     assert puente.buscarWebcam() == {"ok": False}
     assert puente.reintentarAhora() == {"ok": True}
+
+
+def test_salir_restablecer_y_desinstalar_van_a_sus_acciones() -> None:
+    from te_tengo_captura.ui.puente import Acciones
+
+    hechas: list[str] = []
+
+    def hecha(nombre: str, resultado: dict[str, Any]) -> Callable[[], dict[str, Any]]:
+        def accion() -> dict[str, Any]:
+            hechas.append(nombre)
+            return resultado
+
+        return accion
+
+    puente = Puente(
+        dict,
+        lambda: None,
+        lambda: False,
+        lambda: True,
+        acciones=Acciones(
+            salir=lambda: hechas.append("salir"),
+            restablecer=hecha("restablecer", {"ok": True, "avisada": True}),
+            desinstalar=hecha("desinstalar", {"ok": True, "papelera": False}),
+        ),
+    )
+    puente.salir()
+    assert puente.restablecer() == {"ok": True, "avisada": True}
+    assert puente.desinstalar() == {"ok": True, "papelera": False}
+    assert hechas == ["salir", "restablecer", "desinstalar"]
+    vacio = Puente(dict, lambda: None, lambda: False, lambda: True)
+    vacio.salir()
+    assert vacio.restablecer() == {"ok": False}
+    assert vacio.desinstalar() == {"ok": False}
 
 
 def test_script_de_actualizacion_es_ascii_y_json() -> None:

@@ -154,9 +154,10 @@ OAuth 2.0 Device Authorization Grant (RFC 8628) with rotating refresh tokens (RF
 
 **1. Ask for a code** — `POST /api/agente/vinculacion`
 ```
-client_id=te-tengo-captura&nombre_pc=Sala-Rosa&sistema_operativo=Windows%2011%20Home&version_agente=0.5.0
+client_id=te-tengo-captura&nombre_pc=Sala-Rosa&sistema_operativo=Windows%2011%20Home&version_agente=0.5.0&id_instalacion=0192f0c4-7b1e-7cc0-9a51-3f5e2d8b4a10
 ```
 - `nombre_pc` (required, 1–60 characters; the computer's name), `sistema_operativo` (optional, up to 60) and `version_agente` (optional, up to 40) are what the app shows before approving (CA-28.4). `scope` is ignored.
+- `id_instalacion` (optional, a UUID): the PC's installation id. The PC generates it once, keeps it in the operating system's credential store and sends the same one with every code request; **it is not a credential and is kept when the PC deletes its tokens** (unlinking, `PC_DESVINCULADA`). With it the app can answer «Esta PC ya está vinculada» (`409 PC_YA_VINCULADA`, API_CONTRACT.md) when the owner scans the code of a PC that is still linked, instead of linking it twice. Not a UUID: `invalid_request`.
 - → `200`
 ```json
 { "device_code": "<43 chars, secret>", "user_code": "KQWT-MXHD",
@@ -198,13 +199,13 @@ grant_type=refresh_token&refresh_token=<refresh_token>&client_id=te-tengo-captur
 **The PC's own endpoints** (its access token):
 - `GET /api/agente/pc` → `200 PcDelAgente = {pcId, hogarId, nombre, nombreAdultoMayor, vinculadaEn, vinculadaPor | null, consentimientoVigente}`. D-28.4: «Esta PC quedó vinculada a la casa de Rosa Huamán · Aprobada por Carmen a las 10:31»; with `consentimientoVigente: false` the PC says it waits for the consent and sends no video (CA-28.1). `vinculadaPor` is the approver's name, null for installations.
 - `POST /api/agente/pc/senal` every 30 s, like the cameras' heartbeat, with an optional `{versionAgente, sistemaOperativo, actualizacionAutomatica}` → `200 PcDelAgente`. It keeps the PC «En línea» in the app even with no camera in use (CA-30.2); camera heartbeats count too. `actualizacionAutomatica` (boolean, US-43, CA-43.7): whether «Actualizar automáticamente» is on; the app shows it as `Pc.actualizacionAutomatica` (omitted keeps the last value).
-- `DELETE /api/agente/pc` → `204`: «Desvincular esta PC» (CA-31.3). The API revokes the PC's tokens, retires its cameras and sends push `PC_DESVINCULADA` to the family; the PC then deletes its credentials and shows the link code. Add `?datosLocalesBorrados=true` when the person also checked «Borrar también los datos guardados en esta PC» (CA-31.6): the PC deletes its data folder (movements, video and clips) itself; the API only records it in the activity log (`DATOS_LOCALES_ELIMINADOS`). Without it the folder stays, encrypted. Revoking the refresh token does the same and works without a valid access token:
+- `DELETE /api/agente/pc` → `204`: «Desvincular esta PC» (CA-31.3). The API revokes the PC's tokens, retires its cameras and sends push `PC_DESVINCULADA` to the family; the PC then deletes its credentials and shows the link code. Add `?datosLocalesBorrados=true` when the person also checked «Borrar también los datos guardados en esta PC» (CA-31.6): the PC deletes its data folder (movements, video and clips) itself; the API only records it in the activity log (`DATOS_LOCALES_ELIMINADOS`). Without it the folder stays, encrypted. Add `?motivo=restablecida` for «Restablecer esta PC» (the PC unlinks itself, deletes its credentials, its settings and all its data, and shows the link code) or `?motivo=desinstalada` when the uninstaller removes the program (`te-tengo-captura --restablecer --motivo desinstalada`); the activity log records it as `PC_DESVINCULADA` with `valorNuevo` `RESTABLECIDA` or `DESINSTALADA` instead of `DESDE_LA_PC`, and the family gets the same push `PC_DESVINCULADA`. Any other `motivo` → `400 VALIDACION`. Revoking the refresh token does the same and works without a valid access token:
 
 **Unlink with the refresh token** — `POST /api/agente/token/revocacion` (RFC 7009)
 ```
 token=<refresh_token>&token_type_hint=refresh_token&client_id=te-tengo-captura
 ```
-(add `&datos_locales_borrados=true` for CA-31.6, as above)
+(add `&datos_locales_borrados=true` for CA-31.6 and `&motivo=restablecida|desinstalada`, as above; an unknown `motivo` counts as a plain unlink, since RFC 7009 always answers `200`)
 → always `200` with an empty body, also for an unknown or already revoked token (RFC 7009 §2.2). Errors: `invalid_request`, `invalid_client`.
 
 **Removed from the app (CA-31.1, CA-31.2).** The PC hears it as `{"desvincular":true}` on its control channels if it is online, or as `401 PC_DESVINCULADA` (or `invalid_grant` when renewing) at its next request. Either way: stop capturing at once, delete the credentials and show the link code, with D-31.2 («Esta PC se quitó de la casa de Rosa Huamán»).

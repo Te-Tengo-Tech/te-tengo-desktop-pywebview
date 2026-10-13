@@ -185,11 +185,6 @@ button{font:inherit}
 .flow li b+span{display:block;font-size:13.5px;color:var(--ink-3);line-height:1.35;margin-top:1px}
 .flow li.cur .fl-ico{background:var(--morado);color:#fff}
 .here{font-size:12px;font-weight:700;color:var(--morado-ink);background:var(--morado-soft);padding:2px 8px;border-radius:6px}
-.scr-foot{display:flex;align-items:center;gap:8px;font-size:12.5px;line-height:1.35;color:var(--ink-2);padding:0 0 22px 64px;flex:none}
-.scr-foot>svg{width:18px;height:18px;flex:none;color:var(--morado)}
-.scr-foot .ft{min-width:0}
-.scr-foot>span:last-child{white-space:nowrap}
-.scr-foot .sep{width:1px;height:18px;background:var(--line-2);margin:0 6px;flex:none}
 
 /* ---------- Pantallas de pasos ---------- */
 .scr-top{height:56px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:10px 28px 0 22px}
@@ -296,7 +291,6 @@ button{font:inherit}
 .empty-list{margin-top:12px;padding:28px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
 .empty-list svg{width:30px;height:30px;color:var(--ink-3)}
 .empty-list span{font-size:14.5px;color:var(--ink-2)}
-.camaras .scr-foot{padding:0 0 18px;margin-top:auto}
 
 /* aviso dentro de la ventana */
 .wtoast{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);z-index:20;background:var(--ink);color:#fff;border-radius:var(--r-ctl);padding:10px 18px 10px 10px;display:flex;gap:12px;align-items:center;
@@ -365,34 +359,7 @@ button{font:inherit}
 .ms-st em.paused{color:var(--pausa)}
 .ms-home{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);width:84px;height:4px;border-radius:2px;background:var(--ink);opacity:.8}
 
-/* ---------- Escritorio, barra de tareas y bandeja ---------- */
-.desk{position:relative;overflow:hidden;background:#DCD6E2;background:radial-gradient(120% 90% at 20% 0%,#E9E4EE 0%,#DCD6E2 55%,#CFC8D8 100%);font-family:var(--font);color:var(--ink)}
-.taskbar{position:absolute;left:0;right:0;bottom:0;height:44px;background:#F6F3F6;box-shadow:0 -1px 0 rgba(43,29,78,.1);display:flex;align-items:center;justify-content:center;padding:0 8px;z-index:30}
-.tk-mid{display:flex;gap:4px;align-items:center}
-.tk-app{width:40px;height:36px;border-radius:6px;display:grid;place-items:center;border:0;background:transparent;color:var(--ink-2);position:relative;padding:0}
-.tk-app svg{width:22px;height:22px}
-button.tk-app{cursor:pointer}
-.tk-app:hover{background:rgba(43,29,78,.07)}
-.tk-app.open::after{content:"";position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:16px;height:3px;border-radius:2px;background:var(--morado)}
-.tray{position:absolute;right:8px;top:0;bottom:0;display:flex;align-items:center;gap:2px}
-.tray-i{height:34px;min-width:30px;border-radius:6px;display:grid;place-items:center;border:0;background:transparent;color:var(--ink);position:relative;padding:0 4px}
-.tray-i>svg{width:17px;height:17px}
-button.tray-i{cursor:pointer}
-.tray-i:hover{background:rgba(43,29,78,.07)}
-.tray-app.hl{background:var(--morado-soft);box-shadow:0 0 0 2px var(--morado) inset}
-.tdot{position:absolute;right:2px;bottom:4px;width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 2px #F6F3F6;background:var(--calma)}
-.tdot.warn{background:#D98A00}.tdot.idle{background:#8E879C}
-.tk-clock{display:flex;flex-direction:column;align-items:flex-end;font-size:12px;line-height:1.3;padding:0 8px 0 10px;font-variant-numeric:tabular-nums}
-.os-toast{position:absolute;right:12px;bottom:56px;width:372px;background:var(--card);border-radius:12px;box-shadow:0 0 0 1px var(--line),0 16px 36px -12px rgba(43,29,78,.3);padding:12px 16px 16px;z-index:31;animation:toastIn .35s var(--ease)}
-.os-h{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2);margin-bottom:10px}
-.os-h .os-t{flex:1}
-.os-x{width:28px;height:28px;border-radius:6px;border:0;background:transparent;color:var(--ink-2);display:grid;place-items:center;cursor:pointer;margin:-4px -8px -4px 0}
-.os-x:hover{background:var(--ground-2)}
-.os-x svg{width:15px;height:15px}
-.os-toast b{display:block;font-size:15px;line-height:1.3;font-weight:600}
-.os-toast p{font-size:13.5px;color:var(--ink-2);margin-top:4px;line-height:1.4}
 @keyframes toastIn{from{transform:translateX(24px);opacity:0}}
-.desk.corner{width:960px;height:640px;border-radius:var(--r-win);box-shadow:0 0 0 1px rgba(0,0,0,.12)}
 
 /* sin animación: exportaciones estáticas */
 .static *,.static *::before,.static *::after{animation:none!important;transition:none!important}
@@ -444,12 +411,6 @@ button.tray-i{cursor:pointer}
 .conf-kv dd{font-weight:600;min-width:0}
 .conf-kv dd span{display:block;font-weight:400;font-size:13px;color:var(--ink-3);font-variant-numeric:tabular-nums}
 /* pie: franja lila al borde inferior de la ventana */
-.estado .scr-foot{margin:auto -40px 0;padding:12px 40px 14px;background:var(--ground-2);box-shadow:0 -1px 0 var(--line)}
-.os-toast.warn b,.os-toast.live b{display:flex;align-items:center;gap:10px}
-.os-toast.warn b svg,.os-toast.live b svg{width:30px;height:30px;padding:6px;border-radius:50%;flex:none}
-.os-toast.warn b svg{background:var(--aviso-soft);color:var(--aviso)}
-.os-toast.warn p,.os-toast.live p{padding-left:40px}
-.os-toast.live b svg{background:var(--morado-soft);color:var(--morado)}
 .g-note{display:flex;gap:10px;align-items:flex-start;max-width:80ch;margin:-8px 0 26px;padding:12px 16px;border-radius:var(--r-ctl);background:#fff;box-shadow:var(--shadow-1);font-size:15.5px;line-height:1.45;color:var(--ink-2)}
 .g-note svg{width:20px;height:20px;flex:none;color:var(--morado-ink);margin-top:2px}
 .g-sec.futuro>h2{border-bottom-style:dashed}
@@ -473,7 +434,6 @@ details.inst .conf-kv>div{grid-template-columns:120px 1fr}
 @media (prefers-reduced-motion:reduce){details.inst>summary svg:last-child{transition:none}}
 /* Vista en vivo: quien mira se ve en la casa (violeta) */
 .st.live{background:var(--morado-soft);color:var(--morado-ink)}
-.tdot.live{background:var(--morado)}
 
 /* =====================================================================
    PCs, cámaras y datos de movimiento: ventana de tres pestañas
@@ -532,7 +492,6 @@ details.inst .conf-kv>div{grid-template-columns:120px 1fr}
 .instcard details.inst .conf-kv{display:grid;grid-template-columns:1fr 1fr;column-gap:28px}
 .instcard details.inst .conf-kv>div{grid-template-columns:110px 1fr}
 .instcard details.inst .conf-kv>div:nth-child(2){box-shadow:none}
-.panel .scr-foot{margin:auto -28px 0;padding:11px 28px 13px;background:var(--ground-2);box-shadow:0 -1px 0 var(--line)}
 
 /* ---------- Cámaras: lista + vista previa local ---------- */
 .p-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex:none}
@@ -922,10 +881,6 @@ details.rp-ev>summary{min-height:38px;font-size:14px}
 .dlg .kv{grid-template-columns:96px 1fr}
 
 /* aviso de Windows: PC quitada de la vivienda */
-.os-toast.removed b{display:flex;align-items:center;gap:10px}
-.os-toast.removed b svg{width:30px;height:30px;padding:6px;border-radius:50%;flex:none;background:var(--pausa-soft);color:var(--pausa)}
-.os-toast.removed p{padding-left:40px}
-.tdot.off{background:#fff;box-shadow:0 0 0 2px #F6F3F6,inset 0 0 0 2px #8E879C}
 .dp-dot.off{background:#fff;box-shadow:inset 0 0 0 2px var(--pausa)}
 @media (prefers-reduced-motion:reduce){.lline.new,.pair-card.fresh .qrwrap,.pair-card.fresh .code-big{animation:none}}
 
@@ -1066,3 +1021,7 @@ body.arranque .boot{left:0;top:0;margin:0;width:100%;height:100%;border-radius:0
 .ab-open[aria-pressed=true]{background:var(--morado-soft);color:var(--morado)}
 .ab-open.up::after{content:"";position:absolute;right:5px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--coral);box-shadow:0 0 0 2px var(--card)}
 .upband:has(.itip.open){overflow:visible}
+/* ---------- «Restablecer esta PC», «Desinstalar» and «Deja Te Tengo encendido» ---------- */
+.about .ab-reset .btn{flex:none}
+.notes.wipe li svg{color:var(--caida)}
+.result.linked .stay-on{margin-top:10px}

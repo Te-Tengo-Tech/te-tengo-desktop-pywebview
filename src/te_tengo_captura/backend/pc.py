@@ -90,9 +90,14 @@ class ClientePc:
         respuesta = self.autenticado("POST", RUTA_SENAL_PC, json=cuerpo.json_api())
         return leer_modelo(PcDelAgente, respuesta)
 
-    def desvincular(self, datos_locales_borrados: bool) -> None:
-        parametros = {"datosLocalesBorrados": "true"} if datos_locales_borrados else None
-        self.autenticado("DELETE", RUTA_PC, params=parametros)
+    def desvincular(self, datos_locales_borrados: bool, motivo: str | None = None) -> None:
+        """``DELETE /api/agente/pc``; ``motivo``: ``restablecida`` or ``desinstalada``."""
+        parametros: dict[str, str] = {}
+        if datos_locales_borrados:
+            parametros["datosLocalesBorrados"] = "true"
+        if motivo:
+            parametros["motivo"] = motivo
+        self.autenticado("DELETE", RUTA_PC, params=parametros or None)
 
     def inventario(self, webcams: list[WebcamInventario]) -> list[CamaraDeLaPc]:
         cuerpo = Inventario(webcams=webcams).json_api()

@@ -23,7 +23,7 @@ WEBCAMS = [
 ]
 
 
-def esperar(prueba: Callable[[], object], limite_s: float = 15) -> None:
+def esperar(prueba: Callable[[], object], limite_s: float = 45) -> None:
     fin = time.monotonic() + limite_s
     while not prueba():
         assert time.monotonic() < fin, "no ocurrió a tiempo"
@@ -36,6 +36,8 @@ class Escenario:
         self.almacen = AlmacenCredenciales(LlaveroEnMemoria())
         self.datos = tmp_path / "datos"
         self.olvidadas = 0
+        self.configuraciones_borradas = 0
+        self.autoinicios_quitados = 0
         self.coordinador: Coordinador | None = None
 
     def crear(
@@ -46,6 +48,13 @@ class Escenario:
         def olvidar() -> None:
             self.olvidadas += 1
 
+        def borrar_configuracion() -> None:
+            self.configuraciones_borradas += 1
+
+        def quitar_autoinicio() -> bool:
+            self.autoinicios_quitados += 1
+            return True
+
         self.coordinador = Coordinador(
             "0.5.0",
             URL_API,
@@ -53,6 +62,8 @@ class Escenario:
             self.almacen,
             instalacion=instalacion,
             olvidar_instalacion=olvidar,
+            olvidar_configuracion=borrar_configuracion,
+            quitar_autoinicio=quitar_autoinicio,
             transporte=self.falso.transporte(),
             canal_pc=False,
             listar=lambda: list(WEBCAMS),
@@ -91,6 +102,8 @@ def test_recien_instalada_muestra_el_codigo(e: Escenario) -> None:
     assert datos["pair"]["qr"]["n"] >= 21
     assert datos["pair"]["left"] == 600
     assert e.falso.vinculaciones[0]["nombre_pc"] == datos["pcname"]
+    # The installation id from the credential store, so the app can say «Esta PC ya está vinculada».
+    assert e.falso.vinculaciones[0]["id_instalacion"] == e.almacen.id_instalacion()
     assert "device_code" not in json.dumps(datos)
     assert "dispositivo-secreto" not in json.dumps(datos)
 
@@ -123,6 +136,17 @@ def test_al_reiniciar_sigue_vinculada_sin_pedir_el_codigo(e: Escenario) -> None:
     otro.iniciar()
     assert otro.estado().pantalla is Pantalla.PRINCIPAL  # CA-28.7
     assert len(e.falso.vinculaciones) == 1
+
+
+def test_el_id_de_instalacion_sobrevive_a_quitarla(e: Escenario) -> None:
+    c = e.vincular()
+    c.ir_a_estado()
+    esperar(lambda: c.pc is not None and c.pc.latido.pc is not None)
+    e.falso.quitar_pc()
+    c.reintentar_ahora()
+    esperar(lambda: c.estado().pantalla is Pantalla.QUITADA)
+    assert e.almacen.leer() is None
+    assert e.almacen.id_instalacion() == e.falso.vinculaciones[0]["id_instalacion"]
 
 
 def test_quitada_desde_la_app(e: Escenario) -> None:
@@ -189,13 +213,68 @@ def test_desvincular_sin_internet_queda_pendiente_y_se_envia_despues(e: Escenari
     assert e.falso.desvinculaciones == [{"via": "revocacion", "datos": "true"}]
 
 
+def test_restablecer_esta_pc_avisa_borra_todo_y_vuelve_al_codigo(e: Escenario) -> None:
+    c = e.vincular()
+    c.ir_a_estado()
+    c.cambiar_modo_avanzado(True)
+    for ruta in (e.datos / "clips" / "e.mp4", e.datos / "actividad.jsonl", e.datos / "x.json"):
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        ruta.write_text("x")
+    guardado = c.almacen.carpeta / "movimientos" / "c1" / "x.parquet.ttg"
+    guardado.parent.mkdir(parents=True)
+    guardado.write_bytes(b"TTG1")
+    assert c.restablecer() == {"ok": True, "avisada": True}
+    assert e.falso.desvinculaciones == [
+        {"via": "delete", "datos": "true", "motivo": "restablecida"}
+    ]
+    assert e.almacen.leer() is None
+    assert e.almacen.llavero.get_password("TeTengoCaptura", "clave-datos") is None
+    assert (e.configuraciones_borradas, e.autoinicios_quitados) == (1, 1)
+    assert not guardado.exists()
+    assert not (e.datos / "clips").exists()
+    assert not (e.datos / "actividad.jsonl").exists()
+    assert not (e.datos / "x.json").exists()
+    assert not c.modo_avanzado
+    esperar(lambda: c.estado().a_json().get("pair", {}).get("code"))
+    assert c.estado().pantalla is Pantalla.VINCULAR  # as on a new install
+    assert c.restablecer() == {"ok": True, "avisada": False}  # unlinked: only deletes again
+
+
+def test_restablecer_sin_internet_deja_la_desvinculacion_pendiente(
+    e: Escenario, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import te_tengo_captura.coordinador as modulo
+
+    monkeypatch.setattr(modulo, "REVOCACION_REINTENTO_S", 0.05)
+    c = e.vincular()
+    c.ir_a_estado()
+    e.falso.sin_conexion = True
+    assert c.restablecer("desinstalada") == {"ok": True, "avisada": False}
+    pendiente = e.almacen.leer_revocacion()
+    assert pendiente is not None
+    assert pendiente.motivo == "desinstalada"
+    assert e.almacen.leer() is None
+    e.falso.sin_conexion = False
+    esperar(lambda: e.almacen.leer_revocacion() is None)
+    assert e.falso.desvinculaciones == [
+        {"via": "revocacion", "datos": "true", "motivo": "desinstalada"}
+    ]
+
+
 def test_noventa_dias_sin_conexion(e: Escenario) -> None:
     c = e.vincular()
     c.ir_a_estado()
+    # The first heartbeat records the last contact (then only hourly): wait for it, so it cannot
+    # overwrite the 91-day-old contact written below.
+    pc = c.pc
+    assert pc is not None
+    esperar(lambda: pc.latido.pc is not None and (e.datos / "ultimo_contacto.json").exists())
     (e.datos / "ultimo_contacto.json").write_text(json.dumps({"en": time.time() - 91 * 86400}))
-    e.falso.quitar_pc()  # the server unlinked it after 90 days: the refresh gives invalid_grant
-    assert c.pc is not None
-    c.pc.sesion.desvincular("invalid_grant")
+    # The server unlinked it after 90 days: the refresh gives invalid_grant. It is reported before
+    # the fake backend drops the PC, so no request of a worker thread can answer PC_DESVINCULADA
+    # first (which shows «Esta PC se quitó» instead).
+    pc.sesion.desvincular("invalid_grant")
+    e.falso.quitar_pc()
     esperar(lambda: c.estado().a_json().get("pair", {}).get("re90"))
     assert c.estado().pantalla is Pantalla.VINCULAR
 

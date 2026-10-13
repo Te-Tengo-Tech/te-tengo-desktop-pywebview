@@ -455,9 +455,10 @@ class BackendFalso:
         if ruta == rutas_oauth.RUTA_REVOCACION:
             token = formulario.get("token", "")
             if token and token == self._refresh:
-                self.desvinculaciones.append(
-                    {"via": "revocacion", "datos": formulario.get("datos_locales_borrados")}
-                )
+                registro = {"via": "revocacion", "datos": formulario.get("datos_locales_borrados")}
+                if formulario.get("motivo"):
+                    registro["motivo"] = formulario["motivo"]
+                self.desvinculaciones.append(registro)
                 self.pc_quitada = True
                 self._refresh = None
                 self._tokens_pc.clear()
@@ -545,9 +546,10 @@ class BackendFalso:
                 200, json={"registrados": len(cambios) - repetidos, "repetidos": repetidos}
             )
         if (metodo, ruta) == ("DELETE", rutas_pc.RUTA_PC):
-            self.desvinculaciones.append(
-                {"via": "delete", "datos": solicitud.url.params.get("datosLocalesBorrados")}
-            )
+            registro = {"via": "delete", "datos": solicitud.url.params.get("datosLocalesBorrados")}
+            if solicitud.url.params.get("motivo"):
+                registro["motivo"] = solicitud.url.params["motivo"]
+            self.desvinculaciones.append(registro)
             self._quitar_pc()
             return httpx.Response(204)
         return self._camaras_pc(solicitud, metodo, ruta)

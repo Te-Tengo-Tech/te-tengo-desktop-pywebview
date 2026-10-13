@@ -72,17 +72,21 @@ class ClienteOAuth:
         )
 
     def pedir_codigo(
-        self, nombre_pc: str, sistema_operativo: str, version_agente: str
+        self,
+        nombre_pc: str,
+        sistema_operativo: str,
+        version_agente: str,
+        id_instalacion: str | None = None,
     ) -> CodigoVinculacion:
-        datos = self._formulario(
-            RUTA_VINCULACION,
-            {
-                "client_id": CLIENT_ID,
-                "nombre_pc": nombre_pc,
-                "sistema_operativo": sistema_operativo,
-                "version_agente": version_agente,
-            },
-        )
+        campos = {
+            "client_id": CLIENT_ID,
+            "nombre_pc": nombre_pc,
+            "sistema_operativo": sistema_operativo,
+            "version_agente": version_agente,
+        }
+        if id_instalacion is not None:
+            campos["id_instalacion"] = id_instalacion
+        datos = self._formulario(RUTA_VINCULACION, campos)
         try:
             return CodigoVinculacion(
                 device_code=str(datos["device_code"]),
@@ -106,7 +110,9 @@ class ClienteOAuth:
             {"grant_type": GRANT_RENOVACION, "refresh_token": refresh_token, "client_id": CLIENT_ID}
         )
 
-    def revocar(self, refresh_token: str, datos_locales_borrados: bool = False) -> None:
+    def revocar(
+        self, refresh_token: str, datos_locales_borrados: bool = False, motivo: str | None = None
+    ) -> None:
         campos = {
             "token": refresh_token,
             "token_type_hint": "refresh_token",
@@ -114,6 +120,8 @@ class ClienteOAuth:
         }
         if datos_locales_borrados:
             campos["datos_locales_borrados"] = "true"
+        if motivo:
+            campos["motivo"] = motivo
         self._formulario(RUTA_REVOCACION, campos, cuerpo=False)
 
     def cerrar(self) -> None:

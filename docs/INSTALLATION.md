@@ -200,7 +200,7 @@ The only images ever written to disk are the clips of events (until they are upl
 
 ## 10. Start with the system
 
-The window says «Se inicia con Windows»: the agent must start on its own when the household PC is turned on.
+The agent must start on its own when the household PC is turned on, and **stay running**: it only detects falls while it is open. Closing the window keeps it in the tray, next to the clock; «Salir» in the tray menu stops detection and asks to confirm it first. After linking, the window says «Deja Te Tengo encendido», and the installer's finish page says the same.
 
 ### Windows
 Nothing to do. On every start, the packaged agent (`te-tengo-captura.exe`) writes or updates a per-user entry in the registry, once the configuration has loaded:
@@ -372,12 +372,34 @@ The script:
 
 It takes about 1.5 minutes, plus the API build the first time. The agent's log is kept in the work directory that the summary prints. The API's `End-to-end` GitHub workflow runs the same script against a branch of this repository (see the API README).
 
-## 13. Uninstall
+## 13. Reset and uninstall
 
-If the agent was installed with the installer, uninstall «Te Tengo Captura» from *Settings → Apps*. It stops the agent and removes the program, the shortcut and the autostart entry, then asks whether to delete the configuration and the data as well. Otherwise:
+### «Restablecer esta PC» (any system)
+«Avanzado» → the «i» next to «Esta PC» («Acerca de») → «Restablecer esta PC», behind a dialog that lists what is deleted. It leaves the PC as just installed:
+
+- **the API** hears it (`DELETE /api/agente/pc?datosLocalesBorrados=true&motivo=restablecida`, `docs/AGENT_CONTRACT.md`): the PC disappears from «PCs y cámaras» in the app, the family gets the push `PC_DESVINCULADA` and «Actividad» says «La PC Sala-Rosa se restableció». Offline, the revocation stays pending in the credential store and is sent as soon as there is internet (the app shows the PC «Sin conexión» until then);
+- **the OS credential store** loses the PC's tokens, its installation id (`id_instalacion`: unlike an unlink, the next code comes with a new one, so the PC is new for the app) and the key of the local data;
+- **the disk** loses `config.toml` and everything in the data folder (outbox, clips, movements, video, local index, activity, update state), also a data folder moved with «Cambiar carpeta». The logs stay (the open log file cannot be deleted on Windows);
+- **start with the system** is removed (the `Run` entry, the LaunchAgent or the autostart file of section 10). It comes back on the next start of the packaged agent on Windows.
+
+The window then shows the QR code to link the PC again.
+
+### Windows
+Uninstall «Te Tengo Captura» from *Settings → Apps*. It stops the agent and asks «¿Quitar también esta PC de la casa y borrar sus datos?» (default «Sí»):
+
+- **Sí:** before removing the program it runs `te-tengo-captura.exe --restablecer --sin-interfaz --motivo desinstalada`, the same reset as above with «se desinstaló» in the activity log, plus the logs. **Offline** it still deletes everything on the PC, but the API is not told (nothing will be left to send it later): the app shows the PC «Sin conexión» until the owner removes it in «PCs y cámaras».
+- **No** (only to reinstall on this PC): the program, the shortcut and the autostart entry go; the link, `config.toml` and the data stay.
+
+A silent uninstall (`unins000.exe /VERYSILENT`) keeps everything, as «No», unless `/RESTABLECER` is added. The command works on its own too (exit code 0; 3 while the agent is running: «Salir» first): `te-tengo-captura.exe --restablecer [--motivo restablecida|desinstalada] [--datos <dir>] [--logs <dir>] [--config <file>]`.
+
+Without the installer:
 
 1. «Salir» from the tray icon menu.
-2. Remove the autostart entry (section 10) and delete `%LOCALAPPDATA%\Programs\TeTengoCaptura\`.
-3. Delete `%APPDATA%\TeTengoCaptura\` (configuration) and `%LOCALAPPDATA%\TeTengoCaptura\` (outbox and logs). Pending events not yet sent are lost.
+2. Run `te-tengo-captura.exe --restablecer --motivo desinstalada`.
+3. Delete `%LOCALAPPDATA%\Programs\TeTengoCaptura\`.
 
-The installation credential stays valid in the backend until its `instalaciones` row is removed. There is no endpoint for this yet (`docs/BLOCKERS.md` of `te-tengo-general-api`, "T07 Installation credentials").
+### macOS
+An `.app` has no uninstaller. «Avanzado» → «Acerca de» → «Desinstalar» does the reset with «se desinstaló» in the activity log, removes the LaunchAgent `~/Library/LaunchAgents/pe.tetengo.captura.plist`, moves «Te Tengo Captura.app» to the Trash and exits. If the app cannot be moved (it runs from a read-only disk image, or macOS refuses), the window says how: «Salir» in the menu bar icon, then drag *Applications → Te Tengo Captura* to the Trash. Dragging the app to the Trash without «Desinstalar» leaves the PC linked and its data in `~/Library/Application Support/TeTengoCaptura/`; run `"/Applications/Te Tengo Captura.app/Contents/MacOS/te-tengo-captura" --restablecer --motivo desinstalada` first.
+
+### Installations (`config.toml` with `credencial_instalacion`)
+The reset deletes `config.toml` with its credential, but the credential stays valid in the backend until its `instalaciones` row is removed. There is no endpoint for this yet (`docs/BLOCKERS.md` of `te-tengo-general-api`, "T07 Installation credentials").

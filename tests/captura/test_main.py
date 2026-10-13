@@ -161,3 +161,62 @@ def test_sin_interfaz_no_abre_la_ventana_ni_registra_el_autoinicio(
     argumentos_ = ["--config", str(ejemplo), "--backend-falso", "--sin-interfaz"]
     assert main([*argumentos_, "--datos", str(tmp_path), "--logs", str(tmp_path)]) == 0
     assert len(sin_ventana) == 1
+
+
+def test_restablecer_desde_la_linea_de_comandos(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """What the Windows uninstaller runs: no window, everything of the PC is deleted."""
+    from te_tengo_captura import __main__ as principal
+    from te_tengo_captura import restablecer
+    from te_tengo_captura.vinculacion.credenciales import LlaveroEnMemoria
+
+    llamadas: list[tuple[str, str]] = []
+
+    def ejecutar(
+        api_url: str,
+        almacen: object,
+        datos: Path,
+        config: Path | None,
+        logs: Path | None,
+        motivo: str,
+    ) -> restablecer.Resultado:
+        llamadas.append((api_url, motivo))
+        assert (datos, config, logs) == (tmp_path / "d", tmp_path / "c.toml", tmp_path / "l")
+        return restablecer.Resultado(vinculada=True, avisada=False)
+
+    monkeypatch.setattr(principal, "AlmacenCredenciales", lambda: LlaveroEnMemoria())
+    monkeypatch.setattr(restablecer, "ejecutar", ejecutar)
+    argumentos_ = [
+        "--restablecer",
+        "--sin-interfaz",
+        "--datos",
+        str(tmp_path / "d"),
+        "--logs",
+        str(tmp_path / "l"),
+        "--config",
+        str(tmp_path / "c.toml"),
+    ]
+    assert main([*argumentos_, "--motivo", "desinstalada"]) == 0
+    assert llamadas == [("https://api.tetengo.reqsai.tech", "desinstalada")]
+    salida = capsys.readouterr()
+    assert "se restableció" in salida.out
+    assert "Sin conexión" in salida.err
+    assert not (tmp_path / "l").exists()  # no log file was opened
+    assert argumentos(["--restablecer"]).motivo == "restablecida"
+    with pytest.raises(SystemExit):
+        argumentos(["--restablecer", "--motivo", "robada"])
+
+
+def test_restablecer_no_corre_con_el_agente_abierto(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from te_tengo_captura.instancia import Instancia
+
+    abierta = Instancia(tmp_path)
+    assert abierta.adquirir(lambda: None)
+    try:
+        assert main(["--restablecer", "--datos", str(tmp_path), "--logs", str(tmp_path)]) == 3
+    finally:
+        abierta.liberar()
+    assert "Salir" in capsys.readouterr().err
