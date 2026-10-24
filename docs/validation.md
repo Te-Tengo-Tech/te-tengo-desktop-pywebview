@@ -113,6 +113,8 @@ The figures in this section are **calibrated with all the videos**, so they are 
 4. **There are no older adults or real falls** in the data (charter risk 9). The real false alarm rate will be measured in the home (OE4-I2).
 5. **The validation is per video,** not per instant. It does not measure the alert latency, whose requirement is under 10 s; the classifier emits the fall as soon as M3 is met.
 
+The ranges in which each tunable value keeps this performance (US-45) are measured in [validation-rangos.md](validation-rangos.md).
+
 ## References
 
 Chen, W., Jiang, Z., Guo, H., & Ni, X. (2020). Fall detection based on key points of human-skeleton using OpenPose. *Symmetry, 12*(5), 744. https://doi.org/10.3390/sym12050744
