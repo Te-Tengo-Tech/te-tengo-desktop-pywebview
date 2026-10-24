@@ -25,6 +25,7 @@ from te_tengo_captura.captura.pose import EstimadorMediaPipe, ruta_modelo_predet
 from te_tengo_captura.coordinador import Coordinador
 from te_tengo_captura.diario import Diario, ManejadorDiario
 from te_tengo_captura.instancia import Instancia
+from te_tengo_captura.salida import Salida
 from te_tengo_captura.vinculacion.credenciales import (
     AlmacenCredenciales,
     Llavero,
@@ -84,6 +85,15 @@ def argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--autoprueba",
         action="store_true",
         help="check the model, clip encoding and UI libraries, then exit (packaging smoke test)",
+    )
+    parser.add_argument(
+        "--salir-tras",
+        type=float,
+        metavar="S",
+        help=(
+            "S seconds after the window opens, choose «Salir» in the tray and confirm it in the "
+            "window (smoke test of the exit)"
+        ),
     )
     return parser.parse_args(argv)
 
@@ -214,13 +224,16 @@ def construir(
 
 
 def ejecutar_aplicacion(
-    agente: Coordinador, instancia_abrir: dict[str, Callable[[], None]]
-) -> None:
+    agente: Coordinador,
+    instancia_abrir: dict[str, Callable[[], None]],
+    salir_tras: float | None = None,
+) -> Salida:
     from te_tengo_captura.ui.aplicacion import Aplicacion
 
-    aplicacion = Aplicacion(agente)
+    aplicacion = Aplicacion(agente, salir_tras=salir_tras)
     instancia_abrir["abrir"] = aplicacion.abrir
     aplicacion.ejecutar()
+    return aplicacion.salida
 
 
 def ejecutar_restablecer(args: argparse.Namespace) -> int:
@@ -291,15 +304,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(error, file=sys.stderr)
         instancia.liberar()
         return 2
+    salida: Salida | None = None
     try:
         if args.sin_interfaz:
             # Not the household install: no autostart entry, which would start it with a window.
             sin_interfaz.ejecutar(agente)
         else:
-            autoinicio.registrar()
-            ejecutar_aplicacion(agente, abrir)
+            if args.salir_tras is None:
+                autoinicio.registrar()
+            salida = ejecutar_aplicacion(agente, abrir, args.salir_tras)
     finally:
         instancia.liberar()
+    if salida is not None:
+        # pywebview's bridge threads are not daemons and may never return once the window is
+        # gone: never let them keep the process alive (``salida.py``).
+        salida.terminar(0)
     return 0
 
 

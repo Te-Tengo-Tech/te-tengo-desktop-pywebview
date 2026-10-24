@@ -139,6 +139,27 @@ jobs:
           $r = Start-Process -FilePath $exe -ArgumentList "--restablecer","--sin-interfaz","--motivo","desinstalada","--datos","restablecer/datos","--logs","restablecer/logs","--config","restablecer/config.toml" -Wait -PassThru
           if ($r.ExitCode -ne 0) { throw "--restablecer terminó con $($r.ExitCode)" }
           if ((Test-Path restablecer/datos/envios.sqlite3) -or (Test-Path restablecer/logs) -or (Test-Path restablecer/config.toml)) { throw "--restablecer dejó archivos" }
+          # The exit (--salir-tras): «Salir» in the tray, confirmed in the window through the JS bridge,
+          # must end the process within 5 s (a bridge thread left waiting once used to hang it).
+          $s = Start-Process -FilePath $exe -ArgumentList "--backend-falso","--config","config.ejemplo.toml","--datos","salida/datos","--logs","salida/logs","--salir-tras","5" -PassThru
+          $null = $s.Handle  # keeps the exit code readable after WaitForExit
+          if (-not $s.WaitForExit(120000)) {
+            Stop-Process -Id $s.Id -Force
+            Get-Content salida/logs/te-tengo-captura.log
+            throw "--salir-tras no terminó en 120 s"
+          }
+          $log = Get-Content -Raw salida/logs/te-tengo-captura.log
+          $log
+          if ($s.ExitCode -ne 0) {
+            Get-WinEvent -LogName Application -MaxEvents 20 -ErrorAction SilentlyContinue |
+              Where-Object { $_.ProviderName -match '\.NET Runtime|Application Error' } |
+              Select-Object -First 3 | Format-List TimeCreated, ProviderName, Message
+            throw "--salir-tras terminó con $($s.ExitCode)"
+          }
+          if ($log -notmatch 'Salida completa en (\d+[.,]\d) s') { throw "--salir-tras no registró la salida" }
+          $segundos = [double]::Parse(($Matches[1] -replace ',', '.'), [Globalization.CultureInfo]::InvariantCulture)
+          if ($segundos -ge 5) { throw "la salida tardó $segundos s" }
+          if ($log -match 'Se cierra sin esperar|La salida tardó') { throw "la salida tuvo que forzarse" }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: te-tengo-captura-windows

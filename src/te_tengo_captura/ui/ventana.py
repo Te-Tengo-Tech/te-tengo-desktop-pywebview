@@ -74,6 +74,13 @@ class VentanaEstado:
         if self._cargada.is_set() and not self._saliendo:
             self._ventana.evaluate_js(f"window.ttg && window.ttg.accion({json.dumps(nombre)})")
 
+    def confirmar_salida(self) -> None:
+        """Presses the dialog's «Salir» (``--salir-tras``), as the person would."""
+        if self._cargada.is_set() and not self._saliendo:
+            self._ventana.evaluate_js(
+                "(function(b){ b && b.click(); })(document.querySelector('[data-act=\"quitDo\"]'))"
+            )
+
     def elegir_destino(self, nombre: str) -> Path | None:
         """The system's «Guardar como» with ``nombre`` proposed; ``None`` if cancelled."""
         import webview
@@ -95,9 +102,25 @@ class VentanaEstado:
             return None
         return Path(elegido if isinstance(elegido, str) else elegido[0])
 
+    @property
+    def nativa(self) -> Any:
+        """The pywebview window (the platform hooks of ``macos.py`` and ``windows.py``)."""
+        return self._ventana
+
+    @property
+    def saliendo(self) -> bool:
+        return self._saliendo
+
+    def preparar_salida(self) -> None:
+        """No more scripts for the page: one in flight when the window closes never returns."""
+        self._saliendo = True
+
     def destruir(self) -> None:
         self._saliendo = True
-        self._ventana.destroy()
+        try:
+            self._ventana.destroy()
+        except Exception:  # already closed (e.g. by the system's shutdown)
+            logger.debug("La ventana ya estaba cerrada", exc_info=True)
 
     def _al_cerrar(self) -> bool:
         # Alt+F4 or the OS close: hide instead of closing (returning False cancels it).
