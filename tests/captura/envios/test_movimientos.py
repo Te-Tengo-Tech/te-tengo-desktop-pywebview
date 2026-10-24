@@ -21,7 +21,10 @@ from te_tengo_captura.envios.movimientos import CarrilMovimientos
 from te_tengo_captura.vinculacion.credenciales import LlaveroEnMemoria
 from te_tengo_deteccion.clasificacion.estados import TipoEvento
 
-AHORA = datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=30)
+# Start of a 5-minute window about half an hour ago: the 40 rows (5 s) of guardar_movimientos
+# must land in one movements file, whatever time the tests run.
+_HACE_MEDIA_HORA = datetime.now(UTC) - timedelta(minutes=30)
+AHORA = _HACE_MEDIA_HORA.replace(minute=_HACE_MEDIA_HORA.minute // 5 * 5, second=0, microsecond=0)
 PUNTO = (0.5, 0.25, 0.0, 0.9)
 
 
