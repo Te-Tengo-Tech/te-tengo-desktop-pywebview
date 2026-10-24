@@ -1,6 +1,6 @@
 # Kinematic classification specification
 
-This document explains **what** the Kinematic Classification Service computes, **why**, and **where** each formula and each threshold **comes from**. The code does not cite authors: each function names the rule (R1–R8) or the adaptation (A1–A5) that it implements, and this document gives the details with their sources.
+This document explains **what** the Kinematic Classification Service computes, **why**, and **where** each formula and each threshold **comes from**. The code does not cite authors: each function names the rule (R1–R9) or the adaptation (A1–A5) that it implements, and this document gives the details with their sources.
 
 Code: [`src/te_tengo_deteccion/clasificacion/`](../src/te_tengo_deteccion/clasificacion) · Tests: [`tests/deteccion/clasificacion/`](../tests/deteccion/clasificacion)
 
@@ -115,6 +115,9 @@ M3 = 1  if  P ≥ T ,  T = 1         when walking P < 1; when falling P > 1
      │                    R7 movimiento_inestable                          │  R6 caida_confirmada
      └──────────── upright again: R5 recuperacion ◄────────────────────────┘
                                      (on entering EN_EL_SUELO: R4 caida)
+
+   NORMAL or INICIO_CAÍDA ── upright ≤ 10 s ago, hip ≥ 0.4 L lower, horizontal 2 s ──► EN_EL_SUELO
+                                                                    (R9 caida, slow fall)
 ```
 
 "Upright" means θ > 45° and P < 1, the condition of R5.
@@ -126,6 +129,7 @@ M3 = 1  if  P ≥ T ,  T = 1         when walking P < 1; when falling P > 1
 | **R6** | `caida_confirmada` | Still in `EN_EL_SUELO` after 30 s. If the person is not visible, the time keeps counting. | **Backlog:** US-13, "Confirmación por permanencia en el suelo". |
 | **R7** | `movimiento_inestable` | M1 and M2 without reaching M3, and the person is upright again within the window | **Proposal** (see below). |
 | **R8** | `deteccion_no_confiable` | 300 consecutive seconds without a valid pose. The notice is sent once, until the person is seen again. | **Backlog:** US-15, "Condiciones de captura". |
+| **R9** | `caida` (slow fall) | Outside `EN_EL_SUELO`: the person was upright during the last 10 s, the hip is ≥ 0.4 center-line lengths below the highest upright hip of those 10 s, and the body has been horizontal (M3) for 2 s. Goes to `EN_EL_SUELO` like R4. | **Proposal** (see below; ADR 0009). |
 
 ### Reaction window: 1.48 s
 Gutiérrez et al. (2023) model the body as an inverted pendulum. With the center of mass height of older adults (0.974 m in men and 0.930 m in women), they calculate that a fall without reaction takes **between 1.0 and 1.48 s**. The upper limit is used as the maximum time between the start of the fall and the horizontal posture.
@@ -140,8 +144,26 @@ Therefore, requiring M1 **and** M2 rules out crouching (M1 only) and bending ove
 
 **Limitation:** it does not detect a slight sway while standing or a sudden lean without tilting. The search for sources for these cases is ongoing.
 
+### R9: slow falls (proposal)
+R4 needs the hip to go down **while** the body is tilted, and the horizontal posture within 1.48 s. A slow fall can break both: sliding down from a chair or a bed keeps the torso upright while the hip goes down; lying back after sagging to the floor or after kneeling tilts the body when the hip no longer goes down; and sagging can take longer than the window. Such falls are frequent in older adults: in 227 falls filmed in long-term care, 12 % happened while sitting down and 11 % were collapses (Robinovitch et al., 2013).
+
+R9 looks at the **cumulative** drop instead of the speed:
+
+```
+ref   = upright frame of the last T s with the highest hip (smallest ȳ)       T = 10 s
+D(t)  = ( ȳ(t) − ȳ_ref ) / L_ref                                             in center-line lengths
+caida   if  D ≥ 0.4  and  M3 on every frame with a pose during the last P s   P = 2 s
+```
+
+- **Upright shortly before.** Only a person who was standing in the last 10 s can fall; someone who has been sitting or lying for longer cannot trigger R9. The reference is the highest hip, not the last upright frame, because sitting on the floor or kneeling still meets the "upright" test (θ > 45°, P < 1).
+- **Floor, not bed.** Standing, the hip is about 0.6 lengths above the ankles. Lying on a bed or a sofa it is about 0.2 lengths lower, and on the floor about 0.5 lower (an estimate from body proportions for a side view; our own). 0.4 is between both.
+- **Horizontal for 2 s.** A short stretch on the floor, or MediaPipe estimating one horizontal frame, does not trigger it. A frame with a pose that is not horizontal restarts the count; frames without a pose do not, because MediaPipe loses people lying on the floor, but the fall is declared on the next frame with a pose (declaring it without a pose added false alarms and no falls in the validation).
+- The event is the same `caida`, with `caida_lenta = 1` and `descenso = D` in its parameters, and continues to `EN_EL_SUELO` as R4.
+
+**Limitations:** lying down **on the floor** on purpose looks the same as a slow fall that ends lying (it adds false alarms in URFD); a slow fall that ends **sitting** on the floor is not detected; and lying on a bed is excluded only by geometry, because no dataset has it. The default values come from geometry and the reported scenarios; on the datasets they add the slow falls that R4 missed (see validation.md, section 3.6).
+
 ### Validation with datasets
-Adaptations A3, A6, A7 and A8 and the speed threshold came from validating with URFD and CAUCAFall. Result under production conditions (8 fps, JPEG, leaving one group out): **sensitivity 81.2%, specificity 81.1%, accuracy 81.2%** and no false recoveries. Details, protocol and limitations in [validation.md](validation.md).
+Adaptations A3, A6, A7 and A8 and the speed threshold came from validating with URFD and CAUCAFall. Result under production conditions (8 fps, JPEG, leaving one group out): **sensitivity 81.2%, specificity 81.1%, accuracy 81.2%** and no false recoveries with R4 to R8; with R9, **82.5%, 78.9% and 80.6%**, still without false recoveries. Details, protocol and limitations in [validation.md](validation.md).
 
 ---
 
@@ -153,10 +175,13 @@ Adaptations A3, A6, A7 and A8 and the speed threshold came from validating with 
 | `intervalo_velocidad_s` | 0.25 s | R1 | Chen et al. (2020), sec. 3.2 | — (not in US-45) |
 | `ventana_velocidad_s` | 1 s | R1 | Adaptation A3 (descent duration: Choi et al., 2015, in Traverso et al., 2024) | — (not in US-45) |
 | `persistencia_erguido_s` | 1 s | R5 | Adaptation A8, calibrated with URFD | 0.75–3 s |
-| `angulo_linea_central_max_grados` | 45° | R2, R5 | Chen et al. (2020), sec. 3.3 | 45–60° |
+| `angulo_linea_central_max_grados` | 45° | R2, R5 | Chen et al. (2020), sec. 3.3 | 45–50° |
 | `razon_ancho_alto_min` | 1 | R3, R5 | Chen et al. (2020), sec. 3.4 | 1.0–1.4 |
 | `ventana_reaccion_s` | 1.48 s | R4, R7 | Gutiérrez et al. (2023) | 1.0–3.0 s (data insensitive) |
 | `confirmacion_suelo_s` | 30 s | R6 | Backlog, US-13 | 15–120 s (untested) |
+| `descenso_caida_lenta_min` | 0.4 lengths | R9 | Proposal: between a bed (≈ 0.2) and the floor (≈ 0.5) | 0.3–0.6 |
+| `ventana_caida_lenta_s` | 10 s | R9 | Proposal | 5–20 s (untested) |
+| `permanencia_caida_lenta_s` | 2 s | R9 | Proposal | 1.5–5 s |
 | `sin_deteccion_confiable_s` | 300 s | R8 | Backlog, US-15 | — (not in US-45) |
 | `visibilidad_min` | 0.5 | A5 | MediaPipe default value (Google, s.f.-a); to be calibrated | — (not in US-45) |
 
@@ -182,6 +207,7 @@ The safe ranges are those the installer may use per camera (US-45, CA-45.1 and C
 |---|---|
 | R1–R3 | `tests/clasificacion/test_parametros.py` |
 | R4–R8 | `tests/clasificacion/test_estados.py`: fall, confirmation, recovery, recovered stumble, stumble that ends in a fall, crouching, bending over, walking and 5 min without a person |
+| R9 | `tests/clasificacion/test_estados.py`: sliding down and slumping back, kneeling and then lying, frames without a pose, lying on a bed, sitting on the floor for longer than the window, lying for less than 2 s, and horizontal after the reaction window |
 
 ---
 
@@ -194,6 +220,8 @@ Google. (s.f.-a). *Pose landmark detection guide*. Google AI Edge. https://ai.go
 Google. (s.f.-b). *Pose landmark detection guide for Python*. Google AI Edge. https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker/python
 
 Traverso, A., Bayram, A., Rossettini, G., Chiappinotto, S., Galazzi, A., & Palese, A. (2024). Investigating the biomechanics of falls in older adults in long-term care using a video camera: A scoping review. *BMC Geriatrics, 24*, 810. https://doi.org/10.1186/s12877-024-05395-2
+
+Robinovitch, S. N., Feldman, F., Yang, Y., Schonnop, R., Leung, P. M., Sarraf, T., Sims-Gould, J., & Loughin, M. (2013). Video capture of the circumstances of falls in elderly people residing in long-term care: An observational study. *The Lancet, 381*(9860), 47–54. https://doi.org/10.1016/S0140-6736(12)61263-X
 
 Gutiérrez, J., Martin, S., & Rodriguez, V. (2023). Human stability assessment and fall detection based on dynamic descriptors. *IET Image Processing, 17*(11), 3177–3195. https://doi.org/10.1049/ipr2.12847
 

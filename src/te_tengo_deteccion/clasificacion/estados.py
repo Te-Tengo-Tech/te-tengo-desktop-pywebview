@@ -20,11 +20,18 @@ Events emitted:
 * ``movimiento_inestable`` (R7, proposal pending validation): a fall started, but the person
   was upright again before becoming horizontal.
 * ``deteccion_no_confiable`` (R8): too much time passed without seeing the person.
+
+A slow fall (sliding down from a chair, sagging to the floor, kneeling and then lying down) may
+never meet M1 and M2 together, or may become horizontal after the reaction window. Rule R9
+(proposal) also emits ``caida`` when, shortly after being seen upright, the hip has dropped a
+large part of the body length and the body stays horizontal for a while.
 """
 
+from collections import deque
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from te_tengo_deteccion.clasificacion import parametros
 from te_tengo_deteccion.clasificacion.medicion import Medicion, MedidorCinematico
 from te_tengo_deteccion.clasificacion.umbrales import Umbrales
 from te_tengo_deteccion.pose.schemas import Pose
@@ -70,6 +77,72 @@ class Tiempos:
     erguido: float | None
 
 
+@dataclass(frozen=True, slots=True)
+class _Erguida:
+    """A frame in which the person was seen upright: hip height and body length (R9)."""
+
+    instante: float
+    y_cadera: float
+    largo: float
+
+
+class _DetectorCaidaLenta:
+    """Rule R9 (proposal): a fall too slow, or too gradual, for R4.
+
+    It needs three things:
+
+    1. **Upright shortly before.** The reference is the highest hip among the frames in which
+       the person was seen upright during the last ``ventana_s``, so a sitting or kneeling
+       pause, which may still look upright, does not lower it.
+    2. **The hip near the floor.** The hip has dropped at least ``descenso_min`` center-line
+       lengths below that reference. Standing, the hip is about 0.6 lengths above the ankles;
+       on a bed or a sofa it drops about 0.2, and on the floor about 0.5.
+    3. **Horizontal for a while.** The body is horizontal (M3) on every frame with a pose for
+       ``permanencia_s``. Frames without a pose do not interrupt the count, because MediaPipe
+       often loses a person lying on the floor; the fall is declared on the next frame with a
+       pose. Emitting it on a frame without a pose added false alarms and no falls in the
+       validation.
+    """
+
+    def __init__(self, descenso_min: float, ventana_s: float, permanencia_s: float) -> None:
+        self._descenso_min = descenso_min
+        self._ventana = ventana_s
+        self._permanencia = permanencia_s
+        self._erguidas: deque[_Erguida] = deque()
+        self._referencia: _Erguida | None = None
+        self._abajo_desde: float | None = None
+        self.descenso = 0.0
+
+    def reiniciar(self) -> None:
+        self._abajo_desde = self._referencia = None
+
+    def observar(
+        self, instante: float, p: parametros.Parametros, erguido: bool, horizontal: bool
+    ) -> bool:
+        """Processes a frame with a pose; ``True`` when the slow fall is declared."""
+        while self._erguidas and self._erguidas[0].instante < instante - self._ventana:
+            self._erguidas.popleft()
+        if erguido:
+            self._erguidas.append(_Erguida(instante, p.centro_cadera.y, p.longitud_linea_central))
+            self.reiniciar()
+            return False
+        if not horizontal:
+            self.reiniciar()
+            return False
+        if self._referencia is None:
+            # y grows downwards: the highest hip has the smallest y.
+            self._referencia = min(self._erguidas, key=lambda e: e.y_cadera, default=None)
+            self._abajo_desde = instante
+        ref = self._referencia
+        if ref is None or ref.largo <= 0:
+            return False
+        self.descenso = (p.centro_cadera.y - ref.y_cadera) / ref.largo
+        if self.descenso < self._descenso_min or self._abajo_desde is None:
+            self._abajo_desde = instante
+            return False
+        return instante - self._abajo_desde >= self._permanencia
+
+
 class ClasificadorCinematico:
     """Classifies the pose sequence of ONE camera. ``instante`` is in seconds."""
 
@@ -80,6 +153,11 @@ class ClasificadorCinematico:
         self._velocidad_min = umbrales.velocidad_descenso_min
         self._medidor = MedidorCinematico(
             umbrales.intervalo_velocidad_s, umbrales.ventana_velocidad_s, umbrales.visibilidad_min
+        )
+        self._lenta = _DetectorCaidaLenta(
+            umbrales.descenso_caida_lenta_min,
+            umbrales.ventana_caida_lenta_s,
+            umbrales.permanencia_caida_lenta_s,
         )
         self._erguido_desde: float | None = None
         self._ultima: Medicion | None = None
@@ -155,6 +233,12 @@ class ClasificadorCinematico:
             "velocidad": round(velocidad, 3) if velocidad is not None else -1.0,
         }
 
+        # R9 watches every frame outside the floor phase, so a fall that started as R4 but did
+        # not become horizontal within the reaction window can still be declared.
+        lenta = self._fase is not Fase.EN_EL_SUELO and self._lenta.observar(
+            instante, p, erguido, m3
+        )
+
         if self._fase is Fase.NORMAL and m1 and m2:
             self._fase = Fase.INICIO_CAIDA
             self._inicio_caida = instante
@@ -167,6 +251,11 @@ class ClasificadorCinematico:
                 return [Evento(TipoEvento.MOVIMIENTO_INESTABLE, instante, datos)]
             if instante - self._inicio_caida > self._u.ventana_reaccion_s:
                 self._fase = Fase.NORMAL
+
+        if lenta:
+            datos |= {"caida_lenta": 1.0, "descenso": round(self._lenta.descenso, 3)}
+            return [self._entrar_al_suelo(instante, datos)]
+        if self._fase is Fase.INICIO_CAIDA:
             return []
 
         if self._fase is Fase.EN_EL_SUELO:
@@ -180,6 +269,7 @@ class ClasificadorCinematico:
     # ------------------------------------------------------------------ internals
 
     def _entrar_al_suelo(self, instante: float, datos: dict[str, float]) -> Evento:
+        self._lenta.reiniciar()
         self._fase = Fase.EN_EL_SUELO
         self._instante_caida = instante
         self._confirmada = False

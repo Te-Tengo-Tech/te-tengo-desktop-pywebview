@@ -10,6 +10,9 @@ it reports:
 * false recoveries: URFD falls with a ``recuperacion`` (nobody gets up in them);
 * detection latency: from the first URFD frame labelled "falling" to the ``caida`` event.
 
+It also compares the classifier with and without the slow-fall rule R9, overall, per activity
+and on the slow falls, identified by their measured peak hip descent speed.
+
 The recommended safe range of a value is the interval of tested values around the default in
 which sensitivity and specificity stay at or above 75 %, neither drops more than 5 points
 below the default, and there are no more false recoveries than with the default.
@@ -42,6 +45,7 @@ from evaluar import (
 )
 
 from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico, TipoEvento
+from te_tengo_deteccion.clasificacion.medicion import MedidorCinematico
 from te_tengo_deteccion.clasificacion.umbrales import Umbrales
 
 # Validated values: the agent's calibrated speed and the published defaults of ``Umbrales``.
@@ -61,7 +65,16 @@ BARRIDOS: dict[str, list[float]] = {
     "ventana_reaccion_s": [0.25, 0.5, 0.75, 1.0, 1.25, 1.48, 1.75, 2.0, 2.5, 3.0, 4.0],
     "confirmacion_suelo_s": [5, 10, 15, 30, 60, 120],
     "persistencia_erguido_s": [0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0],
+    "descenso_caida_lenta_min": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0],
+    "ventana_caida_lenta_s": [2, 3, 5, 10, 15, 20, 30, 60],
+    "permanencia_caida_lenta_s": [0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0],
 }  # fmt: skip
+
+# R9 switched off: no hip drop is large enough.
+SIN_R9: dict[str, float] = {"descenso_caida_lenta_min": 1e9}
+# A fall is "slow" if its measured peak hip descent speed is below this value (bodies/s): at
+# that speed, dropping the hip half a body length takes longer than the 1.48 s window of R4.
+LENTA_MAX = 0.3
 
 # The three values that decide the fall together (M1, M2 and M3).
 REJILLA: dict[str, list[float]] = {
@@ -78,6 +91,9 @@ PROPUESTOS: dict[str, tuple[float, float]] = {
     "ventana_reaccion_s": (1.0, 3.0),
     "confirmacion_suelo_s": (15, 120),
     "persistencia_erguido_s": (0.5, 3.0),
+    "descenso_caida_lenta_min": (0.3, 0.6),
+    "ventana_caida_lenta_s": (5, 20),
+    "permanencia_caida_lenta_s": (1.0, 5.0),
 }
 
 ROTULOS: dict[str, str] = {
@@ -87,6 +103,9 @@ ROTULOS: dict[str, str] = {
     "ventana_reaccion_s": "Reaction window (s)",
     "confirmacion_suelo_s": "Confirmation on the floor (s)",
     "persistencia_erguido_s": "Upright time for recovery (s)",
+    "descenso_caida_lenta_min": "R9: hip drop (center-line lengths)",
+    "ventana_caida_lenta_s": "R9: upright at most this long before (s)",
+    "permanencia_caida_lenta_s": "R9: time horizontal (s)",
 }
 
 EventoVideo = tuple[str, float]  # (type, instant in s)
@@ -100,6 +119,19 @@ DURACIONES: dict[str, float] = {}
 
 def _cargar(videos: list[Video], variante: str) -> None:
     _POSES.update({v.nombre: cargar_poses(v, variante) for v in videos})
+
+
+def velocidad_pico(secuencia: Secuencia) -> float | None:
+    """Largest hip descent speed of R1 in the video, or ``None`` if it cannot be measured."""
+    medidor = MedidorCinematico(
+        BASE.intervalo_velocidad_s, BASE.ventana_velocidad_s, BASE.visibilidad_min
+    )
+    velocidades = [
+        v
+        for instante, pose in secuencia
+        if pose is not None and (v := medidor.medir(instante, pose).velocidad) is not None
+    ]
+    return max(velocidades) if velocidades and max(velocidades) > 0 else None
 
 
 def eventos_video(secuencia: Secuencia, umbrales: Umbrales) -> list[EventoVideo]:
@@ -280,8 +312,8 @@ def graficar(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    nombres = [n for n in BARRIDOS if n != "confirmacion_suelo_s"] + ["confirmacion_suelo_s"]
-    figura, ejes = plt.subplots(2, 3, figsize=(12, 6.8), constrained_layout=True)
+    nombres = list(BARRIDOS)
+    figura, ejes = plt.subplots(3, 3, figsize=(12, 10), constrained_layout=True)
     for eje, nombre in zip(ejes.flat, nombres, strict=True):
         valores, resumenes = curvas[nombre]
         for cual, color, rotulo in (
@@ -318,8 +350,8 @@ def graficar(
         eje.grid(alpha=0.25)
     ejes.flat[0].legend(fontsize=8, loc="lower left")
     figura.suptitle(
-        "Te Tengo classifier on URFD + CAUCAFall (170 videos, 8 fps, JPEG): one value at a "
-        "time, 95 % Wilson bands; dashed = validated default, dotted = 75 %",
+        "Te Tengo classifier with R9 on URFD + CAUCAFall (170 videos, 8 fps, JPEG): one value "
+        "at a time, 95 % Wilson bands; dashed = default, dotted = 75 %",
         fontsize=10,
     )
     destino.parent.mkdir(parents=True, exist_ok=True)
@@ -353,8 +385,9 @@ def main() -> int:
     inicios = inicios_urfd(args.datos)
     _cargar(videos, variante)
     DURACIONES.update({n: seq[-1][0] for n, seq in _POSES.items() if seq})
+    picos = {n: velocidad_pico(seq) for n, seq in _POSES.items()}
 
-    ajustes: list[dict[str, float]] = [{}]
+    ajustes: list[dict[str, float]] = [{}, SIN_R9]
     ajustes += [{n: v} for n, valores in BARRIDOS.items() for v in valores]
     combinaciones = [] if args.sin_rejilla else list(itertools.product(*REJILLA.values()))
     ajustes += [dict(zip(REJILLA, c, strict=True)) for c in combinaciones]
@@ -364,7 +397,8 @@ def main() -> int:
         corridas = list(g.map(_correr, ajustes, chunksize=4))
 
     base = resumir(videos, corridas[0], inicios)
-    i = 1
+    sin_r9 = corridas[1]
+    i = 2
     curvas: dict[str, tuple[list[float], list[Resumen]]] = {}
     for nombre, valores in BARRIDOS.items():
         curvas[nombre] = (
@@ -439,6 +473,7 @@ def main() -> int:
             filas_csv.append(_fila_csv("rejilla:" + json.dumps(c), math.nan, r, seguro))
     if rejilla:
         texto += ["", *caja_conjunta(rejilla, rangos, base)]
+    texto += ["", *antes_despues(videos, sin_r9, corridas[0], inicios, picos)]
     args.salida.mkdir(parents=True, exist_ok=True)
     (args.salida / "rangos.md").write_text("\n".join(texto) + "\n", encoding="utf-8")
     with (args.salida / "rangos.csv").open("w", newline="", encoding="utf-8") as archivo:
@@ -449,6 +484,92 @@ def main() -> int:
         graficar(args.grafico, curvas, rangos)
     print("\n".join(texto))
     return 0
+
+
+def antes_despues(
+    videos: list[Video],
+    sin: dict[str, list[EventoVideo]],
+    con: dict[str, list[EventoVideo]],
+    inicios: dict[str, float],
+    picos: dict[str, float | None],
+) -> list[str]:
+    """Classifier without and with the slow-fall rule R9, overall and by subset."""
+    caida = TipoEvento.CAIDA.value
+
+    def detecciones(eventos: dict[str, list[EventoVideo]], grupo: list[Video]) -> int:
+        return sum(caida in [t for t, _ in eventos[v.nombre]] for v in grupo)
+
+    lenta = [
+        v
+        for v in videos
+        if v.es_caida and (pico := picos[v.nombre]) is not None and pico < LENTA_MAX
+    ]
+    sin_medida = [v for v in videos if v.es_caida and picos[v.nombre] is None]
+    grupos: list[tuple[str, list[Video]]] = [
+        ("All falls", [v for v in videos if v.es_caida]),
+        (f"Slow falls (peak speed < {LENTA_MAX:g} bodies/s)", lenta),
+        ("Falls whose speed cannot be measured", sin_medida),
+        ("URFD falls", [v for v in videos if v.dataset == "urfd" and v.es_caida]),
+        ("CAUCAFall falls", [v for v in videos if v.dataset == "caucafall" and v.es_caida]),
+        ("All daily activities (false alarms)", [v for v in videos if not v.es_caida]),
+    ]
+    actividades = sorted({(v.dataset, v.actividad) for v in videos if v.dataset == "caucafall"})
+    grupos += [
+        (f"CAUCAFall · {a}", [v for v in videos if (v.dataset, v.actividad) == (d, a)])
+        for d, a in actividades
+    ]
+    tendidas = acostadas_urfd(videos)
+    grupos += [
+        ("URFD · lying down on the floor on purpose", [v for v in videos if v.nombre in tendidas]),
+        (
+            "URFD · other daily activities",
+            [
+                v
+                for v in videos
+                if v.dataset == "urfd" and not v.es_caida and v.nombre not in tendidas
+            ],
+        ),
+    ]
+    antes, despues = resumir(videos, sin, inicios), resumir(videos, con, inicios)
+    lineas = [
+        "## Slow-fall rule R9: without and with it",
+        "",
+        "| Setting | Sensitivity (95 % CI) | Specificity (95 % CI) | Accuracy (95 % CI) | "
+        "FN | FP | False recoveries | Latency s |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for nombre, r in (("Without R9", antes), ("With R9 (defaults)", despues)):
+        lineas.append(
+            f"| {nombre} | {con_ic(r, 'sensibilidad')} | {con_ic(r, 'especificidad')} | "
+            f"{con_ic(r, 'exactitud')} | {r.fn} | {r.fp} | "
+            f"{r.recuperaciones_falsas}/{r.caidas_urfd} | {latencia(r)} |"
+        )
+    lineas += [
+        "",
+        "| Subset | Videos | `caida` without R9 | `caida` with R9 |",
+        "|---|---|---|---|",
+    ]
+    lineas += [
+        f"| {nombre} | {len(g)} | {detecciones(sin, g)} | {detecciones(con, g)} |"
+        for nombre, g in grupos
+    ]
+    cambios = [
+        f"- {v.dataset}/{v.nombre} ({'fall' if v.es_caida else 'daily activity'}, peak speed "
+        + ("not measurable" if picos[v.nombre] is None else f"{picos[v.nombre]:.2f}")
+        + f"): {'detected' if v.es_caida else 'false alarm'} only with R9"
+        for v in videos
+        if detecciones(sin, [v]) != detecciones(con, [v])
+    ]
+    return [*lineas, "", "Videos that change:", "", *(cambios or ["- none"])]
+
+
+def acostadas_urfd(videos: list[Video], datos: Path = Path("datos")) -> set[str]:
+    """URFD daily activities that end lying on the floor on purpose (label 1 in its CSV)."""
+    ruta = datos / "urfd" / "urfall-cam0-adls.csv"
+    if not ruta.exists():
+        return set()
+    with ruta.open(encoding="utf-8") as archivo:
+        return {fila[0] for fila in csv.reader(archivo) if fila[2] == "1"}
 
 
 def caja_conjunta(

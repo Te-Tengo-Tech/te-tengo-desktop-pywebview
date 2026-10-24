@@ -59,6 +59,27 @@ class Umbrales(BaseModel):
         gt=0,
         description="R6. Tiempo en el suelo que confirma la caída.",
     )
+    descenso_caida_lenta_min: float = Field(
+        default=0.4,
+        gt=0,
+        description=(
+            "R9. Bajada mínima de la cadera desde la última vez que se vio a la persona erguida, "
+            "en largos de la línea central, para considerar una caída lenta."
+        ),
+    )
+    ventana_caida_lenta_s: float = Field(
+        default=10.0,
+        gt=0,
+        description=(
+            "R9. Tiempo máximo entre la última vez erguida y el inicio de la postura horizontal "
+            "en una caída lenta."
+        ),
+    )
+    permanencia_caida_lenta_s: float = Field(
+        default=2.0,
+        ge=0,
+        description="R9. Tiempo que el cuerpo debe seguir horizontal y abajo en una caída lenta.",
+    )
     sin_deteccion_confiable_s: float = Field(
         default=300.0,
         gt=0,
