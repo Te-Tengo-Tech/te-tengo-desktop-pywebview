@@ -271,6 +271,7 @@ def test_json_para_la_interfaz() -> None:
             "by": None,
             "preview": True,
             "peek": False,
+            "skel": False,
         }
     ]
     assert datos["health"]["accion"] == {

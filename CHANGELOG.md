@@ -5,6 +5,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 ## [Unreleased]
 
 ### Added
+- **«Qué se ve» in the local preview** («Cámaras», also in «Elegir aquí»): for a camera in use, «Video» and «Esqueleto» switches over the preview, as in the app's live view. The skeleton is the capture loop's latest pose (nothing is estimated again), drawn with the live view's own drawing: on the frame, or alone on the brand purple without any pixel of the home. Only video by default, at least one stays on, remembered on this PC (`ventana.json`); local only, nothing is recorded or sent. Toggle buttons with `aria-pressed` in a «Qué se ve» group, keyboard focus kept.
 - **Safe ranges of the six tunable classification values** (US-45): `scripts/barrer_rangos.py` replays the cached URFD and CAUCAFall poses with one value changed at a time and with a speed × angle × ratio grid, and reports sensitivity, specificity and accuracy with 95 % Wilson intervals, false recoveries and detection latency. [docs/validation-rangos.md](docs/validation-rangos.md) gives the recommended ranges (speed 0.005–0.05, angle 45–60°, ratio 1.0–1.4, reaction window 1.0–3.0 s, confirmation 15–120 s, upright time 0.75–3 s) and which ends are untested.
 
 ### Fixed

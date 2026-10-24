@@ -111,6 +111,9 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         def vista_previa_jpeg(self, clave: str) -> bytes | None:
             return None
 
+        def cambiar_vista_previa(self, video: bool, esqueleto: bool) -> dict[str, bool]:
+            return {"video": video, "skel": esqueleto}
+
         def otro_codigo(self) -> None: ...
 
         def vincular_de_nuevo(self) -> None: ...

@@ -96,6 +96,17 @@ assert.doesNotMatch(ui.win(E.uno, U({tab:'camaras'}), ''), /data-tip="many"/);  
 ui.ITIP.open = 'pvlock';
 assert.match(ui.win(E.tres, U({tab:'camaras', sel:'dormitorio'}), ''), /class="itip up start pv-lock open" data-tip="pvlock"><button type="button" class="itip-b" aria-label="Más información: vista previa local" aria-expanded="true"/);
 ui.ITIP.open = null;
+// «Qué se ve» over the preview of a camera in use (app-movil modeBar): «Video» on, «Esqueleto» off.
+const conPose = {...E.tres, devices: E.tres.devices.map(d => ({...d, skel: d.id === 'dormitorio'}))};
+const modo = ui.win(conPose, U({tab:'camaras', sel:'dormitorio'}), '');
+assert.match(modo, /<div class="pv-mode" role="group" aria-label="Qué se ve"><button type="button" class="pv-t on" data-act="pvMode" data-arg="video" aria-pressed="true"><svg[^>]*><path d="M4\.5 12\.5l5 5L20 7"\/><\/svg><span>Video<\/span><\/button><button type="button" class="pv-t" data-act="pvMode" data-arg="skel" aria-pressed="false"><svg[^>]*><circle cx="12" cy="4\.6"/);
+assert.match(modo, /<span>Esqueleto<\/span><\/button><\/div><\/figure>/);
+const ambos = ui.win({...conPose, pvMode:{video:true, skel:true}}, U({tab:'camaras', sel:'dormitorio'}), '');
+assert.match(ambos, /class="pv-t on" data-act="pvMode" data-arg="skel" aria-pressed="true"/);
+// A webcam «sin usar» has no live pose: only its video, no switches.
+assert.doesNotMatch(camaras, /class="pv-mode"/);
+// «Elegir aquí»: the same switches over the preview.
+assert.match(ui.win(conPose, U({tab:'camaras', sel:'dormitorio', here:true, pick:{room:null, otherOn:false, other:'', err:null}}), ''), /class="pv-mode" role="group" aria-label="Qué se ve"/);
 const desconectada = ui.win(E.perdida, U({tab:'camaras', sel:'sala'}), '');
 assert.match(desconectada, /Desconectada · Sala/);
 assert.match(desconectada, /No responde: revisa el cable USB/);

@@ -40,6 +40,7 @@ def test_el_puente_expone_solo_los_metodos_del_contrato() -> None:
         "buscarWebcam",
         "reintentarAhora",
         "vistaPrevia",
+        "vistaPreviaModo",
         "otroCodigo",
         "vincularDeNuevo",
         "irAEstado",
@@ -75,6 +76,7 @@ def test_el_puente_expone_solo_los_metodos_del_contrato() -> None:
     assert puente.estado() == {"situacion": "cuidando"}
     assert puente.vistaPrevia("sala") == {"jpeg": "/9hqcGVn"}
     assert puente.vistaPrevia("otra") == {"jpeg": None}
+    assert puente.vistaPreviaModo(True, False) == {"video": True, "skel": False}  # the default
     puente.minimizar()
     puente.cerrar()
     assert llamadas.ocultar == 2  # both hide to the tray, neither stops the agent

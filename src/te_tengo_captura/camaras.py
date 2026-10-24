@@ -553,12 +553,13 @@ class SupervisorCamaras:
         with self._candado:
             return any(vista.pedida for vista, _lector in self._locales.values())
 
-    def vista_previa_jpeg(self, clave: str) -> bytes | None:
-        """The «Cámaras» tab's local preview: a camera in use or a webcam «sin usar»."""
+    def vista_previa_jpeg(self, clave: str, modo: ModoVista = ModoVista.VIDEO) -> bytes | None:
+        """The «Cámaras» tab's local preview: a camera in use (drawn for ``modo``) or a webcam
+        «sin usar» (always the video: nothing estimates its pose)."""
         with self._candado:
             agente = self.agentes.get(clave)
         if agente is not None:
-            return agente.vista_previa.jpeg()
+            return agente.vista_previa.jpeg(modo)
         if not self._consentimiento():
             return None  # no webcam is opened without the monitoring consent
         with self._candado:

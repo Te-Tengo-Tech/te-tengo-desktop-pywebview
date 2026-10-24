@@ -329,6 +329,7 @@ class AgentePc:
                     else None,
                     vista_previa=conectada,
                     mirando=camara.dispositivo_id in mirando,
+                    esqueleto=fila is not None,
                 )
             )
         sabidos = {c.dispositivo_id for c in conocidas}
@@ -382,8 +383,8 @@ class AgentePc:
         except PcDesvinculadaError:
             return False
 
-    def vista_previa_jpeg(self, clave: str) -> bytes | None:
-        return self.camaras.vista_previa_jpeg(clave)
+    def vista_previa_jpeg(self, clave: str, modo: ModoVista = ModoVista.VIDEO) -> bytes | None:
+        return self.camaras.vista_previa_jpeg(clave, modo)
 
     def estado_movimientos(self) -> EstadoMovimientos:
         return self._cliente.estado_movimientos()

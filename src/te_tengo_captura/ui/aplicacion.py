@@ -113,6 +113,7 @@ class Aplicacion:
             buscar_webcam=agente.buscar_webcam,
             reintentar_ahora=agente.reintentar_ahora,
             vista_previa=agente.vista_previa_jpeg,
+            modo_vista_previa=agente.cambiar_vista_previa,
             acciones=Acciones(
                 otro_codigo=agente.otro_codigo,
                 vincular_de_nuevo=agente.vincular_de_nuevo,

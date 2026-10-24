@@ -24,7 +24,7 @@ from pathlib import Path
 from te_tengo_captura.actualizaciones.alerta import SeguimientoAlerta
 from te_tengo_captura.almacen.gestor import AlmacenLocal, GrabadorCamara
 from te_tengo_captura.backend.cliente import ClienteBackend
-from te_tengo_captura.backend.modelos import EstadoMovimientos
+from te_tengo_captura.backend.modelos import EstadoMovimientos, ModoVista
 from te_tengo_captura.backend.transmision import CanalTransmision
 from te_tengo_captura.captura.bucle import Analisis, BucleCaptura, HiloCaptura
 from te_tengo_captura.captura.en_vivo import TransmisionEnVivo
@@ -243,6 +243,7 @@ class Agente:
             dispositivo_id=self.ajustes.dispositivo_id,
             nombre_habitacion=camara.nombre_habitacion,
             conectada=camara.webcam_conectada,
+            esqueleto=True,
         )
         entradas = Entradas(
             camaras=(camara,),
@@ -270,9 +271,9 @@ class Agente:
                 return self._webcam_respondio()
         return True
 
-    def vista_previa_jpeg(self, clave: str) -> bytes | None:
+    def vista_previa_jpeg(self, clave: str, modo: ModoVista = ModoVista.VIDEO) -> bytes | None:
         """The newest frame of the camera for the «Cámaras» tab, only on this PC."""
-        return self.vista_previa.jpeg() if clave == self.clave_camara else None
+        return self.vista_previa.jpeg(modo) if clave == self.clave_camara else None
 
     def reintentar_ahora(self) -> bool:
         """«Reintentar ahora»: a heartbeat right now, and the outbox right after."""
@@ -333,6 +334,7 @@ class Agente:
         }
 
     def _analizado(self, analisis: Analisis) -> None:
+        self.vista_previa.anotar_pose(analisis.pose)
         self.narrador.analizado(
             analisis.fotograma.instante, analisis.pose, analisis.clasificador, analisis.eventos
         )
