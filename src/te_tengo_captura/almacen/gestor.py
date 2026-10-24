@@ -45,7 +45,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -83,6 +83,9 @@ GB = 1_000_000_000
 REVISION_PERMISO_S = 300.0  # contract: ask every 5 minutes
 REVISION_RETENCION_S = 3600.0
 SEGMENTO_VIDEO_S = 600.0  # CA-38.2: 10-minute parts
+TEMPORAL_VIEJO_S = 900.0  # a file being written is touched every few seconds
+PAUSA_VIDEO_S = 30.0  # after a segment failed, wait this long before opening another one
+BASE_VIDEO = Fraction(1, 1000)  # the video's clock: milliseconds since the segment started
 FPS_VIDEO = 8
 COLA_FOTOGRAMAS = 16  # frames waiting for the video writer (2 s): older ones are dropped
 FILAS_RECIENTES = 20 * 8  # the last 20 s of rows of a camera: a clip's 12 s fit (US-36)
@@ -533,6 +536,7 @@ class AlmacenLocal:
 
     def _correr(self) -> None:
         proximo_permiso = proxima_retencion = 0.0
+        borrar_temporales(self.carpeta, time.time())
         while not self._detenido.is_set():
             ahora = self._reloj()
             if ahora >= proximo_permiso or self._pedir_permiso.is_set():
@@ -555,6 +559,24 @@ class AlmacenLocal:
                         logger.exception("Error al aplicar el plazo de los datos guardados")
                 proxima_retencion = ahora + REVISION_RETENCION_S
             self._despertar.wait(min(60.0, proximo_permiso - self._reloj()))
+
+
+def borrar_temporales(carpeta: Path, ahora: float, viejo_s: float = TEMPORAL_VIEJO_S) -> int:
+    """Deletes the encrypted files a writer left half-done (``.<name>.ttg.<x>.tmp``: the app was
+    closed by force while writing a video segment). They are in no index, nothing can read them
+    and they take space; one not touched for ``viejo_s`` is not being written."""
+    borrados = 0
+    try:
+        for ruta in carpeta.rglob(f".*{EXTENSION}.*.tmp"):
+            with contextlib.suppress(OSError):
+                if ruta.is_file() and ahora - ruta.stat().st_mtime > viejo_s:
+                    ruta.unlink()
+                    borrados += 1
+    except OSError:  # the folder is gone (CA-38.5): nothing to clean
+        return borrados
+    if borrados:
+        logger.info("Se borraron %d archivos a medio escribir de una sesión anterior", borrados)
+    return borrados
 
 
 def _cambios(antes: AjustesAlmacen, despues: AjustesAlmacen) -> list[Cambio]:
@@ -616,6 +638,7 @@ class GrabadorCamara:
         self._tramo = TramoMovimientos(camara_id)
         self._cola: queue.Queue[tuple[str, Any] | None] = queue.Queue(maxsize=256)
         self._video: _SegmentoVideo | None = None
+        self._video_desde: datetime | None = None  # no new segment before this (after a failure)
         self._recientes: deque[FilaMovimiento] = deque(maxlen=FILAS_RECIENTES)
         # The camera's outbox: (eventoId, Parquet, light file).
         self.al_puntos_clip: Callable[[str, bytes, bytes], None] | None = None
@@ -763,12 +786,29 @@ class GrabadorCamara:
             self._cerrar_video()
             segmento = None
         if segmento is None:
+            if self._video_desde is not None and ocurrido_en < self._video_desde:
+                return  # a segment just failed: try again in a while, not on every frame
             clave = self._almacen.clave()
             if clave is None or not self._almacen._hacer_lugar(int(0.06 * GB)):
                 return
             segmento = _SegmentoVideo(self._almacen.carpeta, self._camara_id, ocurrido_en, clave)
             self._video = segmento
-        segmento.agregar(ocurrido_en, imagen)
+        try:
+            segmento.agregar(ocurrido_en, imagen)
+        except Exception:
+            # One record per failed segment (it used to be one per frame): keep what it has and
+            # open a new one later.
+            logger.exception(
+                "No se pudo grabar el video de la cámara %s (%s, fotograma %d, %.1f s): "
+                "se cierra el segmento y se abre otro en %.0f s",
+                self._camara_id,
+                segmento.relativa,
+                segmento.fotogramas,
+                segmento.segundos(ocurrido_en),
+                PAUSA_VIDEO_S,
+            )
+            self._video_desde = ocurrido_en + timedelta(seconds=PAUSA_VIDEO_S)
+            self._cerrar_video()
 
     def _cerrar_video(self) -> None:
         segmento, self._video = self._video, None
@@ -789,14 +829,23 @@ class GrabadorCamara:
 
 
 class _SegmentoVideo:
-    """A 10-minute H.264 segment, fragmented MP4 written straight into the encrypted file."""
+    """A 10-minute H.264 segment, fragmented MP4 written straight into the encrypted file.
+
+    Frames are timestamped in milliseconds since the segment started (``BASE_VIDEO``), always
+    increasing by at least 1 ms, for the encoder **and** the muxer. The encoder used to keep the
+    1/8 s time base of ``rate=8``: the capture's frames are not evenly spaced (sampling jitter,
+    a slow frame, the clock), so two of them 50 ms apart fell on the same 1/8 s tick, libx264
+    produced packets whose DTS did not increase, and the MP4 muxer rejected them («Invalid
+    argument», error 22) on every such frame and again when closing, so no segment was ever
+    finished (US-38, «Ver qué pasó» without video).
+    """
 
     def __init__(self, carpeta: Path, camara_id: str, inicio: datetime, clave: bytes) -> None:
         import av
 
         self._inicio = inicio
-        self._relativa = f"video/{camara_id}/{inicio:%Y/%m/%d}/{inicio:%H%M%S}.mp4{EXTENSION}"
-        destino = carpeta / self._relativa
+        self.relativa = f"video/{camara_id}/{inicio:%Y/%m/%d}/{inicio:%H%M%S}.mp4{EXTENSION}"
+        destino = carpeta / self.relativa
         destino.parent.mkdir(parents=True, exist_ok=True)
         self._escritor = EscritorCifrado(clave, destino)
         self._contenedor: Any = av.open(
@@ -807,10 +856,14 @@ class _SegmentoVideo:
         )
         self._flujo: Any = None
         self._ultimo: datetime = inicio
-        self._n = 0
+        self._n = 0  # the next allowed pts (ms)
+        self.fotogramas = 0
 
     def lleno(self, ahora: datetime) -> bool:
-        return (ahora - self._inicio).total_seconds() >= SEGMENTO_VIDEO_S
+        return self.segundos(ahora) >= SEGMENTO_VIDEO_S
+
+    def segundos(self, ahora: datetime) -> float:
+        return (ahora - self._inicio).total_seconds()
 
     def agregar(self, ahora: datetime, imagen: Any) -> None:
         import av
@@ -820,35 +873,45 @@ class _SegmentoVideo:
             flujo = self._contenedor.add_stream("libx264", rate=FPS_VIDEO)
             flujo.width, flujo.height = ancho // 2 * 2, alto // 2 * 2
             flujo.pix_fmt = "yuv420p"
-            flujo.time_base = Fraction(1, 1000)
+            flujo.time_base = BASE_VIDEO
+            flujo.codec_context.time_base = BASE_VIDEO  # not the 1/8 s of ``rate``
             flujo.options = {"preset": "veryfast", "crf": "28", "g": str(FPS_VIDEO * 2), "bf": "0"}
             self._flujo = flujo
         cuadro = av.VideoFrame.from_ndarray(
             imagen[: self._flujo.height, : self._flujo.width], format="bgr24"
         )
-        cuadro.pts = max(self._n, int((ahora - self._inicio).total_seconds() * 1000))
-        cuadro.time_base = Fraction(1, 1000)
+        # Equal or earlier instants (a clock moved back) still get a later pts.
+        cuadro.pts = max(self._n, int(self.segundos(ahora) * 1000))
+        cuadro.time_base = BASE_VIDEO
         self._n = cuadro.pts + 1
         for paquete in self._flujo.encode(cuadro):
             self._contenedor.mux(paquete)
-        self._ultimo = ahora
+        self.fotogramas += 1
+        self._ultimo = max(self._ultimo, ahora)
 
     def cerrar(self) -> tuple[str, int, int, int] | None:
+        """Finishes the file: what was written stays even if the encoder's last frames fail."""
+        if self._flujo is None or self.fotogramas == 0:
+            with contextlib.suppress(Exception):
+                self._contenedor.close()
+            self._escritor.abortar()
+            return None
         try:
-            if self._flujo is not None:
-                for paquete in self._flujo.encode():
-                    self._contenedor.mux(paquete)
+            for paquete in self._flujo.encode():
+                self._contenedor.mux(paquete)
+        except Exception:
+            logger.warning(
+                "No se pudieron guardar los últimos fotogramas de %s", self.relativa, exc_info=True
+            )
+        try:
             self._contenedor.close()
             self._escritor.close()
         except Exception:
-            logger.exception("No se pudo cerrar el segmento de video")
-            self._escritor.abortar()
-            return None
-        if self._flujo is None:
+            logger.exception("No se pudo cerrar el segmento de video %s", self.relativa)
             self._escritor.abortar()
             return None
         return (
-            self._relativa,
+            self.relativa,
             a_ms(self._inicio),
             a_ms(self._ultimo) + 1,
             self._escritor.ruta.stat().st_size,

@@ -5,6 +5,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 ## [Unreleased]
 
 ### Fixed
+- **«Guardar video» never finished a segment** (US-38, so «Ver qué pasó» had no video): the encoder kept the 1/8 s time base of an 8 fps stream while the frames were stamped in milliseconds, so two frames less than 1/8 s apart (the capture's sampling is not perfectly even) fell on the same tick, libx264 produced packets whose DTS did not increase and the MP4 muxer rejected them with `Invalid argument … returned 22`, logged as «Error al guardar datos de la cámara» on every such frame (75 times in 8 minutes on a Mac) and again when closing, which discarded the whole 10-minute part. The encoder now uses the millisecond time base too (each frame keeps its real time; a repeated or earlier instant goes 1 ms after the previous frame). A part that still fails is closed with what it has and logged once with the camera, the part and the frame, and a new one opens 30 s later; the last frames failing no longer discard the part. At start, the encrypted files a forced exit left half-written are deleted. Event clips were not affected (they number their frames).
 - The weekly branch cleanup listed each branch's pull requests with `gh api -f`, which sends a POST to the create-pull-request endpoint, so every lookup failed with 422 and the open-PR and `do-not-delete` protections were never checked. It now lists with `--method GET`, and a branch whose PRs cannot be read is left alone.
 
 ## [0.6.0] - 2026-10-12
