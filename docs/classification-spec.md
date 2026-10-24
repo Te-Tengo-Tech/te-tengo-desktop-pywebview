@@ -147,18 +147,20 @@ Adaptations A3, A6, A7 and A8 and the speed threshold came from validating with 
 
 ## 4. Threshold table
 
-| Field (`[clasificacion]` of the installation file) | Value | Rule | Origin |
-|---|---|---|---|
-| `velocidad_descenso_min` | 0.01 (the agent's calibrated default in `te_tengo_captura/config.py`; the core has no default value) | R1 | Calibrated with URFD and CAUCAFall ([validation.md](validation.md)) |
-| `intervalo_velocidad_s` | 0.25 s | R1 | Chen et al. (2020), sec. 3.2 |
-| `ventana_velocidad_s` | 1 s | R1 | Adaptation A3 (descent duration: Choi et al., 2015, in Traverso et al., 2024) |
-| `persistencia_erguido_s` | 1 s | R5 | Adaptation A8, calibrated with URFD |
-| `angulo_linea_central_max_grados` | 45° | R2, R5 | Chen et al. (2020), sec. 3.3 |
-| `razon_ancho_alto_min` | 1 | R3, R5 | Chen et al. (2020), sec. 3.4 |
-| `ventana_reaccion_s` | 1.48 s | R4, R7 | Gutiérrez et al. (2023) |
-| `confirmacion_suelo_s` | 30 s | R6 | Backlog, US-13 |
-| `sin_deteccion_confiable_s` | 300 s | R8 | Backlog, US-15 |
-| `visibilidad_min` | 0.5 | A5 | MediaPipe default value (Google, s.f.-a); to be calibrated |
+| Field (`[clasificacion]` of the installation file) | Value | Rule | Origin | Safe range (US-45) |
+|---|---|---|---|---|
+| `velocidad_descenso_min` | 0.01 (the agent's calibrated default in `te_tengo_captura/config.py`; the core has no default value) | R1 | Calibrated with URFD and CAUCAFall ([validation.md](validation.md)) | 0.005–0.05 |
+| `intervalo_velocidad_s` | 0.25 s | R1 | Chen et al. (2020), sec. 3.2 | — (not in US-45) |
+| `ventana_velocidad_s` | 1 s | R1 | Adaptation A3 (descent duration: Choi et al., 2015, in Traverso et al., 2024) | — (not in US-45) |
+| `persistencia_erguido_s` | 1 s | R5 | Adaptation A8, calibrated with URFD | 0.75–3 s |
+| `angulo_linea_central_max_grados` | 45° | R2, R5 | Chen et al. (2020), sec. 3.3 | 45–60° |
+| `razon_ancho_alto_min` | 1 | R3, R5 | Chen et al. (2020), sec. 3.4 | 1.0–1.4 |
+| `ventana_reaccion_s` | 1.48 s | R4, R7 | Gutiérrez et al. (2023) | 1.0–3.0 s (data insensitive) |
+| `confirmacion_suelo_s` | 30 s | R6 | Backlog, US-13 | 15–120 s (untested) |
+| `sin_deteccion_confiable_s` | 300 s | R8 | Backlog, US-15 | — (not in US-45) |
+| `visibilidad_min` | 0.5 | A5 | MediaPipe default value (Google, s.f.-a); to be calibrated | — (not in US-45) |
+
+The safe ranges are those the installer may use per camera (US-45, CA-45.1 and CA-45.2). They were measured on URFD and CAUCAFall under production conditions in [validation-rangos.md](validation-rangos.md), which also says which ends are untested.
 
 ---
 
