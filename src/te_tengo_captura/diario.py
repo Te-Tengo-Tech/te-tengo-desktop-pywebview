@@ -320,8 +320,11 @@ class Narrador:
         )
         m.suelo = tiempos.en_el_suelo or 0.0
         # The hip drop and the horizontal body can come in the same frame: the fall still
-        # started (``INICIO_CAIDA``) before it ended on the floor.
-        directa = self._fase is Fase.NORMAL and any(e.tipo is TipoEvento.CAIDA for e in eventos)
+        # started (``INICIO_CAIDA``) before it ended on the floor. A slow fall (R9) has no
+        # reaction window, so it is not announced as a possible fall.
+        directa = self._fase is Fase.NORMAL and any(
+            e.tipo is TipoEvento.CAIDA and "caida_lenta" not in e.parametros for e in eventos
+        )
         if (fase is Fase.INICIO_CAIDA and self._fase is not Fase.INICIO_CAIDA) or directa:
             mm = clasificador.ultima_medicion
             v = mm.velocidad if mm else None

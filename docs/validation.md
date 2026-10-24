@@ -90,6 +90,43 @@ The figures above describe the agent only if it gives MediaPipe the same frames 
 
 `tests/captura/test_paridad.py` keeps the two paths identical.
 
+### 3.6. Slow falls (rule R9)
+
+Rule R9 ([classification-spec.md](classification-spec.md), ADR 0009) declares a fall when the person was upright in the last 10 s, the hip ends at least 0.4 body lengths lower and the body stays horizontal for 2 s, without looking at the speed. Its three values were fixed before replaying the datasets. `scripts/barrer_rangos.py` replays every video with and without it.
+
+**Main performance, 8 fps, JPEG, leaving one group out** (95 % Wilson intervals; every fold still calibrates v = 0.01):
+
+| Classifier | Sensitivity | Specificity | Accuracy | False recoveries |
+|---|---|---|---|---|
+| R4–R8 (sections 3.1–3.5) | 81.2 % (71–88) | 81.1 % (72–88) | 81.2 % (75–86) | 0/30 |
+| **+ R9** | **82.5 % (73–89)** | **78.9 % (69–86)** | **80.6 % (74–86)** | 0/30 |
+| URFD with R9 | 76.7 % | 72.5 % | 74.3 % | |
+| CAUCAFall with R9 | 86.0 % | 84.0 % | 85.0 % | |
+
+**Robustness:**
+
+| | Without R9 | With R9 |
+|---|---|---|
+| 6 fps (sensitivity / specificity) | 77.5 % / 83.3 % | 78.8 % / 78.9 % |
+| 10 fps | 81.2 % / 84.4 % | 83.8 % / 78.9 % |
+| URFD → CAUCAFall (v calibrated with URFD: 0.45 without R9, 0.71 with it) | 28.0 % / 94.0 % | 46.0 % / 94.0 % |
+| CAUCAFall → URFD (v = 0.01) | 76.7 % / 77.5 % | 76.7 % / 72.5 % |
+
+**Slow falls.** The datasets do not label the speed of each fall, so a fall is called slow if its measured peak hip descent speed (R1) is below 0.3 bodies/s: at that speed, dropping the hip half a body length takes more than the 1.48 s window. At 8 fps, 18 of the 80 falls are slow and R4 already detects 12 of them; R9 adds 1 (CAUCAFall subject 9, fall from sitting, peak 0.08). Over 6, 8 and 10 fps R9 adds 4 detections, all of slow falls (peak 0.08–0.21 bodies/s): CAUCAFall subject 9's fall from sitting (8 and 10 fps), subject 6's fall to the left (6 fps) and URFD `fall-10` (10 fps). 7 falls have no measurable speed (MediaPipe does not see the hips and ankles clearly during the descent) and neither rule detects them.
+
+**False alarms in daily activities (8 fps):**
+
+| Activity | Videos | Without R9 | With R9 |
+|---|---|---|---|
+| URFD · lying down on the floor on purpose | 16 | 6 | 8 |
+| URFD · other activities (sitting on a chair, a bed or a sofa, crouching, picking up) | 24 | 3 | 3 |
+| CAUCAFall · kneeling | 10 | 3 | 3 |
+| CAUCAFall · picking up an object | 10 | 3 | 3 |
+| CAUCAFall · sitting down | 10 | 1 | 1 |
+| CAUCAFall · walking · jumping | 20 | 1 | 1 |
+
+All the new false alarms at 8 fps and 6 fps are people lying down on the floor on purpose (`adl-31` and `adl-35`; at 6 fps also `adl-37` and `adl-40`). At 10 fps R9 also adds one kneeling and one picking up an object. **No dataset has someone lying down on a bed or a sofa**; R9 excludes them by the hip drop, which only the synthetic tests check. The clips are short (at most 9.5 s after a fall), so a person who lies on the floor for longer than 2 s would also trigger R9 in a home: the specificity of these clips is an upper bound for that activity.
+
 ## 4. Changes made based on the validation
 
 The figures in this section are **calibrated with all the videos**, so they are optimistic and are only useful to compare the stages with each other.
@@ -107,11 +144,12 @@ The figures in this section are **calibrated with all the videos**, so they are 
 
 ## 5. Known limitations
 
-1. **Lying down on the floor on purpose** is confused with a fall in 6 of 16 URFD cases. In a home, this means a false alarm when the older adult lies down on the floor by choice.
+1. **Lying down on the floor on purpose** is confused with a fall in 6 of 16 URFD cases, and in 8 with R9. In a home, this means a false alarm when the older adult lies down on the floor by choice.
 2. **Picking up an object and kneeling** produce false alarms in 3 of every 10 cases with an elevated camera.
 3. **Calibration depends on the camera location** (section 3.3). It must be repeated with the pilot recordings, as the charter states (risks 2, 3 and 6).
 4. **There are no older adults or real falls** in the data (charter risk 9). The real false alarm rate will be measured in the home (OE4-I2).
-5. **The validation is per video,** not per instant. It does not measure the alert latency, whose requirement is under 10 s; the classifier emits the fall as soon as M3 is met.
+5. **Almost no slow falls** in the data (section 3.6): R9 is checked on 18 falls with a low peak speed and on synthetic sequences; slow falls and lying down on a bed must be recorded in the pilot.
+6. **The validation is per video,** not per instant. It does not measure the alert latency, whose requirement is under 10 s; the classifier emits the fall as soon as M3 is met.
 
 The ranges in which each tunable value keeps this performance (US-45) are measured in [validation-rangos.md](validation-rangos.md).
 

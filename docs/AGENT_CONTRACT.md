@@ -49,6 +49,7 @@ Every agent token is checked on every request: the tokens of a PC that left the 
   "parametros": { "angulo_grados": 22.1, "razon_ancho_alto": 1.8, "velocidad": 0.41 }
 }
 ```
+A `caida` declared by the slow-fall rule R9 also carries `"caida_lenta": 1` and `"descenso"` (hip drop in body lengths) in `parametros`; the API stores the map as it comes.
 `tipo` is one of:
 - `caida`
 - `caida_confirmada` (30 s on the floor)

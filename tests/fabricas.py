@@ -38,3 +38,21 @@ AGACHADA = pose(cabeza=(320, 200), cadera=(320, 300), tobillos=(320, 340))
 
 # Leaning: θ ≈ 40° with the hip at the same height as when standing (no descent).
 INCLINADA = pose(cabeza=(450, 230), cadera=(320, 220), tobillos=(320, 340), extra=(320, 100))
+
+# Slow falls and lying down on purpose (rule R9). Standing, the hip is at y = 220, the floor at
+# y = 340 and the center line is 240 px long.
+
+# Sitting on the floor after sliding down, torso upright and legs forward: θ ≈ 47° and P < 1,
+# so it still counts as upright.
+SENTADA_EN_EL_SUELO = pose(cabeza=(320, 210), cadera=(320, 330), tobillos=(440, 340))
+
+# Lying back from sitting on the floor: horizontal, but the hip does not drop any more (no M1).
+TENDIDA_SIN_BAJAR = pose(cabeza=(200, 330), cadera=(320, 330), tobillos=(440, 340))
+
+# Kneeling upright: hip at y = 280, θ ≈ 80°.
+ARRODILLADA = pose(cabeza=(320, 160), cadera=(320, 280), tobillos=(290, 340))
+
+# Sitting on the edge of a bed and then lying on it: the hip stays about 0.2 lengths below its
+# standing height, far from the floor.
+SENTADA_EN_LA_CAMA = pose(cabeza=(320, 150), cadera=(320, 262), tobillos=(380, 340))
+EN_LA_CAMA = pose(cabeza=(200, 262), cadera=(320, 262), tobillos=(440, 262))
