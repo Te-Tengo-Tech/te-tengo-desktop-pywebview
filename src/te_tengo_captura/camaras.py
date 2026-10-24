@@ -218,6 +218,10 @@ class SupervisorCamaras:
         self._candado = threading.RLock()
         self.camaras: dict[str, CamaraDeLaPc] = {}  # every webcam of the PC, by camaraId
         self.agentes: dict[str, Agente] = {}  # cameras in use, by camaraId
+        # Cameras whose agent is being created: two threads (the periodic check and a message from
+        # the app) may reconcile at once, and a second agent of the same camera would open a second
+        # control channel that the API swaps with the first one every second.
+        self._iniciando: set[str] = set()
         self._tokens: dict[str, TokenDeCamara] = {}
         self.dispositivos: list[Dispositivo] | None = None  # detected now
         self._conocidos: set[str] | None = None  # device ids seen at the first listing
@@ -245,6 +249,7 @@ class SupervisorCamaras:
             self._hilo.join(5.0)
         with self._candado:
             agentes, self.agentes = list(self.agentes.values()), {}
+            self._iniciando.clear()
             previas, self._previas = list(self._previas.values()), {}
             locales, self._locales = list(self._locales.values()), {}
         for agente in agentes:
@@ -588,15 +593,28 @@ class SupervisorCamaras:
 
     def _iniciar(self, camara: CamaraDeLaPc) -> None:
         with self._candado:
-            if camara.camara_id in self.agentes or not camara.token:
+            if (
+                camara.camara_id in self.agentes
+                or camara.camara_id in self._iniciando
+                or not camara.token
+            ):
                 return
+            self._iniciando.add(camara.camara_id)  # one agent per camera, whoever comes first
             token = TokenDeCamara(camara.camara_id, camara.token, self.renovar_tokens)
             self._tokens[camara.camara_id] = token
             local = self._locales.pop(camara.dispositivo_id, None)
-        if local is not None:
-            local[1].detener()  # the camera's own agent opens the webcam now
-        agente = self._crear_agente(camara, token)
+        try:
+            if local is not None:
+                local[1].detener()  # the camera's own agent opens the webcam now
+            agente = self._crear_agente(camara, token)
+        except BaseException:
+            with self._candado:
+                self._iniciando.discard(camara.camara_id)
+            raise
         with self._candado:
+            if camara.camara_id not in self._iniciando:
+                return  # stopped while it was being created: it never starts
+            self._iniciando.discard(camara.camara_id)
             self.agentes[camara.camara_id] = agente
         logger.info(
             "Cámara %s en uso: %s (%s)",
@@ -614,6 +632,7 @@ class SupervisorCamaras:
     def _detener(self, camara_id: str) -> None:
         with self._candado:
             agente = self.agentes.pop(camara_id, None)
+            self._iniciando.discard(camara_id)
             self._tokens.pop(camara_id, None)
         if agente is not None:
             agente.bloquear()

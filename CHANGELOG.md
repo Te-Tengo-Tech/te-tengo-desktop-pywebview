@@ -5,6 +5,7 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 ## [Unreleased]
 
 ### Fixed
+- A camera in use could get two agents when the periodic camera check and a message from the app reconciled it at the same time (seen at startup): both opened the webcam and a live view control channel with the same camera token, and the API, which keeps one channel per camera, swapped them every second («Canal de vista en vivo conectado» then «cerrado» ~85 ms later) for as long as the app ran. The second reconciliation now waits for the first agent instead of creating another, and a camera stopped while its agent is being created never starts.
 - The weekly branch cleanup listed each branch's pull requests with `gh api -f`, which sends a POST to the create-pull-request endpoint, so every lookup failed with 422 and the open-PR and `do-not-delete` protections were never checked. It now lists with `--method GET`, and a branch whose PRs cannot be read is left alone.
 
 ## [0.6.0] - 2026-10-12
