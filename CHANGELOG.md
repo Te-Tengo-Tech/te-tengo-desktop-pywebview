@@ -4,6 +4,9 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+### Added
+- **Safe ranges of the six tunable classification values** (US-45): `scripts/barrer_rangos.py` replays the cached URFD and CAUCAFall poses with one value changed at a time and with a speed × angle × ratio grid, and reports sensitivity, specificity and accuracy with 95 % Wilson intervals, false recoveries and detection latency. [docs/validation-rangos.md](docs/validation-rangos.md) gives the recommended ranges (speed 0.005–0.05, angle 45–60°, ratio 1.0–1.4, reaction window 1.0–3.0 s, confirmation 15–120 s, upright time 0.75–3 s) and which ends are untested.
+
 ### Fixed
 - The weekly branch cleanup listed each branch's pull requests with `gh api -f`, which sends a POST to the create-pull-request endpoint, so every lookup failed with 422 and the open-PR and `do-not-delete` protections were never checked. It now lists with `--method GET`, and a branch whose PRs cannot be read is left alone.
 
