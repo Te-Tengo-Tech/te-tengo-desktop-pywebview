@@ -4,6 +4,9 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+### Added
+- **«Qué se ve» in the local preview** («Cámaras», also in «Elegir aquí»): for a camera in use, «Video» and «Esqueleto» switches over the preview, as in the app's live view. The skeleton is the capture loop's latest pose (nothing is estimated again), drawn with the live view's own drawing: on the frame, or alone on the brand purple without any pixel of the home. Only video by default, at least one stays on, remembered on this PC (`ventana.json`); local only, nothing is recorded or sent. Toggle buttons with `aria-pressed` in a «Qué se ve» group, keyboard focus kept.
+
 ### Fixed
 - The weekly branch cleanup listed each branch's pull requests with `gh api -f`, which sends a POST to the create-pull-request endpoint, so every lookup failed with 422 and the open-PR and `do-not-delete` protections were never checked. It now lists with `--method GET`, and a branch whose PRs cannot be read is left alone.
 

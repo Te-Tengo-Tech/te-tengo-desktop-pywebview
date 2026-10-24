@@ -476,3 +476,31 @@ def test_pc_actualizada_se_anota_una_vez_al_iniciar(e: Escenario) -> None:
     otro._anotar_version()  # the next start: the same version, nothing new
     tipos = [a.get("tipo") for a in otro.actividad.entradas()]
     assert tipos.count("PC_ACTUALIZADA") == 1
+
+
+def test_que_se_ve_en_la_vista_previa_se_recuerda_en_esta_pc(e: Escenario) -> None:
+    from te_tengo_captura.coordinador import ARCHIVO_VENTANA, modo_vista_previa
+
+    c = e.vincular()
+    c.ir_a_estado()
+    assert c.estado().a_json()["pvMode"] == {"video": True, "skel": False}  # only video
+    c.cambiar_modo_avanzado(True)
+    assert c.cambiar_vista_previa(True, True) == {"video": True, "skel": True}
+    assert c.estado().a_json()["pvMode"] == {"video": True, "skel": True}
+    guardado = json.loads((e.datos / ARCHIVO_VENTANA).read_text("utf-8"))
+    assert guardado == {"modoAvanzado": True, "vistaPrevia": "VIDEO_CON_POSTURA"}
+    assert c.lista_actividad()[0]["m"] == "Desde esta PC: se activó el modo avanzado"  # not logged
+    c.detener()
+    otra = e.crear()  # the next start on this PC
+    assert otra.modo_avanzado is True
+    assert otra.cambiar_vista_previa(False, True) == {"video": False, "skel": True}
+    assert modo_vista_previa(False, False).value == "VIDEO"  # at least one stays on
+
+
+def test_que_se_ve_ilegible_vuelve_a_solo_video(e: Escenario) -> None:
+    from te_tengo_captura.coordinador import ARCHIVO_VENTANA
+
+    e.datos.mkdir(parents=True)
+    (e.datos / ARCHIVO_VENTANA).write_text('{"vistaPrevia": "OTRA"}', encoding="utf-8")
+    c = e.crear()
+    assert c.cambiar_vista_previa(True, False) == {"video": True, "skel": False}

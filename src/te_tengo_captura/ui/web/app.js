@@ -62,6 +62,9 @@
     replay:'<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3 4v4.5h4.5"/><path d="M12 8v4.5l3 1.8"/>',
     download:'<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/>',
     person:'<circle cx="12" cy="5.8" r="2.6"/><path d="M12 9.5v6M7.5 12.2 12 10l4.5 2.2M9.2 21l2.8-5.5 2.8 5.5"/>',
+    /* «Qué se ve» (app-movil core.js): video and body */
+    video:'<rect x="2.5" y="6" width="13.5" height="12" rx="3"/><path d="M16 10.5l5.5-3v9l-5.5-3"/>',
+    body:'<circle cx="12" cy="4.6" r="2"/><path d="M12 7v6.5M12 13.5l-3.5 6.5M12 13.5l3.5 6.5M7 10.2l5-1.7 5 1.7"/><circle cx="7" cy="10.2" r=".9" fill="currentColor"/><circle cx="17" cy="10.2" r=".9" fill="currentColor"/><circle cx="8.5" cy="20" r=".9" fill="currentColor"/><circle cx="15.5" cy="20" r=".9" fill="currentColor"/>',
     arrowDown:'<path d="M12 4.5v15M6 13.5l6 6 6-6"/>',
     arrowUp:'<path d="M12 19.5v-15M6 10.5l6-6 6 6"/>',
     list:'<path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.5" cy="6.5" r="1.1" fill="currentColor"/><circle cx="4.5" cy="12" r="1.1" fill="currentColor"/><circle cx="4.5" cy="17.5" r="1.1" fill="currentColor"/>',
@@ -365,11 +368,21 @@
       '<p class="t-small">Ciérralo y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
     const by = d.room ? (d.by==='pc' ? 'Elegida en esta PC' : d.by==='app' ? 'La eligió la familia en la app' : 'El nombre se cambia en la app Te Tengo') : 'Se elige en la app';
     return '<div class="cpane info"><figure class="pv2 art" id="pv" data-clave="'+esc(d.id)+'">'+roomSVG(d.room || '')+'<img class="pv-img" id="pv-img" alt="" hidden>'+
-      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption>'+PV_TIP()+'</figure>'+
+      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption>'+PV_TIP()+PV_MODE(E, d)+'</figure>'+
       (d.peek ? peekNotice(E, true) : '')+
       '<dl class="cinfo"><div><dt>Habitación</dt><dd><b>'+(d.room ? esc(d.room) : 'Sin usar')+'</b><span>'+by+'</span></dd></div>'+
       '<div><dt>Conexión</dt><dd><b class="ok">'+ic('check')+'Conectada</b><span>'+(d.new ? 'Nueva · por USB' : 'Por USB')+'</span></dd></div></dl>'+
       (E.unlink ? '<div class="pane-actions start"><button class="btn btn-ghost btn-sm" data-act="hereOn">'+ic('cam')+'Elegir aquí (si estás instalando)</button></div>' : '')+'</div>';
+  }
+  /* «Qué se ve» over the preview of a camera in use, as the app's live view (app-movil screens.js
+     modeBar): «Video» and «Esqueleto» switch separately, at least one stays on; only video by
+     default, remembered on this PC. A webcam «sin usar» has no pose, so it only shows video. */
+  function pvMode(E){ return E.pvMode || {video:true, skel:false}; }
+  function PV_MODE(E, d){
+    if(!d.skel) return '';
+    const m = pvMode(E);
+    const b = (k, icon, t) => '<button type="button" class="pv-t'+(m[k]?' on':'')+'" data-act="pvMode" data-arg="'+k+'" aria-pressed="'+m[k]+'">'+ic(m[k]?'check':icon)+'<span>'+t+'</span></button>';
+    return '<div class="pv-mode" role="group" aria-label="Qué se ve">'+b('video','video','Video')+b('skel','body','Esqueleto')+'</div>';
   }
   /* the lock over a local preview opens its help (core.js: 'pvlock' and 'skel-lock') */
   function PV_TIP(){ return infoTip('La vista previa solo se ve en esta PC: no se graba ni sale de la casa. Úsala para revisar el encuadre.','vista previa local',{k:'pvlock',icon:'lock',cls:'pv-lock',up:1,start:1}); }
@@ -398,7 +411,7 @@
     const changed = r ? (room && norm(room)!==norm(r)) : (otherOn || !!room);
     const primary = '<button class="btn btn-primary" data-act="useCam"'+(changed && !U.busy?'':' disabled')+'>'+ic('check')+(r?'Guardar cambio':'Usar esta cámara')+'</button>';
     return '<div class="cpane"><figure class="pv2 art" id="pv" data-clave="'+esc(d.id)+'">'+roomSVG(d.room || '')+'<img class="pv-img" id="pv-img" alt="" hidden>'+
-      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption>'+PV_TIP()+'</figure>'+
+      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption>'+PV_TIP()+PV_MODE(E, d)+'</figure>'+
       '<span class="rooms-l"><span id="rooms-l">¿En qué habitación está?</span>'+infoTip('Por privacidad, no se admiten cámaras en el baño.','habitaciones',{k:'bath',start:1})+'</span><div class="chips2" role="group" aria-labelledby="rooms-l">'+chips+'</div>'+
       (otherOn ? '<div class="other-row field'+(err?' err':'')+'"><label class="sr" for="room-other">Nombre de la habitación</label><input class="input" id="room-other" value="'+esc(pk.other || (custom ? r : ''))+'" placeholder="Por ejemplo, Sala comedor" autocomplete="off"'+(err?' aria-invalid="true" aria-describedby="room-err"':'')+'></div>' : '')+
       (err ? '<p class="field-msg err-msg" id="room-err" role="alert">'+ic('warn')+'<span>'+err+'</span></p>' : '')+
@@ -970,6 +983,13 @@
     close(){ if(U.dlg==='salir'){ U.dlg = null; render(); } call('cerrar'); },
     tab(el){ if(U.rp.open && el.dataset.arg!=='avanzado') ACT.replayClose(); U.tab = el.dataset.arg; render(); const t = $('tab-'+U.tab); if(t) t.focus({preventScroll:true}); if(U.tab==='avanzado') loadActs(); },
     toCams(){ U.tab = 'camaras'; render(); const t = $('tab-camaras'); if(t) t.focus({preventScroll:true}); },
+    pvMode(el){
+      const m = Object.assign({}, pvMode(E)), k = el.dataset.arg;
+      m[k] = !m[k];
+      if(!m.video && !m.skel) m[k==='video' ? 'skel' : 'video'] = true;  /* at least one stays on */
+      E.pvMode = m; render();
+      call('vistaPreviaModo', [m.video, m.skel]).then(r => { if(r && E){ E.pvMode = r; render(); } }).catch(() => {});
+    },
     selCam(el){ U.sel = el.dataset.arg; previewSrc = null; U.pick = {room:null, otherOn:false, other:'', err:null}; render(); },
     advToggle(){
       const activar = !E.advanced;

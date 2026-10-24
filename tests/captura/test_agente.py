@@ -247,3 +247,55 @@ def test_el_almacen_recibe_las_filas_y_los_puntos_del_clip_van_a_la_bandeja(
     almacen.soltar_camara("camara-1")
     assert e.agente.cola.puntos_pendientes() == [evento.evento_id]  # US-36
     almacen.detener()
+
+
+def test_vista_previa_con_esqueleto_de_la_pose_en_vivo(e: Escenario) -> None:
+    import cv2
+    import numpy as np
+
+    from te_tengo_captura.backend.modelos import ModoVista
+    from te_tengo_captura.captura import vista_previa as modulo
+    from tests.fabricas import DE_PIE
+
+    e.agente.reintentar_ahora()
+    clave = e.agente.clave_camara
+    vista = e.agente.vista_previa
+    assert e.agente.vista_previa_jpeg(clave) is None  # asks: frames start coming
+    vista.ofrecer(0.0, np.full((480, 640, 3), 128, dtype=np.uint8))
+    vista.anotar_pose(DE_PIE)  # what the capture loop estimated for its newest frame
+
+    def leer(modo: ModoVista) -> np.ndarray:
+        jpeg = e.agente.vista_previa_jpeg(clave, modo)
+        assert jpeg is not None
+        imagen = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+        assert imagen is not None
+        return imagen
+
+    solo_video = leer(ModoVista.VIDEO)
+    assert int(np.abs(solo_video.astype(int) - 128).max()) < 8  # the frame, nothing drawn
+    con_esqueleto = leer(ModoVista.VIDEO_CON_POSTURA)
+    assert (np.abs(con_esqueleto.astype(int) - 128).max(axis=2) > 60).sum() > 200  # drawn
+    solo = leer(ModoVista.SOLO_POSTURA)
+    morado = np.array([0x85, 0x2A, 0x4A])
+    fondo = (np.abs(solo.astype(int) - morado).max(axis=2) < 24).mean()
+    assert fondo > 0.8  # no pixel of the room: the brand purple and the skeleton
+    # A pose older than POSE_FRESCA_S (nobody in the picture any more) is not drawn.
+    import time
+
+    reloj = [time.monotonic()]
+    vista._reloj = lambda: reloj[0]
+    vista.jpeg()
+    vista.ofrecer(1.0, np.full((480, 640, 3), 128, dtype=np.uint8))
+    vista.anotar_pose(DE_PIE)
+    reloj[0] += modulo.POSE_FRESCA_S + 0.1
+    vista.ofrecer(2.0, np.full((480, 640, 3), 128, dtype=np.uint8))
+    vieja = leer(ModoVista.VIDEO_CON_POSTURA)
+    assert int(np.abs(vieja.astype(int) - 128).max()) < 8
+
+
+def test_la_pose_no_se_guarda_si_nadie_pide_la_vista_previa(e: Escenario) -> None:
+    from tests.fabricas import DE_PIE
+
+    vista = e.agente.vista_previa
+    vista.anotar_pose(DE_PIE)
+    assert vista._pose is None
