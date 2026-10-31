@@ -92,12 +92,6 @@ class Umbrales(BaseModel):
         description="A5. Visibilidad mínima para usar un landmark en el rectángulo del cuerpo.",
     )
 
-    # Experimental candidates (pre-registered), off by default.
-    velocidad_con_caderas: bool = False
-    velocidad_con_un_tobillo: bool = False
-    inclinacion_por_escorzo: bool = False
-    velocidad_perdida_min: float | None = None
-
     @property
     def calibrado(self) -> bool:
         return self.velocidad_descenso_min is not None

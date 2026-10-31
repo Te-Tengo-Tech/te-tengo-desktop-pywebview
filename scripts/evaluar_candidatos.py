@@ -14,6 +14,11 @@ applied to the held-out group, never chosen on it. The script reports, per candi
 It also runs a fully nested selection, in which each training fold chooses the candidate
 itself as well as its thresholds, which estimates the whole selection procedure honestly.
 
+The rejected candidates were removed from the classifier after the study. Their flags exist
+only at commit 233480f (branch ``feature/classifier-sensitivity``); on later commits the
+script runs the candidates whose fields ``Umbrales`` still has (the baseline) and lists the
+others as unavailable. Results and protocol: ``docs/validation.md``, section 6.
+
 Examples:
     uv run python scripts/evaluar_candidatos.py   # writes resultados/candidatos/
     uv run python scripts/evaluar_candidatos.py --datos ../otro/datos --candidatos base
@@ -343,6 +348,19 @@ def main() -> int:
         print(f"Faltan las poses ({variante}): scripts/evaluar.py extraer", file=sys.stderr)
         return 1
     nombres = args.candidatos or list(CANDIDATOS)
+    faltan = [
+        n
+        for n in nombres
+        if any(
+            campo not in Umbrales.model_fields for campo in [*CANDIDATOS[n][0], *CANDIDATOS[n][1]]
+        )
+    ]
+    if faltan:
+        print(
+            f"Not in this classifier (check out commit 233480f to run them): {', '.join(faltan)}",
+            file=sys.stderr,
+        )
+        nombres = [n for n in nombres if n not in faltan]
     rejillas: dict[Ajuste, dict[str, list[Any]]] = {}
     por_candidato: dict[str, list[Ajuste]] = {}
     for nombre in nombres:

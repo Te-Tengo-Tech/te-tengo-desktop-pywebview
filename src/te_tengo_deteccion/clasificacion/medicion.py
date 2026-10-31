@@ -37,30 +37,15 @@ class MedidorCinematico:
     is more stable than that of a single frame.
     """
 
-    def __init__(
-        self,
-        separacion_min_s: float,
-        ventana_s: float,
-        visibilidad_min: float,
-        solo_caderas: bool = False,
-        un_tobillo: bool = False,
-    ) -> None:
-        self._solo_caderas = solo_caderas
-        self._un_tobillo = un_tobillo
+    def __init__(self, separacion_min_s: float, ventana_s: float, visibilidad_min: float) -> None:
         self._separacion = separacion_min_s
         self._ventana = ventana_s
         self._visibilidad_min = visibilidad_min
         self._historial: deque[_Muestra] = deque()
 
     def medir(self, instante: float, pose: Pose) -> Medicion:
-        p = parametros.calcular(pose, self._visibilidad_min, self._un_tobillo)
-        if self._solo_caderas:
-            fiable = p.caderas_visibles
-        elif self._un_tobillo:
-            fiable = p.un_tobillo_visible
-        else:
-            fiable = p.puntos_visibles
-        if not fiable:
+        p = parametros.calcular(pose, self._visibilidad_min)
+        if not p.puntos_visibles:
             return Medicion(instante, p, None)
         velocidad = self._velocidad(instante, p)
         self._historial.append(_Muestra(instante, p.centro_cadera.y, p.longitud_linea_central))
