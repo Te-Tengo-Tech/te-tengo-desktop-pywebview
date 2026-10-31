@@ -4,6 +4,8 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-31
+
 ### Added
 - **Uploads to Azure Blob Storage**, the API's new production store (te-tengo-general-api ADR 0013): clips, clip landmarks and movement files are still sent with exactly the headers the API returns, which now include `x-ms-blob-type: BlockBlob`; for an Azure Blob SAS URL (an `*.blob.core.windows.net` host, or a SAS query such as Azurite's) the agent adds that header itself when the API did not send it, since Azure refuses a Put Blob without it. S3 and Cloudflare R2 pre-signed URLs keep their headers untouched.
 - **Hold-out test on GMDCSA24** (docs/validation.md, section 6): the shipped classifier, frozen (v = 0.01, defaults, with and without R9), on 160 clips of a public dataset never used for calibration (4 people, 3 rooms, 79 falls, 81 daily activities). With R9: sensitivity 91.1 % (82.8–95.6), specificity 65.4 % (54.6–74.9), median latency 0.76 s from the labelled onset; every clip of a person lying down on a bed is a false alarm (12/12). `descargar_datasets.py --datasets gmdcsa24` (MD5-checked), `evaluar.py --datasets`, `scripts/evaluar_holdout.py` (frozen result, leave-one-group-out over the three datasets, 6/8/10 fps) and `scripts/medir_latencia.py` (MediaPipe lite: 7.6 ms per frame on an Apple M5 Pro). The default validation still uses only URFD and CAUCAFall.
