@@ -1,6 +1,6 @@
 # 0011. Two post-hoc fixes for the hold-out failures: upright precondition (F1) and leaving the floor without evidence (F2)
 
-**Status:** proposed (2026-10-31); evaluation pending. Both rules are **post hoc**: they were designed after seeing the hold-out results of [validation.md](../validation.md), sections 6 and 8. They are off by default (`None`), so the shipped classifier does not change unless this ADR is accepted.
+**Status:** decided (2026-10-31): F1, F2 and F1 + F2 rejected; F3 accepted under criterion 2 only, as an opt-in configuration; **the shipped default does not change**. Both rules are **post hoc**: they were designed after seeing the hold-out results of [validation.md](../validation.md), sections 6 and 8. They are off by default (`None`), so the shipped classifier does not change unless this ADR is accepted.
 
 This ADR is written in two steps. The context, the rules, their physical rationale and the evaluation protocol (sections "Context" to "Protocol") were committed **before** any run of F1 or F2 on any dataset; "Results" and "Decision" were added afterwards.
 
@@ -56,11 +56,33 @@ Both together, with T and X chosen jointly.
 
 **Rule.** F1 with `erguido_previo_exige_visibles = False`: the precondition accepts a frame that passes the geometry of the upright test without A6. **Rationale:** A6 protects decisions that tell the family the person is fine (R5) or downgrade an alarm (R7); in F1 a doubtful upright frame only lets R4 run as it does today, so the error it can cause is at most the shipped behaviour. **Grid:** v × T as F1 (500 configurations); not combined with F2, because F2 changed nothing (see Results). **Prediction:** recovers most of the 42 falls; gives back part of the lying-still false alarms if MediaPipe estimates a lying person as geometrically upright on isolated frames (A8). Same protocol and acceptance rule as F1.
 
+**Erratum to the F3 note above (found after the second run).** The trace that motivated F3 counted every recording whose `caida` F1 removed, ADL included. Restricted to fall recordings, F1 loses 42 falls (not 72), none with a strict upright frame in the 10 s before the shipped `caida` and 38 (not 42) with a geometric one. The motivation is unchanged; F3 was not modified.
+
 ## Results
-Pending.
+Leave one dataset out, 4,100 configurations; full tables in [validation.md](../validation.md), section 9, and `resultados/lodo-f1-f2-8fps.md`. Macro mean over the five held-out datasets, sensitivity / specificity:
+
+| Rule set | Criterion 1 (Youden) | Criterion 2 (spec., sens. ≥ 90 %) |
+|---|---|---|
+| Shipped (v = 0.01) | 74.0 / 74.5 | 74.0 / 74.5 |
+| Baseline (v re-chosen) | 62.3 / 84.5 | 74.0 / 74.5 |
+| F1 | 57.0 / 88.1 | 63.1 / 83.9 |
+| F2 | 64.9 / 78.9 | 74.0 / 74.5 |
+| F1 + F2 | 57.0 / 88.1 | 63.1 / 83.9 |
+| **F3** | **72.6 / 82.9** | **72.6 / 82.9** |
+
+- **F1**: removes the UP-Fall lying-still alarms (22 → 0) and 5 of the 12 bed alarms, but loses falls in every dataset, because no frame before them passes A6's visibility gate (the window is not the issue: every fold chose T = 10 s).
+- **F2**: no effect. On MCFD the body shows M2 or M3 on 99 % of the pose frames before the masked falls; 11 of the 58 masked windows were entered ≤ 2 s before the labelled onset, i.e., an early detection of the same descent rather than an unrelated false alarm.
+- **F3**: every fold, under both criteria, chose v = 0.01 and T = 10 s. Against the shipped classifier (= criterion-2 baseline): UP-Fall specificity 63.2 → 95.6 %, GMDCSA24 65.4 → 72.8 % (bed 12 → 9), CAUCAFall 84 → 86 %; 6 of 513 positive units lost, 32 units corrected (McNemar 6/32, p < 0.001); no new false recovery; MCFD 112 false alarms per hour (114 shipped), latency 1.07 s.
 
 ## Decision
-Pending.
+- F1, F2 and F1 + F2 are **rejected** (F1: its specificity gain is smaller than its sensitivity loss; F2: no change).
+- F3 meets the acceptance rule under **criterion 2**. Under criterion 1 it does not: its target, specificity, falls 1.6 points against the Youden baseline, and its gain shows up as sensitivity (+10.3 points) because without lying-still alarms the folds keep v = 0.01.
+- As fixed beforehand, the default changes only with acceptance under criterion 1, so **the shipped classifier does not change**. F3 stays in the code, off by default, and the configuration `erguido_previo_caida_s = 10`, `erguido_previo_exige_visibles = false` (v = 0.01) is the proposal for the pilot, with the LODO result (macro 72.6 % / 82.9 %) as its expected performance.
+
+## Consequences
+- Two new `[clasificacion]` values, `erguido_previo_caida_s` and `erguido_previo_exige_visibles`, and one for F2, `salida_suelo_sin_evidencia_s`; unset, the agent behaves exactly as validated (the parity tests do not change).
+- Lying down on a bed after sitting on it remains a false alarm with any precondition. MCFD's masked falls need another mechanism (the person does look tilted on wide-angle views).
+- F3 is doubly post hoc and was chosen at the edge of its grid (T = 10 s); it must be confirmed on data not used here before it becomes the default.
 
 ## References
 Gutiérrez, J., Martin, S., & Rodriguez, V. (2023). Human stability assessment and fall detection based on dynamic descriptors. *IET Image Processing, 17*(11), 3177–3195. https://doi.org/10.1049/ipr2.12847

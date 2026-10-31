@@ -481,6 +481,76 @@ With the frozen v = 0.01 the same datasets give UP-Fall 68.2 % / 63.2 %, MCFD 88
 - **More cameras per room** raise sensitivity (UP-Fall 94.1 % with either of two cameras; MCFD 68 % with two and 96 % with eight), at a roughly proportional false-alarm cost. Fusion helps against occlusion and lost poses, not against the rules' confusion with lying down.
 - **Limitations of this test:** young adults and one actor, simulated falls onto a mattress; UP-Fall's subset is trial 1 only and has no frame-level labels (no latency); MCFD's time base (30 fps) is inferred, its labels are given per frame of a reference camera and were moved with the report's delays, and the false-alarm rates come from 65 camera-minutes of non-fall time. The fused false-alarm merge window (5 s) and the 1 s onset tolerance were fixed before looking at the results; the restriction of the MCFD event count to the labelled span was added after a first run showed `recuperacion` and `caida` events in the unlabelled tails, and is reported with the number of events it leaves out (51).
 
+## 9. Post-hoc fixes for the hold-out failures, leave-one-dataset-out (2026-10-31)
+
+**Question.** Sections 6 and 8 found two mechanisms that no threshold removes: a person **lying still** fires R4 (UP-Fall "laying" 22/34, GMDCSA24 bed 12/12), and on MCFD an **earlier `caida` leaves the classifier in `EN_EL_SUELO`** when the real fall comes. Can a rule change, physically motivated, remove them without trading them for missed falls? All rules here are **post hoc** (designed after seeing the hold-out results) and are off by default. Rationale, grids, protocol and acceptance rule: [ADR 0011](adr/0011-upright-precondition-and-floor-exit.md), committed before each run. Full report: [resultados/lodo-f1-f2-8fps.md](../resultados/lodo-f1-f2-8fps.md).
+
+```bash
+uv run python scripts/evaluar_lodo.py --procesos 10   # ~20 min on an M5 Pro, 4,100 configurations
+```
+
+### 9.1. Rules tested
+
+| ID | Rule (classification-spec.md, section 3) | Grid |
+|---|---|---|
+| F1 | R4 may start only if the person was upright (R5's test, with A6) in the last T s | T ∈ {1, 2, 3, 5, 10} s |
+| F2 | In `EN_EL_SUELO`, after X s of pose frames that are neither tilted (M2) nor horizontal (M3), go back to `NORMAL` silently (no `recuperacion`; R6 dropped) | X ∈ {2, 3, 5, 10, 20} s |
+| F1 + F2 | both | T × X |
+| **F3** (added after the first run, doubly post hoc) | F1 with the **geometric** upright test (θ > 45°, P < 1, head above the feet; no visibility gate) | T |
+
+Every rule set also re-chooses v (0.01–1.00). **4,100 configurations** in all (baseline 100, F1 500, F2 500, F1 + F2 2,500, F3 500), 5 rule sets.
+
+### 9.2. Protocol
+Five folds, one per dataset (leave one dataset out). In each fold the other four datasets choose v, T and X by two criteria, both over the **macro average** of the training datasets (each dataset weighs the same): (1) maximum Youden index; (2) maximum specificity with sensitivity ≥ 90 % (no configuration reaches 90 %, so it becomes the maximum sensitivity, then specificity). Ties: lowest v, then the largest T and X. Units: one recording per camera in URFD, CAUCAFall, GMDCSA24 and UP-Fall; in MCFD each labelled fall window is a positive unit (as in section 8.3) and each labelled non-fall period a negative one (920 periods; a false positive if a `caida` falls inside). 513 positive and 1,159 negative units. 95 % Wilson intervals; exact McNemar on paired units against the baseline chosen with the same criterion.
+
+### 9.3. Results (sensitivity / specificity on the held-out dataset)
+
+Criterion 2 (specificity with sensitivity ≥ 90 %). Every fold chose v = 0.01 for the baseline (the shipped classifier), T = 10 s for F1 and F3, and X = 2 s for F2 (20 s in the MCFD fold):
+
+| Held-out | Shipped = baseline | F1 | F2 | F1 + F2 | **F3** |
+|---|---|---|---|---|---|
+| URFD | 76.7 / 72.5 | 66.7 / 72.5 | 76.7 / 72.5 | 66.7 / 72.5 | **76.7 / 72.5** |
+| CAUCAFall | 86.0 / 84.0 | 68.0 / 86.0 | 86.0 / 84.0 | 68.0 / 86.0 | **82.0 / 86.0** |
+| GMDCSA24 | 91.1 / 65.4 | 81.0 / 77.8 | 91.1 / 65.4 | 81.0 / 77.8 | **88.6 / 72.8** |
+| UP-Fall | 68.2 / 63.2 | 54.1 / 95.6 | 68.2 / 63.2 | 54.1 / 95.6 | **68.2 / 95.6** |
+| MCFD (events / periods) | 47.8 / 87.2 | 45.7 / 87.4 | 47.8 / 87.2 | 45.7 / 87.4 | **47.3 / 87.4** |
+| Macro mean | 74.0 / 74.5 | 63.1 / 83.9 | 74.0 / 74.5 | 63.1 / 83.9 | **72.6 / 82.9** |
+| Pooled units | 66.7 (62.5–70.6) / 83.6 (81.4–85.6) | 57.3 / 86.6 | 66.7 / 83.6 | 57.3 / 86.6 | **65.7 (61.5–69.7) / 86.3 (84.2–88.1)** |
+| McNemar, pooled (b/c, p): all · positives · negatives | — | 48/35, 0.187 · 48/0, < 0.001 · 0/35, < 0.001 | 0/0 | as F1 | **6/32, < 0.001 · 6/1, 0.125 · 0/31, < 0.001** |
+
+Criterion 1 (Youden). The baseline's folds move v to 0.12 (0.36 in the CAUCAFall fold), F1's to 0.13–0.74 with T = 3–10, F2's keep X = 20 (it never acts) except the UP-Fall fold (v = 0.01, X = 2), and **F3's folds all keep v = 0.01, T = 10**, so F3's result is the same as above:
+
+| Held-out | Baseline | F1 | F2 | F1 + F2 | F3 |
+|---|---|---|---|---|---|
+| URFD | 76.7 / 75.0 | 66.7 / 75.0 | 76.7 / 75.0 | 66.7 / 75.0 | 76.7 / 72.5 |
+| CAUCAFall | 48.0 / 90.0 | 44.0 / 94.0 | 48.0 / 90.0 | 44.0 / 94.0 | 82.0 / 86.0 |
+| GMDCSA24 | 84.8 / 77.8 | 75.9 / 85.2 | 84.8 / 77.8 | 75.9 / 85.2 | 88.6 / 72.8 |
+| UP-Fall | 55.3 / 91.2 | 54.1 / 97.1 | 68.2 / 63.2 | 54.1 / 97.1 | 68.2 / 95.6 |
+| MCFD | 46.7 / 88.4 | 44.0 / 89.3 | 46.7 / 88.4 | 44.0 / 89.3 | 47.3 / 87.4 |
+| Macro mean | 62.3 / 84.5 | 57.0 / 88.1 | 64.9 / 78.9 | 57.0 / 88.1 | 72.6 / 82.9 |
+| McNemar, pooled: all · positives · negatives | — | 23/25, 0.885 · 20/1, < 0.001 · 3/24, < 0.001 | 19/22, 0.755 (the UP-Fall fold's v, not F2) | as F1 | 29/59, 0.002 · 5/48, < 0.001 · 24/11, 0.041 |
+
+**Per activity** (criterion 2; false alarms out of the units): UP-Fall lying still 22/34 → **0** with F1 and F3; GMDCSA24 lying down on a bed 12/12 → 7 (F1), **9 (F3)**; GMDCSA24 exercise 5 → 4 (F1), 5 (F3); CAUCAFall kneeling 3 → 3, picking up 3 → 3 (both); GMDCSA24 picking up 3 → 2 (both); URFD lying down on the floor on purpose 8/16 → 8 (both); MCFD lying on a sofa 3 → 2, crouching 13 → 13, sitting 15 → 15. Falls lost by F3 against the shipped classifier: 6 (CAUCAFall forward and left, GMDCSA24 forward and sideways, one MCFD window); F1 loses 48.
+
+**Safety** (criterion 2). False recoveries: URFD 0, CAUCAFall 1 → 0 (F1, F3), GMDCSA24 0, UP-Fall 12 for all (the bystander of section 8.2), MCFD 0. F2's silent exits after a detected fall: 3 UP-Fall recordings (where 11 instead of 12 `recuperacion` remain), none in MCFD fall windows, no `caida_confirmada` lost (MCFD clips end before 30 s on the floor). MCFD false alarms: 123 (114/h) shipped, 121 (112/h) F1 and F3; latency median 1.08 s shipped, 0.98 s F1, 1.07 s F3.
+
+### 9.4. Why F1 and F2 fail and F3 works (diagnosis, frozen v = 0.01)
+- **F1 loses falls because of A6, not because of the window.** Of the 42 falls (clip datasets) that F1 with T = 10 s and v = 0.01 loses against the shipped classifier, **none** has a frame that passes the strict upright test in the 10 s before the shipped `caida`, and 38 have frames that pass its geometry with some key point below visibility 0.5 (UP-Fall 24/24, CAUCAFall 7/9, GMDCSA24 4/6, URFD 3/3). The cameras at 1.82 m (UP-Fall), in a corner (CAUCAFall) or at body height (URFD) often lose the nose or an ankle of a standing person. F3, which accepts the geometry, loses only 6 falls against the shipped classifier (pooled, criterion 2) and still removes every UP-Fall lying-still alarm, because a person lying never looks vertical and narrow. (The note that motivated F3 in ADR 0011 gave 72 and 42: that first count also included ADL recordings whose alarm F1 removed; the corrected figures are these.)
+- **F2's premise does not hold on MCFD.** In the 58 fall windows that start with the classifier in `EN_EL_SUELO`, the body shows floor evidence (M2 or M3) on 99 % of the pose frames (median), and a run of 2 s without it occurs in 1 window: on MCFD's wide-angle views a person sitting, crouching or on a sofa does look tilted or wide. Moreover, in 11 of the 58 the classifier had been on the floor for ≤ 2 s, that is, the "earlier" `caida` came during the descent that precedes the labelled `falling` onset by more than the 1 s tolerance (the same fall, labelled late), not an unrelated false alarm. Section 8.3's count of 52 masked windows is therefore an upper bound on masking by earlier false alarms.
+- **The lying-down-on-a-bed alarms stay** with any precondition: the person is upright (standing or sitting on the bed) seconds before lying, so R4 is legitimately armed; F3 removes 3 of 12.
+
+### 9.5. Decision (acceptance rule of ADR 0011)
+- **F1, F2, F1 + F2: rejected.** F1 buys specificity with more sensitivity than it gains (criterion 2: −10.9 / +9.4 macro points; McNemar on positives 48/0). F2 changes nothing (criterion 2: identical outcomes on every unit).
+- **F3: accepted under criterion 2** (specificity +8.4 macro points against a sensitivity loss of 1.4; it rises in 4 held-out datasets and falls in none; no new false recovery; pooled McNemar 6/32, p < 0.001). **Under criterion 1 it does not meet the pre-registered rule**: its target was specificity, which falls 1.6 macro points against the Youden baseline, while its gain appears as sensitivity (+10.3; McNemar 29/59, p = 0.002) because removing the lying-still alarms lets every fold keep v = 0.01 instead of 0.12.
+- **The shipped default does not change.** ADR 0011 fixed beforehand that the default changes only with acceptance under criterion 1; F3 is also doubly post hoc. The proposed configuration, chosen on all five datasets by both criteria, is `velocidad_descenso_min = 0.01`, `erguido_previo_caida_s = 10`, `erguido_previo_exige_visibles = false`; its **expected performance is the LODO result** (macro 72.6 % / 82.9 %; pooled 65.7 % / 86.3 %), not a fit. It is opt-in through `[clasificacion]` and should be confirmed on data that saw none of this (the pilot).
+
+### 9.6. Threats to validity
+- **Adaptive design.** F1 and F2 were designed after seeing the hold-out failures, and F3 after seeing F1's LODO losses; the five datasets are no longer independent of the rule design. LODO protects the thresholds, not the choice of rules. 4,100 configurations and 5 rule sets were evaluated (plus 10,600 in section 7).
+- **Grid edge.** Every fold chose T = 10 s, the largest value tried: the optimum may be larger (a longer window approaches the shipped behaviour).
+- **Clustering.** Units are not independent (8 MCFD cameras see one scenario, 2 UP-Fall cameras one trial; one actor in MCFD); McNemar and Wilson treat them as independent, so the intervals are too narrow. The macro mean over five datasets is the more conservative summary.
+- **MCFD negatives** are labelled periods of very different lengths; the per-hour rate is reported too. **UP-Fall "laying"** is lying still from the first frame, the easiest case for a precondition; GMDCSA24's bed shows that lying down after sitting is not solved.
+- **Simulated falls by young adults** onto mattresses; no older adults (section 5).
+
 ## References
 
 Alam, E., Sufian, A., Dutta, P., Leo, M., & Hameed, I. A. (2024). GMDCSA-24: A dataset for human fall detection in videos. *Data in Brief, 57*, 110892. https://doi.org/10.1016/j.dib.2024.110892 · Data: https://doi.org/10.5281/zenodo.13354453

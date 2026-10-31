@@ -365,14 +365,14 @@ def _diagnostico(_: object) -> list[str]:
 
     perdidas: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
     for nombre, seq in poses.items():
-        if nombre.startswith("chute"):
+        u = next(x for x in _ESTADO["unidades"] if x.video == nombre)
+        if nombre.startswith("chute") or not u.positiva:
             continue
         cb = caidas(replay(seq, base))
         if not cb or caidas(replay(seq, f1)):
             continue
         t0 = cb[0]
         ms = [m for t, _, m in traza(seq) if m is not None and t0 - 10 <= t <= t0]
-        u = next(x for x in _ESTADO["unidades"] if x.video == nombre)
         fila = perdidas[u.dataset]
         fila[0] += 1
         fila[1] += any(geometrico(m) for m in ms)
@@ -527,7 +527,7 @@ def main() -> int:
         "finales": {f"{n}|{c}": corto(fams[n][j]) for (n, c), j in finales.items()},
         "configuraciones": len(todos),
     }
-    args.salida.with_suffix(".json").write_text(json.dumps(datos_json, indent=1), "utf-8")
+    args.salida.with_suffix(".json").write_text(json.dumps(datos_json, indent=1) + "\n", "utf-8")
     print("\n".join(texto))
     return 0
 

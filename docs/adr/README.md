@@ -14,5 +14,6 @@ Each important decision is recorded in a short file using Michael Nygard's forma
 | [0008](0008-clip-encoding-with-pyav.md) | Encode clips with PyAV instead of the FFmpeg executable | Accepted |
 | [0009](0009-slow-fall-rule.md) | Rule R9: declare slow falls that end on the floor | Proposed |
 | [0010](0010-sensitivity-candidates-rejected.md) | Keep the validated classifier: the sensitivity candidates are rejected | Accepted |
+| [0011](0011-upright-precondition-and-floor-exit.md) | Post-hoc fixes for the hold-out failures: upright precondition (F1, F3) and leaving the floor (F2) | F1 and F2 rejected; F3 opt-in, default unchanged |
 
 Nygard, M. (2011, 15 de noviembre). *Documenting architecture decisions*. Cognitect. https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions
