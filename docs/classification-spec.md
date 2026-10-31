@@ -163,7 +163,7 @@ caida   if  D ≥ 0.4  and  M3 on every frame with a pose during the last P s   
 **Limitations:** lying down **on the floor** on purpose looks the same as a slow fall that ends lying (it adds false alarms in URFD); a slow fall that ends **sitting** on the floor is not detected; and lying on a bed is excluded only by geometry, because no dataset has it. The default values come from geometry and the reported scenarios; on the datasets they add the slow falls that R4 missed (see validation.md, section 3.6).
 
 ### Changes tested to raise sensitivity and rejected
-None of these is in the code; they are recorded so that they are not tried again without new data. Each one was evaluated with its thresholds chosen inside every training fold ([validation.md](validation.md), section 6; ADR 0010).
+None of these is in the code; they are recorded so that they are not tried again without new data. Each one was evaluated with its thresholds chosen inside every training fold ([validation.md](validation.md), section 7; ADR 0010).
 
 | ID | Mark | Change | Result (LOGO sensitivity / specificity; baseline 82.5 % / 78.9 %) |
 |---|---|---|---|

@@ -17,7 +17,7 @@ itself as well as its thresholds, which estimates the whole selection procedure 
 The rejected candidates were removed from the classifier after the study. Their flags exist
 only at commit 233480f (branch ``feature/classifier-sensitivity``); on later commits the
 script runs the candidates whose fields ``Umbrales`` still has (the baseline) and lists the
-others as unavailable. Results and protocol: ``docs/validation.md``, section 6.
+others as unavailable. Results and protocol: ``docs/validation.md``, section 7.
 
 Examples:
     uv run python scripts/evaluar_candidatos.py   # writes resultados/candidatos/
@@ -65,7 +65,7 @@ CANDIDATOS: dict[str, tuple[dict[str, Any], dict[str, list[Any]]]] = {
     "C1+C2+C3": (C1 | C2, C3),
     "C4": ({}, C4),
     "C1+C4": (C1, C4),
-    # Post-hoc (designed after round 1; see docs/validation.md section 6).
+    # Post-hoc (designed after round 1; see docs/validation.md section 7).
     "C1b": (C1B, {}),
     "C1b+C2": (C1B | C2, {}),
     "C1b+C3": (C1B, C3),

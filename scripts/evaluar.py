@@ -12,6 +12,10 @@ Two steps:
    * **leaving one group out**: each CAUCAFall subject and the whole of URFD are evaluated with
      the threshold calibrated without that group (11 groups).
 
+By default only URFD and CAUCAFall (the calibration data) are listed. ``--datasets`` adds the
+hold-out dataset GMDCSA24 (``docs/validation.md``, section 6); ``scripts/evaluar_holdout.py``
+evaluates it with the shipped thresholds frozen.
+
 A video counts as a "detected fall" if there is at least one ``caida`` event. False recoveries
 are also counted (in URFD no person gets up after falling, according to its per-frame labels),
 as well as the unstable movements emitted in activities of daily living.
@@ -23,10 +27,12 @@ Examples:
 """
 
 import argparse
+import csv
 import json
+import re
 import sys
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,6 +46,9 @@ DATOS, RESULTADOS = Path("datos"), Path("resultados")
 ALTO_MAX = 480
 CALIDAD_JPEG = 80  # the same as the simulated agent
 Secuencia = list[tuple[float, Pose | None]]
+DATASETS_VALIDACION = ("urfd", "caucafall")  # the calibration data of docs/validation.md
+DATASETS = (*DATASETS_VALIDACION, "gmdcsa24")
+GMDCSA24 = Path("gmdcsa24") / "v2.1"  # Zenodo 10.5281/zenodo.13354453, see descargar_datasets.py
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,12 +60,29 @@ class Video:
     actividad: str
     grupo: str  # subject in CAUCAFall; "urfd" in URFD (it does not publish each video's subject)
     recorte: tuple[int, int, int, int] | None = None
+    inicio_caida: float | None = None  # labelled fall onset in s, when the dataset gives it
+    detalle: str = ""  # free-text description of the clip, when the dataset gives it
+    condicion: str = ""  # recording condition (GMDCSA24: day, night, lights on or off)
+    se_levanta: bool | None = None  # a non-fall label starts after the fall onset (GMDCSA24)
 
     def cache(self, variante: str) -> Path:
         return RESULTADOS / "poses" / variante / self.dataset / f"{self.nombre}.json"
 
 
-def listar_videos(datos: Path = DATOS) -> list[Video]:
+def listar_videos(
+    datos: Path = DATOS, datasets: Sequence[str] = DATASETS_VALIDACION
+) -> list[Video]:
+    videos: list[Video] = []
+    if "urfd" in datasets:
+        videos += _videos_urfd(datos)
+    if "caucafall" in datasets:
+        videos += _videos_caucafall(datos)
+    if "gmdcsa24" in datasets:
+        videos += videos_gmdcsa24(datos)
+    return videos
+
+
+def _videos_urfd(datos: Path) -> list[Video]:
     videos = []
     for ruta in sorted((datos / "urfd").glob("*-cam0.mp4")):
         nombre = ruta.name.removesuffix("-cam0.mp4")
@@ -64,12 +90,99 @@ def listar_videos(datos: Path = DATOS) -> list[Video]:
         actividad = "caída" if es_caida else "actividad diaria"
         # URFD MP4 files have the depth image on the left and the RGB image on the right.
         videos.append(Video("urfd", nombre, ruta, es_caida, actividad, "urfd", (320, 0, 320, 240)))
+    return videos
+
+
+def _videos_caucafall(datos: Path) -> list[Video]:
+    videos = []
     for ruta in sorted((datos / "caucafall").glob("Subject.*/*.avi")):
         sujeto, actividad = ruta.parent.name, ruta.stem
         nombre = f"{sujeto}-{actividad}".replace(" ", "_")
         videos.append(
             Video("caucafall", nombre, ruta, actividad.startswith("Fall"), actividad, sujeto)
         )
+    return videos
+
+
+# GMDCSA24 labels each clip in Subject N/{Fall,ADL}.csv: "Classes" holds intervals such as
+# "Falling (BW)[1.5 to 5]; Standing[0 to 1.5]". The fall onset is the start of the first one.
+_INICIO_CAIDA = re.compile(r"Fall(?:ing)?\s*\(?\s*[A-Z]*\s*\)?\s*\[\s*([\d.]+)")
+_DIRECCION = re.compile(r"Fall(?:ing)?\s*\(\s*(FW|BW|SW)")
+_INTERVALO = re.compile(r"([A-Za-z]+)\s*(?:\([^\[]*)?\[\s*([\d.]+)")
+
+
+def se_levanta_gmdcsa24(clases: str, inicio: float | None) -> bool | None:
+    """Whether a non-fall activity is labelled to start after the fall onset."""
+    if inicio is None:
+        return None
+    return any(
+        not nombre.startswith("Fall") and float(desde) > inicio
+        for nombre, desde in _INTERVALO.findall(clases)
+    )
+
+
+def actividad_gmdcsa24(es_caida: bool, descripcion: str, clases: str) -> str:
+    """Activity group of a GMDCSA24 clip, from its description (keyword rules, in order).
+
+    Falls are grouped by the direction label (FW, BW, SW); daily activities by what the
+    person does that the classifier could confuse with a fall.
+    """
+    d = descripcion.lower()
+    if es_caida:
+        direccion = _DIRECCION.search(clases)
+        nombres = {"FW": "forward", "BW": "backward", "SW": "sideways"}
+        return "fall " + (nombres[direccion.group(1)] if direccion else "unlabelled direction")
+    if "sleeping" in d:
+        return (
+            "lying down on / getting up from the floor"
+            if "floor" in d
+            else ("lying down on / getting up from the bed")
+        )
+    if any(k in d for k in ("push-up", "exercis", "yoga")):
+        return "exercise (push-ups, bending, arms)"
+    if "pick" in d:
+        return "picking up an object (mostly from the floor)"
+    if "ground" in d or "floor" in d:
+        return "sitting on / getting up from the floor"
+    if any(k in d for k in ("sitting", "bed", "chair")) or "Sitting" in clases:
+        return "sitting on a bed or chair"
+    return "walking or standing"
+
+
+def videos_gmdcsa24(datos: Path = DATOS) -> list[Video]:
+    """The 160 GMDCSA24 clips: the folder (Fall or ADL) is the ground truth of each video."""
+    videos = []
+    raiz = datos / GMDCSA24
+    for carpeta in sorted(raiz.glob("Subject */")):
+        sujeto = "S" + carpeta.name.removeprefix("Subject ").strip()
+        for clase in ("Fall", "ADL"):
+            etiquetas: dict[str, tuple[str, str, str]] = {}
+            ruta_csv = carpeta / f"{clase}.csv"
+            if ruta_csv.exists():
+                with ruta_csv.open(encoding="utf-8", newline="") as archivo:
+                    for fila in list(csv.reader(archivo))[1:]:
+                        if len(fila) >= 6:
+                            descripcion = ",".join(fila[4:-1]).strip()
+                            etiquetas[fila[0].strip()] = (descripcion, fila[-1], fila[2].strip())
+            for ruta in sorted((carpeta / clase).glob("*.mp4")):
+                es_caida = clase == "Fall"
+                descripcion, clases, condicion = etiquetas.get(ruta.name, ("", "", ""))
+                encontrado = _INICIO_CAIDA.search(clases) if es_caida else None
+                inicio = float(encontrado.group(1)) if encontrado else None
+                videos.append(
+                    Video(
+                        "gmdcsa24",
+                        f"{sujeto}-{clase}-{ruta.stem}",
+                        ruta,
+                        es_caida,
+                        actividad_gmdcsa24(es_caida, descripcion, clases),
+                        f"gmdcsa24-{sujeto}",
+                        inicio_caida=inicio,
+                        detalle=descripcion,
+                        condicion=condicion,
+                        se_levanta=se_levanta_gmdcsa24(clases, inicio) if es_caida else None,
+                    )
+                )
     return videos
 
 
@@ -275,7 +388,7 @@ def fila(nombre: str, m: Metricas) -> str:
 
 def tabla(resultados: list[Resultado], por_actividad: bool = True) -> list[str]:
     lineas = [*ENCABEZADO, fila("**Total**", metricas(resultados))]
-    for dataset in ("urfd", "caucafall"):
+    for dataset in sorted({r[0].dataset for r in resultados}, key=DATASETS.index):
         lineas.append(fila(dataset, metricas([r for r in resultados if r[0].dataset == dataset])))
     if por_actividad:
         grupos: dict[str, list[Resultado]] = defaultdict(list)
@@ -320,6 +433,13 @@ def main() -> int:
         p.add_argument(
             "--sin-jpeg", action="store_true", help="No comprimir en JPEG como el agente"
         )
+        p.add_argument(
+            "--datasets",
+            nargs="+",
+            choices=DATASETS,
+            default=list(DATASETS_VALIDACION),
+            help="Datasets a usar (por defecto, los de calibración: urfd caucafall)",
+        )
     p_ext.add_argument("--procesos", type=int, default=6)
     p_ext.add_argument("--rehacer", action="store_true")
     p_eval.add_argument(
@@ -334,7 +454,7 @@ def main() -> int:
     p_eval.add_argument("--salida", type=Path, default=RESULTADOS / "reporte.md")
     args = parser.parse_args()
 
-    videos = listar_videos()
+    videos = listar_videos(DATOS, args.datasets)
     if not videos:
         print(
             "No hay videos. Ejecuta: uv run python scripts/descargar_datasets.py", file=sys.stderr
@@ -390,7 +510,8 @@ def main() -> int:
             )
             texto.append(fila(f"{nombre} (v = {valor})", m))
 
-        texto += ["", "## 2. Validación dejando un grupo fuera (11 grupos)", ""]
+        n_grupos = len({v.grupo for v in videos})
+        texto += ["", f"## 2. Validación dejando un grupo fuera ({n_grupos} grupos)", ""]
         fuera: list[Resultado] = []
         for grupo in sorted({v.grupo for v in videos}):
             entrenamiento = [v for v in videos if v.grupo != grupo]
