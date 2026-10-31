@@ -4,6 +4,11 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-31
+
+### Changed
+- Corrected the 0.7.0 release note about slow falls: it no longer promises to detect sliding out of bed (rule R9 only fires when the person was upright in the last 10 s; documented limitation in docs/classification-spec.md). The same sentence is the 0.7.1 note.
+
 ## [0.7.0] - 2026-10-31
 
 ### Added
