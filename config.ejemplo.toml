@@ -32,6 +32,8 @@ nombre_habitacion = "Sala"
 
 # Optional overrides of the classifier (docs/classification-spec.md). Without this table the agent
 # uses the calibrated values of docs/validation.md. Change them only after re-validating.
+# Re-calibrating the angle and the ratio, and four rule changes aimed at sensitivity, were
+# tested and rejected (nested validation, docs/validation.md section 6): keep these defaults.
 # [clasificacion]
 # velocidad_descenso_min = 0.01
 # angulo_linea_central_max_grados = 45
