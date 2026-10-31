@@ -6,20 +6,36 @@
 * CAUCAFall (Eraso Guerrero et al., 2022): 10 people × (5 falls + 5 activities) in a home.
   Only the .avi video of each activity is downloaded. License CC BY 4.0.
   https://doi.org/10.17632/7w7fccy7ky.4
+* GMDCSA24 v2.1 (Alam et al., 2024): 4 people, 79 falls and 81 activities of daily living in
+  3 rooms, recorded with a laptop webcam (720p or 480p, 15 or 30 fps). Only for the hold-out
+  test (docs/validation.md, section 6): it is never used to calibrate the shipped thresholds.
+  The 1.1 GB Zenodo zip is checked against its MD5 and only the .mp4, .csv, README and LICENSE
+  files are extracted. License CC BY 4.0 (Zenodo record; the GitHub copy says MIT).
+  https://doi.org/10.5281/zenodo.13354453
 
-Usage: uv run python scripts/descargar_datasets.py [--destino datos]
+Usage: uv run python scripts/descargar_datasets.py [--destino datos] [--datasets urfd caucafall
+gmdcsa24]
 """
 
 import argparse
+import hashlib
 import json
+import shutil
 import sys
 import urllib.request
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 URFD = "https://fenix.ur.edu.pl/~mkepski/ds/data"
 MENDELEY = "https://data.mendeley.com/public-api/datasets/7w7fccy7ky"
 VERSION_CAUCAFALL = 4
+ZENODO_GMDCSA24 = (
+    "https://zenodo.org/api/records/13354453/files/"
+    "ekramalam/GMDCSA24-A-Dataset-for-Human-Fall-Detection-in-Videos-v2.1.zip/content"
+)
+MD5_GMDCSA24 = "3d36f2c5c1a666b99639e4e9fd843efb"
+EXTRAER_GMDCSA24 = (".mp4", ".csv", "README.md", "LICENSE")
 CABECERAS = {"User-Agent": "Mozilla/5.0 (te-tengo-validacion)"}
 
 
@@ -30,7 +46,8 @@ def bajar(url: str, destino: Path) -> str:
     pedido = urllib.request.Request(url, headers=CABECERAS)
     with urllib.request.urlopen(pedido, timeout=120) as respuesta:
         temporal = destino.with_suffix(destino.suffix + ".parcial")
-        temporal.write_bytes(respuesta.read())
+        with temporal.open("wb") as archivo:
+            shutil.copyfileobj(respuesta, archivo, 1 << 20)
         temporal.rename(destino)
     return f"descargado {destino}"
 
@@ -74,12 +91,51 @@ def tareas_caucafall(raiz: Path) -> list[tuple[str, Path]]:
     return tareas
 
 
+def preparar_gmdcsa24(raiz: Path) -> None:
+    """Downloads the GMDCSA24 zip, checks its MD5 and extracts it into ``raiz/v2.1``."""
+    zip_ = raiz / "gmdcsa24-v2.1.zip"
+    destino = raiz / "v2.1"
+    if (destino / "Subject 4" / "ADL.csv").exists():
+        print(f"ya existe {destino}")
+        return
+    print(bajar(ZENODO_GMDCSA24, zip_))
+    md5 = hashlib.md5(usedforsecurity=False)
+    with zip_.open("rb") as archivo:
+        while bloque := archivo.read(1 << 20):
+            md5.update(bloque)
+    if md5.hexdigest() != MD5_GMDCSA24:
+        raise OSError(f"MD5 de {zip_} no coincide: {md5.hexdigest()}")
+    with zipfile.ZipFile(zip_) as comprimido:
+        for miembro in comprimido.infolist():
+            partes = Path(miembro.filename).parts[1:]  # drop the top folder of the zip
+            if miembro.is_dir() or not partes or ".." in partes:
+                continue
+            if not miembro.filename.endswith(EXTRAER_GMDCSA24):
+                continue
+            salida = destino.joinpath(*partes)
+            salida.parent.mkdir(parents=True, exist_ok=True)
+            with comprimido.open(miembro) as origen, salida.open("wb") as archivo:
+                shutil.copyfileobj(origen, archivo, 1 << 20)
+    print(f"extraído {destino}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--destino", type=Path, default=Path("datos"))
+    parser.add_argument(
+        "--datasets",
+        nargs="+",
+        choices=["urfd", "caucafall", "gmdcsa24"],
+        default=["urfd", "caucafall"],
+        help="gmdcsa24 is the hold-out test (1.1 GB); it is not downloaded by default",
+    )
     args = parser.parse_args()
 
-    tareas = tareas_urfd(args.destino / "urfd") + tareas_caucafall(args.destino / "caucafall")
+    if "gmdcsa24" in args.datasets:
+        preparar_gmdcsa24(args.destino / "gmdcsa24")
+    tareas = tareas_urfd(args.destino / "urfd") if "urfd" in args.datasets else []
+    if "caucafall" in args.datasets:
+        tareas += tareas_caucafall(args.destino / "caucafall")
     print(f"{len(tareas)} archivos por revisar…")
     errores = 0
     with ThreadPoolExecutor(max_workers=6) as grupo:

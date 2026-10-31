@@ -10,6 +10,8 @@ make validar    # extracts poses and generates resultados/reporte.md
 uv run python scripts/comparar_pipelines.py --todos --guardar   # agent vs validation, frame by frame (section 3.5)
 ```
 
+The hold-out test on a third, unseen dataset (GMDCSA24) is in section 6.
+
 ## 1. Data
 
 | Dataset | Videos | Camera | Use |
@@ -149,11 +151,228 @@ The figures in this section are **calibrated with all the videos**, so they are 
 3. **Calibration depends on the camera location** (section 3.3). It must be repeated with the pilot recordings, as the charter states (risks 2, 3 and 6).
 4. **There are no older adults or real falls** in the data (charter risk 9). The real false alarm rate will be measured in the home (OE4-I2).
 5. **Almost no slow falls** in the data (section 3.6): R9 is checked on 18 falls with a low peak speed and on synthetic sequences; slow falls and lying down on a bed must be recorded in the pilot.
-6. **The validation is per video,** not per instant. It does not measure the alert latency, whose requirement is under 10 s; the classifier emits the fall as soon as M3 is met.
+6. **Lying down on a bed** was not in URFD or CAUCAFall. On the hold-out dataset GMDCSA24 it gave a false alarm in **12 of 12** clips, through R4 (section 6.2).
+7. **The validation is per video,** not per instant. It does not measure the alert latency, whose requirement is under 10 s; the classifier emits the fall as soon as M3 is met.
+
+8. **Raising the sensitivity with pose rules alone did not work** (section 7): loosening the visibility gate of the speed, detecting tilts toward the camera, declaring a fall when the pose is lost after a fast descent and re-calibrating the angle and the ratio all lost more specificity than they gained sensitivity.
 
 The ranges in which each tunable value keeps this performance (US-45) are measured in [validation-rangos.md](validation-rangos.md).
 
+## 6. Hold-out evaluation on GMDCSA24
+
+Sections 3 and 4 calibrate and test on the same two datasets (leaving one group out). This section tests the **shipped classifier, frozen**, on a public dataset that was not used for any design decision, threshold or rule: nothing was tuned on it for the main result.
+
+To reproduce it:
+
+```bash
+uv run python scripts/descargar_datasets.py --datasets gmdcsa24   # 1.1 GB zip, MD5-checked
+for f in 6 8 10; do uv run python scripts/evaluar.py extraer --datasets gmdcsa24 --fps $f; done
+uv run python scripts/evaluar_holdout.py --logo --comparar-fps 6 8 10   # resultados/holdout-gmdcsa24-8fps.md
+uv run python scripts/medir_latencia.py --salida resultados/latencia-gmdcsa24-8fps.md
+```
+
+### 6.1. Dataset
+
+| | GMDCSA24 v2.1 (Alam et al., 2024) |
+|---|---|
+| Source | Zenodo, https://doi.org/10.5281/zenodo.13354453 (v2.1, 2024-08-21, `GMDCSA24-…-v2.1.zip`, 1,107,545,615 bytes, MD5 `3d36f2c5c1a666b99639e4e9fd843efb`); mirror of https://github.com/ekramalam/GMDCSA24-A-Dataset-for-Human-Fall-Detection-in-Videos |
+| License | CC BY 4.0 (Zenodo record); the GitHub copy carries an MIT `LICENSE` |
+| Videos | 160 clips: **79 falls and 81 activities of daily living (ADL)** in the files (the paper's abstract says 81 falls and 79 ADL; its own per-subject counts and the files say 79 and 81). 1,288 s in total, 3–17.5 s each |
+| Subjects | 4 adult actors (S1–S4), age, sex and height not published; no older adults, simulated falls |
+| Camera | One static laptop webcam (HP 348 G5, 0.92 MP) in 3 home rooms: room 1 (S1) at 70 or 90 cm in two positions; room 2 (S2, S3) at 135 cm; room 3 (S4) at 64 cm. Day, lights-off and night recordings |
+| Resolution | 1280 × 720 (147 clips) or 640 × 480 (13), about 30 or 15 fps; downscaled to 480p and sampled at 8 fps as in production |
+| Labels | Clip level by folder (`Fall/` or `ADL/`), used as the ground truth. Each clip also has hand-made intervals in seconds (`Falling (BW)[1.5 to 5]; Standing[0 to 1.5]`) and a free-text description; the start of the first `Falling` interval is used as the fall onset (78 of 79 falls have one). No faller is labelled as getting up |
+| Groups used here | Falls by direction label (forward, backward, sideways); ADL grouped by keyword rules on the description, fixed before running the classifier (`evaluar.actividad_gmdcsa24`) |
+
+Unlike URFD and CAUCAFall, GMDCSA24 has **people lying down on a bed** (12 clips), exercise on the floor (push-ups), sitting on the floor, and **falls onto a bed** (11 clips).
+
+**Datasets that could not be used.** Le2i / ImViA fall detection dataset: the official page (https://imvia.ube.fr/?p=346, checked 2026-10-31) says the download is "waiting for new link", and the university data portal answers with a bot challenge, which was not bypassed. UP-Fall was not attempted in this round (its camera data is a large set of per-trial image archives).
+
+### 6.2. Main result: frozen thresholds, 8 fps, JPEG (no recalibration)
+
+Thresholds exactly as shipped: `velocidad_descenso_min = 0.01` (`UMBRALES_CALIBRADOS`) and every other value at its default; "without R9" switches off only the slow-fall rule. Same per-video criterion as section 2; 95 % Wilson intervals.
+
+| Classifier | TP | FN | TN | FP | Sensitivity | Specificity | Accuracy | Precision | F1 |
+|---|---|---|---|---|---|---|---|---|---|
+| Without R9 (R4–R8) | 69 | 10 | 53 | 28 | 87.3 % (78.2–93.0) | 65.4 % (54.6–74.9) | 76.2 % (69.1–82.2) | 71.1 % (61.4–79.2) | 0.784 |
+| **With R9 (shipped)** | **72** | **7** | **53** | **28** | **91.1 % (82.8–95.6)** | **65.4 % (54.6–74.9)** | **78.1 % (71.1–83.8)** | **72.0 % (62.5–79.9)** | **0.804** |
+
+Precision and F1 depend on the 79/81 mix of the clips, not on how rare falls are in a home.
+
+- **Onset-aware check.** If a fall clip only counts when a `caida` comes no earlier than 1 s before the labelled onset, one detection is lost with and without R9: `S2-Fall-11` ("falling from bed to ground") fires while the person is still lying on the bed, 3.6 s before the fall. With R9: 89.9 % sensitivity (81.3–94.8).
+- **False recoveries: 1 of 78** falls (with and without R9), `S2-Fall-13`: a `caida` at 0.4 s and a `recuperacion` at 1.9 s, both **before** the labelled onset (2.5 s), then the real `caida` at 3.8 s. No `recuperacion` follows a fall after its onset. **0 of 81** ADL have a `movimiento_inestable`. No clip is long enough for `caida_confirmada` (30 s).
+- **Detection latency** (labelled onset → first onset-aware `caida`, 70 falls, with R9): median **0.76 s**, mean 1.00 s, p95 3.27 s, range −0.73 to 3.60 s. URFD gave a median of 0.80–0.83 s ([validation-rangos.md](validation-rangos.md)). The onsets are hand-labelled to 0.1 s.
+- **R9** adds 3 detections (`S2-Fall-09`, `S2-Fall-10`, `S3-Fall-01`) and **no false alarm**.
+
+**Where it fails (with R9):**
+
+| Group | Videos | `caida` |
+|---|---|---|
+| Falls · sideways | 28 | 27 detected |
+| Falls · forward | 23 | 21 |
+| Falls · backward | 28 | 24 |
+| Falls onto a bed | 11 | 11 |
+| ADL · **lying down on / getting up from the bed** | 12 | **12 false alarms** |
+| ADL · exercise (push-ups, bending, arms up and down) | 11 | 5 |
+| ADL · sitting on / getting up from the floor | 11 | 4 |
+| ADL · picking up an object (mostly from the floor) | 12 | 3 |
+| ADL · sitting on a bed or a chair | 25 | 3 |
+| ADL · lying down on / getting up from the floor | 2 | 1 |
+| ADL · walking or standing | 8 | 0 |
+
+By subject (falls detected · ADL false alarms): S1 15/16 · 6/16, S2 23/25 · 10/23, S3 19/21 · 6/22, S4 15/17 · 6/20. By lighting: day 57/62 · 16/51, day with lights off 5/6 · 4/12, night 10/11 · 8/18.
+
+- **Lying down on a bed is always a false alarm.** All 12 fire without R9 as well, so they come from the fast rule R4: with v = 0.01, a hip that goes down while the body tilts and becomes horizontal within 1.48 s looks like a fall in 2D. R9 adds none of them, as its hip-drop condition intends. The previous datasets had no such clip (section 3.6), so this limitation was not measured before. Without these 12 clips the specificity would be 76.8 % (53/69), close to sections 3.1 and 3.6; this is descriptive, not a separate test.
+- **Floor-level activities** (push-ups, sitting down on or getting up from the floor, picking up) give most of the other false alarms, as kneeling and picking up did in CAUCAFall.
+- **Missed falls (7):** 3 start from sitting (on the floor `S2-Fall-08`, `S3-Fall-13`; on a chair `S4-Fall-10`), where the hip starts low and R9 needs the person upright in the last 10 s; 2 have part of the body hidden according to their descriptions (`S1-Fall-14`, ankles not visible; `S2-Fall-05`, face hidden by a hand); `S3-Fall-15` is a night clip and `S4-Fall-04` a second view of a forward fall. These are likely explanations from the descriptions, not checked frame by frame. Backward falls are missed most (4 of 28).
+
+### 6.3. Secondary analyses (not the main result)
+
+**More calibration data: leaving one group out over the three datasets** (15 groups: URFD, the 10 CAUCAFall subjects and the 4 GMDCSA24 subjects; `v` calibrated by Youden on the other 14 groups, as in section 2):
+
+| Classifier | v chosen per fold | Sensitivity | Specificity | Accuracy | GMDCSA24 folds: sens. / spec. |
+|---|---|---|---|---|---|
+| With R9 | 0.12 in 10 folds, 0.13 in 1, 0.09 in 2, 0.01 in 2 | 79.2 % (72.3–84.8) | 75.4 % (68.5–81.3) | 77.3 % (72.5–81.5) | 84.8 % / 69.1 % |
+| Without R9 | 0.01 in all 15 | 84.3 % (77.8–89.1) | 73.7 % (66.6–79.7) | 78.8 % (74.1–82.9) | 87.3 % / 65.4 % |
+
+With R9, adding GMDCSA24 moves the calibrated speed from 0.01 to 0.12, but the Youden curve is flat: on all 330 videos J = 0.593 at v = 0.01, 0.595 at 0.09–0.10 and 0.600 at 0.12 (sensitivity 86.8 % → 80.5 %, specificity 72.5 % → 79.5 %). More data does not reveal a clearly better threshold; it trades sensitivity for specificity. The shipped value is not changed by this analysis.
+
+**Post hoc, optimistic** (the threshold chosen on GMDCSA24 itself, an upper bound only): with R9 the best Youden is at v = 0.35, 78.5 % sensitivity and 87.7 % specificity; at v = 0.1, 84.8 % / 75.3 %. Raising `v` mostly removes bed false alarms (12 at v = 0.01, 6 at 0.1, 2 at 0.35), at the cost of falls.
+
+**Frame rate** (frozen thresholds, GMDCSA24):
+
+| fps | Without R9: sens. / spec. | With R9: sens. / spec. / acc. | Latency with R9 (median) | False recoveries with R9 |
+|---|---|---|---|---|
+| 6 | 89.9 % / 70.4 % | 91.1 % / 70.4 % / 80.6 % | 0.79 s | 0/78 |
+| **8** | 87.3 % / 65.4 % | **91.1 % / 65.4 % / 78.1 %** | 0.76 s | 1/78 |
+| 10 | 87.3 % / 69.1 % | 91.1 % / 69.1 % / 80.0 % | 0.72 s | 1/78 |
+
+### 6.4. Hardware and per-frame cost
+
+Measured with `scripts/medir_latencia.py` on the 160 GMDCSA24 clips (10,333 frames at 8 fps), one process, videos in sequence: Apple M5 Pro (15 cores), 24 GB, macOS 27.0.1, Python 3.11.16, MediaPipe 0.10.35 (Pose Landmarker lite, VIDEO mode, CPU delegate with XNNPACK), OpenCV 5.0.0.
+
+| Stage, per sampled frame | Mean | Median | p95 |
+|---|---|---|---|
+| Preprocessing (resize to 480p, JPEG quality 80 encode + decode) | 1.54 ms | 1.43 ms | 2.20 ms |
+| **MediaPipe Pose Landmarker lite** (`detect_for_video`, first frame of each clip excluded) | **7.56 ms** | **6.43 ms** | **12.10 ms** |
+| Classifier (`ClasificadorCinematico.actualizar`) | 0.04 ms | 0.04 ms | 0.06 ms |
+| **Agent cost per frame** (the three above) | **9.13 ms** | | **14.15 ms** |
+| File decoding until the next sampled frame (not an agent cost: a webcam delivers frames) | 1.63 ms | 0.85 ms | 5.68 ms |
+
+At 8 fps the agent has 125 ms per frame; it uses 7.3 % of it (wall time; MediaPipe may use several threads). The first MediaPipe frame of each clip (graph warm-up) takes 14.9 ms on average. End to end, including decoding and creating one landmarker per clip, one process handles 68.9 sampled frames/s, 8.6 times real time. The machine was shared with other work (1-minute load average about 8 during the run); two earlier runs under heavier load gave MediaPipe means of 11.5 and 15.6 ms, so the figures vary with contention. Six extraction processes in parallel took 35–65 s for the whole dataset at 6–10 fps.
+
+The figures are a development laptop's, much faster than a typical household PC; they show the order of magnitude, not the cost on the pilot PCs. The earlier URFD and CAUCAFall poses re-extracted on this machine are identical to the stored ones (4 videos checked), and `evaluar.py evaluar --barrer 0.01 1.0 0.01` reproduces section 3.6 (82.5 % / 78.9 %).
+
+### 6.5. Interpretation
+
+On unseen data, from different rooms, people and a lower camera, the frozen classifier keeps its **sensitivity** (91.1 %, above the 82.5 % of section 3.6) but its **specificity drops to 65.4 %**, almost all because of activities that the calibration data did not contain: lying down on a bed (12 of 12) and floor-level exercise. This is the main threat to the false-alarm rate in a home (OE4-I2) and is consistent with limitation 1 of section 5, now measured for a bed. The intervals are wide (4 subjects, 160 clips), the falls are simulated by young adults, and the clips are short; the hold-out supports the sensitivity estimate and shows that specificity must be checked in the pilot, especially for lying down on a bed or a sofa.
+
+## 7. Attempts to raise sensitivity without forcing it (2026-10-31): none accepted
+
+**Question.** Can the sensitivity of R4–R9 (82.5 %, 66/80 falls) be raised with a single camera and without trading it for specificity? **Answer on URFD + CAUCAFall: no.** Five rule changes and one re-calibration were tested; every one that raised sensitivity lowered specificity by more, and the classifier stays as validated in sections 3.1–3.6.
+
+### 7.1. Protocol
+
+1. **Development data only:** URFD and CAUCAFall, poses `lite-video-8fps-jpeg` (section 2). The per-video results of the third, hold-out dataset were not looked at.
+2. **Diagnosis before the candidates.** The 14 misses of the baseline were traced frame by frame:
+   - URFD `fall-10`, `-18`, `-24`, `-26` and `-30` have **one ankle** below visibility 0.5 during the whole descent (the Kinect at body height cuts off or hides one foot). A6 needs the nose, both hips and both ankles to measure the speed, so M1 is never evaluated in the frames where the body tilts. CAUCAFall subject 10 `Fall_right` has **both** ankles hidden in the whole clip.
+   - `fall-27` and `fall-29` fall toward the camera: the center line shrinks from about 90 px to 19 px while its angle stays above 45°, and then the pose is lost.
+   - Subject 8 `Fall_left`: fast descent while still upright (0.29 bodies/s), then no pose until the end of the clip. Subject 8 `Fall_forward`: no pose in any of its 49 frames, so no pose-based rule can detect it.
+   - Subject 3 `Fall_forward` and `Fall_sitting`, subject 4 `Fall_sitting`: noisy or nearly static poses, no clear cue.
+3. **Pre-registration.** The rationale and the prediction of each candidate were written down before running any of them (section 7.2). One more candidate (C1b) was designed after the first round and is marked **post hoc**.
+4. **Nested selection.** Every re-calibrated or new threshold is chosen **inside each training fold** of the leave-one-group-out validation (maximum Youden index of the 10 training groups; ties: the lowest speed, then the most conservative value of the other thresholds, and for the angle and the ratio the published value), and only then applied to the held-out group. Cross-dataset: chosen on one dataset, measured on the other.
+5. **Acceptance rule (fixed beforehand):** LOGO sensitivity must rise, the specificity loss must be smaller than the sensitivity gain, the gain must not come from one dataset while the other loses, and there must be no more false recoveries.
+6. **Statistics:** 95 % Wilson intervals; McNemar's exact test (two-sided binomial on the discordant pairs) on the paired per-video outcomes against the baseline, on all 170 videos (correct or not) and on the 80 falls (detected or not).
+7. **Multiple comparisons:** 13 candidate settings and **10,600 distinct threshold configurations** were evaluated (each candidate × 100 speeds × its own grid). With that many looks, a single "significant" improvement would be expected by chance; a **fully nested selection**, in which every training fold also chooses the candidate, estimates the whole procedure.
+
+Reproduce (the candidates exist only at commit `233480f` of `feature/classifier-sensitivity`; later commits keep the script and the baseline):
+
+```bash
+git checkout 233480f
+uv run python scripts/evaluar_candidatos.py      # writes resultados/candidatos/
+```
+
+### 7.2. Candidates and rationale
+
+| ID | Change | Rationale (written before testing) | New threshold |
+|---|---|---|---|
+| **C1** | The speed (R1) needs only **both hips** visible; the scale is still the median center-line length of the last 2 s. "Upright" keeps the strict A6. | R1 measures the hip. A6 was introduced because doubtful **hips** jump; requiring the ankles too throws away frames where the hip is reliable and only a foot is hidden, which is common in falls. | none (v nested) |
+| **C2** | M2 is also met, and the person is not upright, when the center line is shorter than cos 45° = 0.707 times its median length while upright in the last 10 s. | R2 sees only the tilt in the image plane. A segment of length L₀ tilted φ toward the camera projects as L₀ cos φ, so a tilt past the same 45° gives L < 0.707 L₀. The factor comes from θ₀, it is not fitted. | none |
+| **C3** | `caida` if a frame shows a hip descent ≥ v_perdida and then no pose is seen for the whole reaction window (1.48 s). | MediaPipe loses people on the floor (section 4); a fall whose descent is seen but whose end is not is then missed. Walking out of the image does not drop the hip. | v_perdida ∈ {0.1, …, 1.0} nested |
+| **C4** | Re-calibrate the angle and the ratio jointly with the speed. | 45° and 1 come from OpenPose, 14 points and side views (Chen et al., 2020); MediaPipe's 33 points and an elevated camera change both. | θ₀ ∈ {35…55°}, T ∈ {0.8…1.2} nested |
+| **C1b** (post hoc) | The speed needs the nose, both hips and **at least one** ankle; with one ankle visible, the feet of the center line are that ankle. | After C1: its new false alarms had **both** ankles hidden, so the angle of M2 pointed to MediaPipe's guessed feet. One hidden ankle is the normal self-occlusion of a side view. | none (v nested) |
+
+**Considered and not tested,** with the reason fixed beforehand: One-Euro or median smoothing of the landmarks (the misses come from gated or lost points, not from jitter, and at 8 fps a filter delays and flattens the 0.25–1 s descent that M1 needs); MediaPipe world landmarks for the vertical speed (their origin is the hip itself, A3); the *full* model only when *lite* loses the person (ADR 0006 found no gain, and on the already extracted non-JPEG poses the full model sees the same or fewer frames of the hardest misses: subject 8 `Fall_forward` 0/49 with both, subject 3 `Fall_forward` 17 vs 35 frames; it would also double the CPU load of the household PC); a speed threshold adapted to the body scale (R1 is already divided by the body length).
+
+### 7.3. Results (8 fps, JPEG, leaving one group out, thresholds nested)
+
+| Setting | Sensitivity (95 % CI) | Specificity (95 % CI) | URFD sens. / spec. | CAUCAFall sens. / spec. | False recoveries | McNemar p (all videos · falls) | Decision |
+|---|---|---|---|---|---|---|---|
+| **Baseline R4–R9** | **82.5 % (72.7–89.3)** | **78.9 % (69.4–86.0)** | 76.7 / 72.5 | 86.0 / 84.0 | 0/30 | — | **kept** |
+| C1 | 92.5 % (84.6–96.5) | 61.1 % (50.8–70.5) | 93.3 / 60.0 | 92.0 / 62.0 | 0/30 | 0.169 · 0.021 | rejected |
+| C2 | 85.0 % (75.6–91.2) | 71.1 % (61.0–79.5) | 83.3 / 52.5 | 86.0 / 86.0 | 0/30 | 0.227 · 0.500 | rejected |
+| C3 | 82.5 % (72.7–89.3) | 76.7 % (66.9–84.2) | 76.7 / 67.5 | 86.0 / 84.0 | 0/30 | 0.500 · 1.000 | rejected |
+| C4 | 80.0 % (70.0–87.3) | 80.0 % (70.6–87.0) | 70.0 / 75.0 | 86.0 / 84.0 | **1/30** | 1.000 · 0.500 | rejected |
+| C1b (post hoc) | 88.8 % (80.0–94.0) | 66.7 % (56.4–75.5) | 93.3 / 60.0 | 86.0 / 72.0 | 0/30 | 0.263 · 0.180 | rejected |
+| C1 + C2 | 95.0 % (87.8–98.0) | 55.6 % (45.3–65.4) | 100 / 50.0 | 92.0 / 60.0 | 0/30 | 0.080 · 0.006 | rejected |
+| C1 + C3 | 92.5 % (84.6–96.5) | 58.9 % (48.6–68.5) | 93.3 / 55.0 | 92.0 / 62.0 | 0/30 | 0.087 · 0.021 | rejected |
+| C2 + C3 | 85.0 % (75.6–91.2) | 68.9 % (58.7–77.5) | 83.3 / 47.5 | 86.0 / 86.0 | 0/30 | 0.092 · 0.500 | rejected |
+| C1 + C2 + C3 | 81.2 % (71.3–88.3) | 55.6 % (45.3–65.4) | 100 / 45.0 | 70.0 / 64.0 | 0/30 | 0.001 · 1.000 | rejected |
+| C1 + C4 | 87.5 % (78.5–93.1) | 62.2 % (51.9–71.5) | 86.7 / 60.0 | 88.0 / 64.0 | 1/30 | 0.061 · 0.388 | rejected |
+| C1b + C2 (post hoc) | 91.2 % (83.0–95.7) | 62.2 % (51.9–71.5) | 100 / 50.0 | 86.0 / 72.0 | 0/30 | 0.169 · 0.065 | rejected |
+| C1b + C3 (post hoc) | 85.0 % (75.6–91.2) | 64.4 % (54.2–73.6) | 93.3 / 55.0 | 80.0 / 72.0 | 0/30 | 0.043 · 0.774 | rejected |
+| **Fully nested** (each fold also chooses the candidate) | 85.0 % (75.6–91.2) | 67.8 % (57.6–76.5) | | | | **0.039** · 0.500 | — |
+
+McNemar on all videos counts correct outcomes: the low p of C1 + C2 + C3, C1b + C3 and the fully nested selection are significant **losses** (more videos wrong than the baseline). The p of 0.006–0.021 "on falls" of C1 and C1 + C2 only say that they detect more falls; they do so by raising the false alarms by 16–21 videos.
+
+**Cross-dataset** (sensitivity / specificity on the test dataset):
+
+| Setting | URFD → CAUCAFall | CAUCAFall → URFD |
+|---|---|---|
+| Baseline | 46.0 / 94.0 (v = 0.71) | 76.7 / 72.5 (v = 0.01) |
+| C1 | 50.0 / 86.0 | 93.3 / 60.0 |
+| C2 | 48.0 / 96.0 | 83.3 / 52.5 |
+| C3 | 46.0 / 94.0 | 76.7 / 67.5 |
+| C4 | 46.0 / 94.0 (θ₀ = 45°, T = 1) | 70.0 / 75.0 (θ₀ = 35°) |
+| C1b | 46.0 / 86.0 | 93.3 / 60.0 |
+
+**What changes, per activity** (videos with `caida`, LOGO):
+
+| Activity | Videos | Baseline | C1 | C1b | C2 | C3 | C4 |
+|---|---|---|---|---|---|---|---|
+| URFD · falls | 30 | 23 | 28 | 28 | 25 | 23 | 21 |
+| URFD · lying on the floor on purpose | 16 | 8 | 13 | 12 | 14 | 9 | 7 |
+| URFD · other activities | 24 | 3 | 3 | 4 | 5 | 4 | 3 |
+| CAUCAFall · falls (5 types) | 50 | 43 | 46 | 43 | 43 | 43 | 43 |
+| CAUCAFall · walk | 10 | 1 | 3 | — | — | — | — |
+| CAUCAFall · sit down | 10 | 1 | 5 | — | — | — | — |
+| CAUCAFall · kneel | 10 | 3 | 6 | — | — | — | — |
+| CAUCAFall · pick up an object | 10 | 3 | 5 | — | — | — | — |
+| CAUCAFall · all daily activities | 50 | 8 | 19 | 14 | 7 | 8 | 8 |
+
+(— : not broken down; the full per-activity tables are in the script's report.) C1b recovers URFD `fall-10`, `-18`, `-24`, `-26`, `-30`, CAUCAFall subject 3 `Fall_forward` and subject 8 `Fall_right`, and loses subjects 5 and 9 `Fall_forward`; it adds 11 false alarms: 4 URFD lying on the floor on purpose, 1 other URFD activity, and in CAUCAFall walking, sitting down (3), kneeling and picking up an object. **URFD latency** (median from the first "falling" frame) is 0.83 s for the baseline (23 falls) and 0.67–0.77 s for C1, C1b and C2, which detect 25–30 falls. False recoveries stay at 0/30 except with C4 (1/30).
+
+### 7.4. Why the gains are not real
+
+Sweeping the speed threshold on all 170 videos (descriptive, not nested; v = 0.01–1.0) shows that C1 and C1b mostly move the classifier along the sensitivity–specificity trade-off instead of improving it. Near the baseline's operating point the baseline is better at equal specificity: with 71–74 of 90 activities without alarm it detects 54–66 falls, while C1b first reaches 71 of 90 at v = 0.5 (74 of 90, 53 falls) and C1 at v = 0.7 (73 of 90, 52 falls). The curves cross only at high specificity (78 of 90: baseline 45 falls, C1b 50), where both detect far fewer falls than the validated setting. The diagnosis explains it: with v = 0.01, M1 means little more than "the hip could be measured and went down", so A6's visibility gate is what keeps the angle and the ratio of doubtful poses out of the decision, and loosening it lets in the false alarms of people lying on the floor on purpose, kneeling or sitting, exactly the known confusions. C2 helps with falls toward the camera, but crouching and lying down also shorten the center line (the body is not rigid). C3 found no fall that ends out of view that the other rules miss, because the nested v_perdida settles at 1.0 bodies/s in 10 of 11 folds. C4 picks 40° in 9 of 11 folds (45° in one, 35° in the URFD fold) and loses 2 URFD falls.
+
+**Conclusion.** With a single camera, these pose-based changes do not raise the sensitivity of the classifier honestly; what remains are falls in which the pose is lost or never found (subject 8 `Fall_forward`), and confusions with lying down on purpose that pose geometry cannot resolve. Raising sensitivity further needs more information than one 2D pose per frame (for example, motion or appearance features where the pose is lost, or the pilot's own recordings), not looser thresholds.
+
+### 7.5. Hold-out check
+
+Because no change was accepted, the frozen classifier is the baseline itself (R4–R9, v = 0.01, the defaults of section 4 of the specification), and its hold-out result on GMDCSA24 is the one in section 6 (no recalibration). The most promising rejected candidate (C1b) was not run on the hold-out: since it was not accepted, there is nothing to confirm, and running it would only add a post hoc comparison. If a candidate is reconsidered with new data, it must be evaluated there once, with the thresholds fixed beforehand.
+
+### 7.6. Threats to validity
+
+- **Adaptive design.** The diagnosis and C1b used the same 170 videos as the evaluation; nesting protects the threshold values, not the choice of rules, so the C1b row is optimistic. 10,600 configurations were tried; none was accepted, so this inflates no reported gain, but it would have.
+- **Small samples:** 80 falls and 90 activities give ±7–10 point intervals; the differences of C2, C3 and C4 are inside them.
+- **Grouping:** URFD is one group (its subjects are not published), so its fold trains only on CAUCAFall.
+- **Simulated falls by young adults,** short clips (sections 1 and 5).
+- **Youden index** weighs a missed fall and a false alarm equally; a criterion that favored sensitivity would choose other operating points. Section 7.4 shows the baseline is better near its own operating point, but the curves of C1b and the baseline cross at high specificity, so the conclusion is specific to operating points with about 80 % specificity.
+
 ## References
+
+Alam, E., Sufian, A., Dutta, P., Leo, M., & Hameed, I. A. (2024). GMDCSA-24: A dataset for human fall detection in videos. *Data in Brief, 57*, 110892. https://doi.org/10.1016/j.dib.2024.110892 · Data: https://doi.org/10.5281/zenodo.13354453
 
 Chen, W., Jiang, Z., Guo, H., & Ni, X. (2020). Fall detection based on key points of human-skeleton using OpenPose. *Symmetry, 12*(5), 744. https://doi.org/10.3390/sym12050744
 

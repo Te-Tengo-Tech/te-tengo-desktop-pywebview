@@ -162,6 +162,19 @@ caida   if  D ≥ 0.4  and  M3 on every frame with a pose during the last P s   
 
 **Limitations:** lying down **on the floor** on purpose looks the same as a slow fall that ends lying (it adds false alarms in URFD); a slow fall that ends **sitting** on the floor is not detected; and lying on a bed is excluded only by geometry, because no dataset has it. The default values come from geometry and the reported scenarios; on the datasets they add the slow falls that R4 missed (see validation.md, section 3.6).
 
+### Changes tested to raise sensitivity and rejected
+None of these is in the code; they are recorded so that they are not tried again without new data. Each one was evaluated with its thresholds chosen inside every training fold ([validation.md](validation.md), section 7; ADR 0010).
+
+| ID | Mark | Change | Result (LOGO sensitivity / specificity; baseline 82.5 % / 78.9 %) |
+|---|---|---|---|
+| C1 | **Adaptation**, rejected | R1 needs only both hips visible (A6 relaxed for the speed) | 92.5 % / 61.1 %: the angle of poses with hidden feet decides; more false alarms when lying down on purpose, kneeling, sitting and walking |
+| C1b | **Adaptation**, rejected (designed after C1) | R1 needs the nose, both hips and one ankle; the visible ankle is the feet | 88.8 % / 66.7 %; gains only in URFD |
+| C2 | **Proposal**, rejected | M2 also when the center line is shorter than cos θ₀ = 0.707 times its upright length (tilt toward the camera) | 85.0 % / 71.1 %: crouching and lying down also shorten the line |
+| C3 | **Proposal**, rejected | `caida` when the pose is lost for 1.48 s right after a fast descent | 82.5 % / 76.7 %: no fall gained |
+| C4 | Re-calibration, rejected | θ₀ and T chosen with the data (35–55°, 0.8–1.2) | 80.0 % / 80.0 % and 1 false recovery; the published 45° and 1 stay |
+
+**Why A6 stays strict.** With the calibrated speed (0.01 bodies/s), M1 means little more than "the hip was measured and went down". The visibility gate of A6 is therefore what keeps the angle and the ratio of doubtful poses out of the fall decision; it is part of the specificity, not only of the speed.
+
 ### Validation with datasets
 Adaptations A3, A6, A7 and A8 and the speed threshold came from validating with URFD and CAUCAFall. Result under production conditions (8 fps, JPEG, leaving one group out): **sensitivity 81.2%, specificity 81.1%, accuracy 81.2%** and no false recoveries with R4 to R8; with R9, **82.5%, 78.9% and 80.6%**, still without false recoveries. Details, protocol and limitations in [validation.md](validation.md).
 
