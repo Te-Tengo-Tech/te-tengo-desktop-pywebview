@@ -51,6 +51,11 @@ Both together, with T and X chosen jointly.
   4. McNemar on all pooled held-out units is not a significant loss (p < 0.05 with more units wrong than the baseline).
 - **If accepted:** the deployed configuration is calibrated on all five datasets with the same criterion, and its expected performance is the LODO result, not the calibration fit. The shipped default changes only if the fix is accepted under criterion 1 (the validated protocol) and the parity tests pass.
 
+### F3 (added after the first LODO run; doubly post hoc): F1 with the geometric upright test
+**Why it was added.** In the first run (results below) F1 lost 72 falls that the baseline detected, and the training folds always chose the most permissive window (T = 10 s), so the window was not the problem. Tracing those 72 falls (frozen v = 0.01, 10 s before the baseline's `caida`): **none** had a frame that passed the strict upright test, and **42** had frames that passed its geometry (θ > 45°, P < 1, head above the feet) with some key point below visibility 0.5 (UP-Fall 24, CAUCAFall 7, GMDCSA24 5, URFD 3 of their losses). The visibility gate of A6, not the precondition itself, removes these falls.
+
+**Rule.** F1 with `erguido_previo_exige_visibles = False`: the precondition accepts a frame that passes the geometry of the upright test without A6. **Rationale:** A6 protects decisions that tell the family the person is fine (R5) or downgrade an alarm (R7); in F1 a doubtful upright frame only lets R4 run as it does today, so the error it can cause is at most the shipped behaviour. **Grid:** v × T as F1 (500 configurations); not combined with F2, because F2 changed nothing (see Results). **Prediction:** recovers most of the 42 falls; gives back part of the lying-still false alarms if MediaPipe estimates a lying person as geometrically upright on isolated frames (A8). Same protocol and acceptance rule as F1.
+
 ## Results
 Pending.
 

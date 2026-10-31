@@ -88,6 +88,13 @@ class Umbrales(BaseModel):
             "vio erguida en los últimos segundos indicados. Sin valor: desactivada (validado)."
         ),
     )
+    erguido_previo_exige_visibles: bool = Field(
+        default=True,
+        description=(
+            "F1 (ADR 0011). Si es verdadero, la precondición usa la prueba de erguido de R5 con "
+            "los puntos clave visibles (A6); si es falso (variante F3), solo la geometría."
+        ),
+    )
     salida_suelo_sin_evidencia_s: float | None = Field(
         default=None,
         gt=0,

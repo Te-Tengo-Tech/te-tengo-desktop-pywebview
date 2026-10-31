@@ -32,6 +32,8 @@ found in the hold-out tests:
 * **F1** (``erguido_previo_caida_s``): R4 can only start if the person was seen upright within
   the last seconds given, so a person lying still, whose body already meets M2 and M3, cannot
   turn a small hip movement into a fall.
+  With ``erguido_previo_exige_visibles = False`` (variant F3) the upright test is the geometry
+  alone, without the visibility gate of A6.
 * **F2** (``salida_suelo_sin_evidencia_s``): the classifier leaves ``EN_EL_SUELO`` without a
   ``recuperacion`` when, for the seconds given, the body is neither tilted nor horizontal, so an
   earlier false alarm does not mask the next real fall. The pending confirmation (R6) is dropped.
@@ -231,7 +233,12 @@ class ClasificadorCinematico:
         )
         # Recovery requires being seen upright for a minimum time: MediaPipe sometimes estimates
         # a lying person as "standing" for a single isolated frame (A8).
-        if erguido:
+        # F1 needs "upright" recently; the F3 variant accepts the geometry alone (no A6 gate).
+        if erguido or (
+            not self._u.erguido_previo_exige_visibles
+            and not m2
+            and p.razon_ancho_alto < self._u.razon_ancho_alto_min
+        ):
             self._ultimo_erguido = instante
         if not erguido:
             self._erguido_desde = None
