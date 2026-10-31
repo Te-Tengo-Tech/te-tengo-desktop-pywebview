@@ -7,6 +7,11 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 ### Added
 - **Hold-out tests on UP-Fall and the Multiple Cameras Fall Dataset** (docs/validation.md, section 8): the shipped classifier, frozen, on two more public datasets with several cameras per room, each camera on its own. UP-Fall (trial 1 of 5 fall types, picking up and laying; 17 people, 2 cameras, 238 recordings), with R9: sensitivity 68.2 % (60.9–74.8), specificity 63.2 % (51.4–73.7); 22 of 34 recordings of a person lying still fire a `caida`, and in the frontal camera the single-person pose often follows a seated bystander. MCFD (24 scenarios × 8 cameras, erratum applied, 30 fps time base) per labelled fall: 47.8 % (40.7–55.0) of the falls, 114 false alarms per hour of scripted activity, median latency 1.08 s, no false recovery. OR-fusion of cameras (secondary) raises sensitivity (UP-Fall 94.1 % with two; MCFD 68 % with two, 96 % with eight) at a nearly proportional false-alarm cost. A leave-one-group-out recalibration over the five datasets (secondary) moves the speed to 0.72 and trades sensitivity for specificity; **the classifier does not change**. `evaluar.py extraer --datasets upfall mcfd` (timestamp-named PNG frames sampled by their real time with the agent's `Muestreador`; a frame-rate override for files with a wrong header) and `scripts/evaluar_multicamara.py` (per camera, per event, fusion and `--logo`).
 
+## [0.7.1] - 2026-10-31
+
+### Changed
+- Corrected the 0.7.0 release note about slow falls: it no longer promises to detect sliding out of bed (rule R9 only fires when the person was upright in the last 10 s; documented limitation in docs/classification-spec.md). The same sentence is the 0.7.1 note.
+
 ## [0.7.0] - 2026-10-31
 
 ### Added

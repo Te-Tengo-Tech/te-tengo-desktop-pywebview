@@ -8,9 +8,13 @@
 
 ## [Unreleased]
 
+## [0.7.1]
+
+- Ahora detecta también caídas lentas, por ejemplo resbalar de una silla hasta el suelo.
+
 ## [0.7.0]
 
-- Ahora detecta también las caídas lentas, como resbalar de una silla o de la cama hasta el suelo.
+- Ahora detecta también caídas lentas, por ejemplo resbalar de una silla hasta el suelo.
 - Nuevo en «Cámaras»: puedes ver u ocultar el video y el esqueleto en la vista previa de la cámara.
 - Al salir de la aplicación, se cierra en pocos segundos y ya no se queda congelada.
 - Corregimos el guardado de video para que «Ver qué pasó» muestre el video.
