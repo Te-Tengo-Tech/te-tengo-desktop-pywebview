@@ -202,7 +202,7 @@ jobs:
           docker pull --quiet "$image"
           echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "API image in production: \`$image\` (\`latest\`)" >> "$GITHUB_STEP_SUMMARY"
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: te-tengo-desktop-pywebview/uv.lock
@@ -300,7 +300,7 @@ jobs:
             fi
           fi
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
       - name: Install dependencies
@@ -536,7 +536,7 @@ jobs:
           # Read by the PyInstaller spec and packaging/macos/crear-dmg.sh.
           echo "TT_MACOS_IDENTIDAD_FIRMA=$identidad" >> "$GITHUB_ENV"
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
       - name: Install dependencies
