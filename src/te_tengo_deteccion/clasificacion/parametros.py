@@ -25,6 +25,8 @@ class Parametros:
     razon_ancho_alto: float
     cabeza_bajo_pies: bool
     puntos_visibles: bool
+    caderas_visibles: bool
+    un_tobillo_visible: bool
 
 
 # Landmarks used by the formulas: nose, hips and ankles.
@@ -47,6 +49,14 @@ def puntos_clave_visibles(pose: Pose, visibilidad_min: float) -> bool:
     return all(pose.landmarks[i].visibilidad >= visibilidad_min for i in PUNTOS_CLAVE)
 
 
+def caderas_visibles(pose: Pose, visibilidad_min: float) -> bool:
+    """Tells whether both hips are clearly visible (C1)."""
+    return all(
+        pose.landmarks[i].visibilidad >= visibilidad_min
+        for i in (Indice.CADERA_IZQUIERDA, Indice.CADERA_DERECHA)
+    )
+
+
 def punto_medio(a: Punto, b: Punto) -> Punto:
     return Punto((a.x + b.x) / 2, (a.y + b.y) / 2)
 
@@ -62,19 +72,23 @@ def centro_cadera(pose: Pose) -> Punto:
     )
 
 
-def extremos_linea_central(pose: Pose) -> tuple[Punto, Punto]:
+def extremos_linea_central(pose: Pose, visibilidad_pie: float | None = None) -> tuple[Punto, Punto]:
     """Ends of the body's center line: the head and the midpoint of the ankles (R2).
 
-    MediaPipe has no "head" point, so the nose is used (adaptation A2).
+    MediaPipe has no "head" point, so the nose is used (adaptation A2). With
+    ``visibilidad_pie``, if exactly one ankle is visible the feet are that ankle (C1b).
     """
     cabeza = pose.en_pixeles(Indice.NARIZ)
-    pies = punto_medio(
-        pose.en_pixeles(Indice.TOBILLO_DERECHO), pose.en_pixeles(Indice.TOBILLO_IZQUIERDO)
-    )
-    return cabeza, pies
+    der, izq = Indice.TOBILLO_DERECHO, Indice.TOBILLO_IZQUIERDO
+    if visibilidad_pie is not None:
+        vd = pose.landmarks[der].visibilidad >= visibilidad_pie
+        vi = pose.landmarks[izq].visibilidad >= visibilidad_pie
+        if vd != vi:
+            return cabeza, pose.en_pixeles(der if vd else izq)
+    return cabeza, punto_medio(pose.en_pixeles(der), pose.en_pixeles(izq))
 
 
-def angulo_linea_central(pose: Pose) -> float:
+def angulo_linea_central(pose: Pose, visibilidad_pie: float | None = None) -> float:
     """Angle between the center line and the floor, in degrees (R2).
 
     90° is a standing person and 0° a lying person. When falling, the body loses its vertical
@@ -82,11 +96,11 @@ def angulo_linea_central(pose: Pose) -> float:
     which is equivalent to arctan(|Δy| / |Δx|) but does not fail when the person is fully
     vertical (Δx = 0).
     """
-    cabeza, pies = extremos_linea_central(pose)
+    cabeza, pies = extremos_linea_central(pose, visibilidad_pie)
     return math.degrees(math.atan2(abs(cabeza.y - pies.y), abs(cabeza.x - pies.x)))
 
 
-def cabeza_bajo_pies(pose: Pose) -> bool:
+def cabeza_bajo_pies(pose: Pose, visibilidad_pie: float | None = None) -> bool:
     """Tells whether the head ended up lower than the feet in the image (adaptation A7).
 
     A standing person always has the head above the feet. If they fall towards the camera, the
@@ -94,13 +108,13 @@ def cabeza_bajo_pies(pose: Pose) -> bool:
     width/height ratio does not exceed 1, but the head ends up below the feet. This signal
     detects that case.
     """
-    cabeza, pies = extremos_linea_central(pose)
+    cabeza, pies = extremos_linea_central(pose, visibilidad_pie)
     return cabeza.y > pies.y
 
 
-def longitud_linea_central(pose: Pose) -> float:
+def longitud_linea_central(pose: Pose, visibilidad_pie: float | None = None) -> float:
     """Length of the center line in pixels; used as the scale for the speed (adaptation A3)."""
-    cabeza, pies = extremos_linea_central(pose)
+    cabeza, pies = extremos_linea_central(pose, visibilidad_pie)
     return math.hypot(cabeza.x - pies.x, cabeza.y - pies.y)
 
 
@@ -134,13 +148,24 @@ def velocidad_descenso(y1: float, y2: float, dt: float, escala: float) -> float:
     return (y2 - y1) / dt / escala
 
 
-def calcular(pose: Pose, visibilidad_min: float) -> Parametros:
+def calcular(pose: Pose, visibilidad_min: float, pie_visible: bool = False) -> Parametros:
     """Computes the parameters of one frame."""
+    vp = visibilidad_min if pie_visible else None
+    lm = pose.landmarks
     return Parametros(
         centro_cadera=centro_cadera(pose),
-        longitud_linea_central=longitud_linea_central(pose),
-        angulo_grados=angulo_linea_central(pose),
+        longitud_linea_central=longitud_linea_central(pose, vp),
+        angulo_grados=angulo_linea_central(pose, vp),
         razon_ancho_alto=razon_ancho_alto(pose, visibilidad_min),
-        cabeza_bajo_pies=cabeza_bajo_pies(pose),
+        cabeza_bajo_pies=cabeza_bajo_pies(pose, vp),
+        un_tobillo_visible=(
+            lm[Indice.NARIZ].visibilidad >= visibilidad_min
+            and caderas_visibles(pose, visibilidad_min)
+            and max(
+                lm[Indice.TOBILLO_DERECHO].visibilidad, lm[Indice.TOBILLO_IZQUIERDO].visibilidad
+            )
+            >= visibilidad_min
+        ),
         puntos_visibles=puntos_clave_visibles(pose, visibilidad_min),
+        caderas_visibles=caderas_visibles(pose, visibilidad_min),
     )

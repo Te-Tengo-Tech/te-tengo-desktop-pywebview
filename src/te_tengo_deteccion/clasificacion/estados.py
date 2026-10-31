@@ -27,6 +27,8 @@ never meet M1 and M2 together, or may become horizontal after the reaction windo
 large part of the body length and the body stays horizontal for a while.
 """
 
+import math
+import statistics
 from collections import deque
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -152,8 +154,14 @@ class ClasificadorCinematico:
         self._u = umbrales
         self._velocidad_min = umbrales.velocidad_descenso_min
         self._medidor = MedidorCinematico(
-            umbrales.intervalo_velocidad_s, umbrales.ventana_velocidad_s, umbrales.visibilidad_min
+            umbrales.intervalo_velocidad_s,
+            umbrales.ventana_velocidad_s,
+            umbrales.visibilidad_min,
+            umbrales.velocidad_con_caderas,
+            umbrales.velocidad_con_un_tobillo,
         )
+        self._largos_erguido: deque[tuple[float, float]] = deque()
+        self._rapido_en: float | None = None
         self._lenta = _DetectorCaidaLenta(
             umbrales.descenso_caida_lenta_min,
             umbrales.ventana_caida_lenta_s,
@@ -204,9 +212,27 @@ class ClasificadorCinematico:
         p, velocidad = self._ultima.parametros, self._ultima.velocidad
 
         m1 = velocidad is not None and velocidad >= self._velocidad_min
+        vp = self._u.velocidad_perdida_min
+        if self._fase is not Fase.EN_EL_SUELO and vp is not None:
+            self._rapido_en = instante if velocidad is not None and velocidad >= vp else None
+        escorzo = False
+        if self._u.inclinacion_por_escorzo:
+            while (
+                self._largos_erguido
+                and self._largos_erguido[0][0] < instante - self._u.ventana_caida_lenta_s
+            ):
+                self._largos_erguido.popleft()
+            if self._largos_erguido:
+                ref = statistics.median(largo for _, largo in self._largos_erguido)
+                coseno = math.cos(math.radians(self._u.angulo_linea_central_max_grados))
+                escorzo = p.longitud_linea_central < coseno * ref
         # With the head below the feet (a fall towards the camera) the body is neither vertical
         # nor upright, even if the angle and the ratio do not show it (A7).
-        m2 = p.angulo_grados < self._u.angulo_linea_central_max_grados or p.cabeza_bajo_pies
+        m2 = (
+            p.angulo_grados < self._u.angulo_linea_central_max_grados
+            or p.cabeza_bajo_pies
+            or escorzo
+        )
         m3 = p.razon_ancho_alto >= self._u.razon_ancho_alto_min or p.cabeza_bajo_pies
         # "Upright" clears an alert (recovery) or downgrades it (unstable movement), so it is
         # only accepted with the key points clearly visible (A6). The fall conditions do use
@@ -214,9 +240,12 @@ class ClasificadorCinematico:
         erguido = (
             p.puntos_visibles
             and not p.cabeza_bajo_pies
+            and not escorzo
             and p.angulo_grados > self._u.angulo_linea_central_max_grados
             and p.razon_ancho_alto < self._u.razon_ancho_alto_min
         )
+        if erguido and self._u.inclinacion_por_escorzo:
+            self._largos_erguido.append((instante, p.longitud_linea_central))
         # Recovery requires being seen upright for a minimum time: MediaPipe sometimes estimates
         # a lying person as "standing" for a single isolated frame (A8).
         if not erguido:
@@ -270,6 +299,7 @@ class ClasificadorCinematico:
 
     def _entrar_al_suelo(self, instante: float, datos: dict[str, float]) -> Evento:
         self._lenta.reiniciar()
+        self._rapido_en = None
         self._fase = Fase.EN_EL_SUELO
         self._instante_caida = instante
         self._confirmada = False
@@ -289,6 +319,13 @@ class ClasificadorCinematico:
         # If the person ended up on the floor out of view (for example, behind furniture), the
         # confirmation keeps counting: not seeing them does not mean they got up.
         eventos = self._revisar_confirmacion(instante, {})
+        if (
+            self._rapido_en is not None
+            and self._fase is not Fase.EN_EL_SUELO
+            and instante - self._rapido_en >= self._u.ventana_reaccion_s
+        ):
+            self._rapido_en = None
+            eventos.append(self._entrar_al_suelo(instante, {"perdida": 1.0}))
         referencia = (
             self._ultimo_valido if self._ultimo_valido is not None else self._primer_instante
         )
