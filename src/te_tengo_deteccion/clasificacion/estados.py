@@ -25,6 +25,16 @@ A slow fall (sliding down from a chair, sagging to the floor, kneeling and then 
 never meet M1 and M2 together, or may become horizontal after the reaction window. Rule R9
 (proposal) also emits ``caida`` when, shortly after being seen upright, the hip has dropped a
 large part of the body length and the body stays horizontal for a while.
+
+Two optional rules (proposals, ADR 0011, off unless their threshold is set) address failures
+found in the hold-out tests:
+
+* **F1** (``erguido_previo_caida_s``): R4 can only start if the person was seen upright within
+  the last seconds given, so a person lying still, whose body already meets M2 and M3, cannot
+  turn a small hip movement into a fall.
+* **F2** (``salida_suelo_sin_evidencia_s``): the classifier leaves ``EN_EL_SUELO`` without a
+  ``recuperacion`` when, for the seconds given, the body is neither tilted nor horizontal, so an
+  earlier false alarm does not mask the next real fall. The pending confirmation (R6) is dropped.
 """
 
 from collections import deque
@@ -160,6 +170,8 @@ class ClasificadorCinematico:
             umbrales.permanencia_caida_lenta_s,
         )
         self._erguido_desde: float | None = None
+        self._ultimo_erguido: float | None = None  # F1
+        self._sin_suelo_desde: float | None = None  # F2
         self._ultima: Medicion | None = None
         self._fase = Fase.NORMAL
         self._inicio_caida = 0.0
@@ -219,6 +231,8 @@ class ClasificadorCinematico:
         )
         # Recovery requires being seen upright for a minimum time: MediaPipe sometimes estimates
         # a lying person as "standing" for a single isolated frame (A8).
+        if erguido:
+            self._ultimo_erguido = instante
         if not erguido:
             self._erguido_desde = None
         elif self._erguido_desde is None:
@@ -239,7 +253,7 @@ class ClasificadorCinematico:
             instante, p, erguido, m3
         )
 
-        if self._fase is Fase.NORMAL and m1 and m2:
+        if self._fase is Fase.NORMAL and m1 and m2 and self._erguido_hace_poco(instante):
             self._fase = Fase.INICIO_CAIDA
             self._inicio_caida = instante
 
@@ -262,13 +276,40 @@ class ClasificadorCinematico:
             if erguido_sostenido:
                 self._fase = Fase.NORMAL
                 return [Evento(TipoEvento.RECUPERACION, instante, datos)]
+            if self._sin_evidencia_de_suelo(instante, en_suelo=m2 or m3):
+                self._fase = Fase.NORMAL
+                return []
             return self._revisar_confirmacion(instante, datos)
 
         return []
 
     # ------------------------------------------------------------------ internals
 
+    def _erguido_hace_poco(self, instante: float) -> bool:
+        """F1: R4 may start only shortly after the person was seen upright (always if off)."""
+        ventana = self._u.erguido_previo_caida_s
+        if ventana is None:
+            return True
+        return self._ultimo_erguido is not None and instante - self._ultimo_erguido <= ventana
+
+    def _sin_evidencia_de_suelo(self, instante: float, en_suelo: bool) -> bool:
+        """F2: the body has been neither tilted nor horizontal for the configured time.
+
+        Only frames with a pose are evaluated; frames without one neither restart nor end the
+        count (the person may still be on the floor out of view, as in R6).
+        """
+        espera = self._u.salida_suelo_sin_evidencia_s
+        if espera is None:
+            return False
+        if en_suelo:
+            self._sin_suelo_desde = None
+            return False
+        if self._sin_suelo_desde is None:
+            self._sin_suelo_desde = instante
+        return instante - self._sin_suelo_desde >= espera
+
     def _entrar_al_suelo(self, instante: float, datos: dict[str, float]) -> Evento:
+        self._sin_suelo_desde = None
         self._lenta.reiniciar()
         self._fase = Fase.EN_EL_SUELO
         self._instante_caida = instante
