@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -71,8 +72,9 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     pystray = PystrayFalso()
     monkeypatch.setitem(sys.modules, "pystray", pystray)
     from te_tengo_captura.actualizaciones.actualizador import Actualizador
+    from te_tengo_captura.salida import Salida
     from te_tengo_captura.ui import arranque
-    from te_tengo_captura.ui.aplicacion import ejecutar
+    from te_tengo_captura.ui.aplicacion import Aplicacion
 
     class AgenteFalso:
         version = "1.0.0"
@@ -110,6 +112,9 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
 
         def vista_previa_jpeg(self, clave: str) -> bytes | None:
             return None
+
+        def cambiar_vista_previa(self, video: bool, esqueleto: bool) -> dict[str, bool]:
+            return {"video": video, "skel": esqueleto}
 
         def otro_codigo(self) -> None: ...
 
@@ -183,9 +188,14 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     monkeypatch.setattr(arranque, "pasos", lambda _: pasos)
     monkeypatch.setattr(arranque, "DURACION_MINIMA_S", 0.0)
     monkeypatch.setattr(arranque, "SALIDA_S", 0.0)
-    ejecutar(agente)  # type: ignore[arg-type]
+    forzadas: list[int] = []
+    salida = Salida(forzar=forzadas.append)
+    aplicacion = Aplicacion(agente, salida=salida, cierre_s=0.05)  # type: ignore[arg-type]
+    aplicacion.ejecutar()
+    salida.detener_vigilancia()
+    assert salida.iniciada  # the main loop ended: the exit is watched from here
     assert webview.iniciado
-    assert Path(webview.opciones["icon"]).is_file()  # window icon on Linux
+    assert (webview.opciones["icon"] is not None) is sys.platform.startswith("linux")
     assert agente.eventos == ["iniciar", "publicar", "detener"]
     assert len(agente.oyentes) == 4  # window, tray icon, notifications and new versions
     inicio, estado = webview.ventanas
@@ -215,7 +225,18 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
     assert puente.desinstalar() == {"ok": True, "avisada": True, "papelera": False}
     assert agente.eventos[-1] == "restablecer:desinstalada"
     puente.salir()  # confirmed in the window
+    # The bridge call returns first; the window closes a moment later, from another thread.
+    assert not estado.destruida
+    scripts = len(estado.scripts)
+    aplicacion._ventana.actualizar(estado_de_ejemplo())
+    assert len(estado.scripts) == scripts  # no script for a page that is about to go
+    for _ in range(100):
+        if estado.destruida:
+            break
+        time.sleep(0.01)
     assert estado.destruida
+    puente.salir()  # a second «Salir» does nothing more
+    assert forzadas == []
 
 
 def test_la_app_de_mac_se_encuentra_desde_su_ejecutable(tmp_path: Path) -> None:
@@ -252,3 +273,38 @@ def test_el_icono_de_la_aplicacion_es_el_de_la_marca(tmp_path: Path) -> None:
         assert imagen.size == (512, 512)
         fondo = imagen.convert("RGB").getpixel((256, 480))  # below the stem: the purple square
     assert fondo == tuple(int(MORADO[i : i + 2], 16) for i in (1, 3, 5))
+
+
+@pytest.mark.parametrize("mac", [True, False])
+def test_apagar_el_sistema_sale_sin_preguntar(
+    webview: WebviewFalso, monkeypatch: pytest.MonkeyPatch, mac: bool
+) -> None:
+    from unittest.mock import MagicMock
+
+    from te_tengo_captura.salida import Salida
+    from te_tengo_captura.ui import aplicacion as modulo
+
+    monkeypatch.setitem(sys.modules, "pystray", PystrayFalso())
+    monkeypatch.setattr(modulo, "EN_MACOS", mac)
+    agente = MagicMock()
+    salida = Salida(forzar=lambda codigo: pytest.fail("forzó la salida"))
+    aplicacion = modulo.Aplicacion(agente, salida=salida)
+    aplicacion._apagar()
+    aplicacion._apagar()  # loginwindow may ask twice
+    salida.detener_vigilancia()
+    assert salida.iniciada
+    # Mac: the app terminates right after (NSTerminateLater), so the agent stops here; Windows:
+    # the forms are closing and ``ejecutar`` stops it when pywebview's main loop ends.
+    assert agente.detener.call_count == (1 if mac else 0)
+    aplicacion.salir()  # already leaving: no second close
+    assert not webview.ventanas[-1].destruida
+
+
+def test_el_icono_de_la_ventana_solo_en_linux(tmp_path: Path) -> None:
+    from te_tengo_captura.ui.aplicacion import icono_de_ventana
+
+    ruta = tmp_path / "icono.png"
+    assert icono_de_ventana(ruta, "linux") == str(ruta)
+    # WinForms loads it as a .ico: a PNG ended the process with a .NET ArgumentException.
+    assert icono_de_ventana(ruta, "win32") is None
+    assert icono_de_ventana(ruta, "darwin") is None

@@ -10,8 +10,9 @@ upload URL, is ever logged.
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Protocol, TypeVar
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -46,6 +47,40 @@ _Modelo = TypeVar("_Modelo", bound=BaseModel)
 # httpx logs every request URL at INFO, and the clip upload URL carries its signature.
 for _nombre in ("httpx", "httpcore"):
     logging.getLogger(_nombre).setLevel(logging.WARNING)
+
+# Azure Blob Storage's Put Blob needs ``x-ms-blob-type`` (the API returns it with the other
+# headers, ADR 0013 of te-tengo-general-api). Kept here too, so an Azure SAS URL from an API that
+# only returns ``Content-Type`` still uploads; an S3 or R2 pre-signed URL never gets it.
+CABECERA_TIPO_DE_BLOB = "x-ms-blob-type"
+BLOCK_BLOB = "BlockBlob"
+_HOSTS_AZURE_BLOB = (
+    ".blob.core.windows.net",
+    ".blob.core.usgovcloudapi.net",
+    ".blob.core.chinacloudapi.cn",
+)
+
+
+def es_url_de_azure_blob(url: str) -> bool:
+    """Whether ``url`` is an Azure Blob SAS URL: an Azure blob host, or a SAS query (``sv``, ``sr``
+    and ``sig``, e.g. Azurite's ``http://host:10000/devstoreaccount1/...``)."""
+    partes = urlsplit(url)
+    host = (partes.hostname or "").lower()
+    if host.endswith(_HOSTS_AZURE_BLOB):
+        return True
+    consulta = parse_qs(partes.query)
+    return {"sv", "sr", "sig"} <= consulta.keys()
+
+
+def cabeceras_de_subida(url: str, cabeceras: Mapping[str, str]) -> dict[str, str]:
+    """The headers of the ``PUT`` to a pre-signed URL: exactly those the backend returned, plus
+    ``x-ms-blob-type: BlockBlob`` for an Azure Blob URL when the backend did not send it."""
+    resultado = dict(cabeceras)
+    if es_url_de_azure_blob(url) and not any(
+        nombre.lower() == CABECERA_TIPO_DE_BLOB for nombre in resultado
+    ):
+        resultado[CABECERA_TIPO_DE_BLOB] = BLOCK_BLOB
+    return resultado
+
 
 API_VERSION = "1"
 RUTA_REGISTRO = "/api/agente/camaras/registro"
@@ -165,9 +200,14 @@ class ClienteBackend:
         return leer_modelo(SubidaClip, self._autenticado("POST", ruta, json=cuerpo.json_api()))
 
     def subir_clip(self, subida: SubidaClip, mp4: bytes) -> None:
-        """``PUT`` of the MP4 to the pre-signed URL, with the headers the backend returned."""
+        """``PUT`` of the MP4 to the pre-signed URL, with the headers the backend returned
+        (:func:`cabeceras_de_subida`)."""
         try:
-            respuesta = self._almacen.put(subida.url_subida, content=mp4, headers=subida.cabeceras)
+            respuesta = self._almacen.put(
+                subida.url_subida,
+                content=mp4,
+                headers=cabeceras_de_subida(subida.url_subida, subida.cabeceras),
+            )
         except httpx.TransportError as error:
             raise SinConexionError(
                 f"Sin conexión al subir el clip: {type(error).__name__}"
@@ -186,7 +226,9 @@ class ClienteBackend:
     def subir_archivo(self, url: str, cabeceras: dict[str, str], datos: bytes, que: str) -> None:
         """``PUT`` of a movement or landmarks file to its pre-signed URL (never through the API)."""
         try:
-            respuesta = self._almacen.put(url, content=datos, headers=cabeceras)
+            respuesta = self._almacen.put(
+                url, content=datos, headers=cabeceras_de_subida(url, cabeceras)
+            )
         except httpx.TransportError as error:
             raise SinConexionError(f"Sin conexión al subir {que}: {type(error).__name__}") from None
         if respuesta.is_error:

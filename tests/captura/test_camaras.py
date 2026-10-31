@@ -11,7 +11,8 @@ import pytest
 
 from te_tengo_captura.agente_pc import FabricaCamaras
 from te_tengo_captura.backend.falso import URL_API, BackendFalso
-from te_tengo_captura.backend.modelos import ModoVista
+from te_tengo_captura.backend.modelos import CamaraDeLaPc, ModoVista
+from te_tengo_captura.camaras import SupervisorCamaras
 from te_tengo_captura.captura.dispositivos import Dispositivo
 from te_tengo_captura.captura.fuentes import FuenteFalsa, Imagen
 from te_tengo_captura.config import AjustesPc
@@ -323,3 +324,90 @@ def test_imagenes_reales_no_se_guardan(e: Escenario) -> None:
     esperar(lambda: len(Grabadora.creadas[0].instantes) > 5)
     datos = Path(e.coordinador._directorio) / "camaras" / sala
     assert not any(p.suffix in (".jpg", ".png", ".mp4") for p in datos.rglob("*"))
+
+
+class _AgenteFalso:
+    def __init__(self, dispositivo_id: str) -> None:
+        self.ajustes = type("Ajustes", (), {"dispositivo_id": dispositivo_id})()
+        self.iniciado = False
+
+    def iniciar(self) -> None:
+        self.iniciado = True
+
+    def renombrar(self, nombre: str) -> None:
+        pass
+
+    def bloquear(self) -> None:
+        pass
+
+    def detener(self) -> None:
+        pass
+
+
+def _supervisor_con_creacion_lenta() -> tuple[
+    SupervisorCamaras, list[_AgenteFalso], threading.Event
+]:
+    creados: list[_AgenteFalso] = []
+    soltar = threading.Event()
+
+    def crear(camara: CamaraDeLaPc, _token: object) -> _AgenteFalso:
+        soltar.wait(5)  # creating an agent (estimator, store) takes a while
+        agente = _AgenteFalso(camara.dispositivo_id)
+        creados.append(agente)
+        return agente
+
+    supervisor = SupervisorCamaras(
+        cliente=None,  # type: ignore[arg-type]
+        crear_agente=crear,  # type: ignore[arg-type]
+        listar=list,
+        abrir=Webcams().abrir,
+    )
+    return supervisor, creados, soltar
+
+
+_EN_USO = CamaraDeLaPc(
+    camara_id="c-1",
+    dispositivo_id="usb-0c45-6366",
+    nombre_dispositivo="Webcam USB HD",
+    en_uso=True,
+    nombre_habitacion="Dormitorio",
+    token="token-de-la-camara",
+)
+
+
+def test_dos_reconciliaciones_a_la_vez_crean_un_solo_agente_por_camara() -> None:
+    # 2026-10-24: the periodic check and the app's message reconciled at once at startup; both
+    # created an agent, whose two control channels the API swapped every second for minutes.
+    supervisor, creados, soltar = _supervisor_con_creacion_lenta()
+    hilos = [
+        threading.Thread(target=supervisor.reconciliar, args=([_EN_USO],)),
+        threading.Thread(target=supervisor.reconciliar, args=([_EN_USO], False)),
+    ]
+    for hilo in hilos:
+        hilo.start()
+    time.sleep(0.2)  # both are past the check before the first agent exists
+    soltar.set()
+    for hilo in hilos:
+        hilo.join(5)
+
+    assert len(creados) == 1
+    assert creados[0].iniciado
+    assert list(supervisor.agentes) == ["c-1"]
+
+
+def test_una_camara_detenida_mientras_se_crea_su_agente_no_arranca() -> None:
+    supervisor, creados, soltar = _supervisor_con_creacion_lenta()
+    hilo = threading.Thread(target=supervisor.reconciliar, args=([_EN_USO],))
+    hilo.start()
+    time.sleep(0.1)
+    supervisor.reconciliar([_EN_USO.model_copy(update={"en_uso": False})])  # removed meanwhile
+    supervisor._detener("c-1")
+    soltar.set()
+    hilo.join(5)
+
+    assert supervisor.agentes == {}
+    assert not creados[0].iniciado
+    # It can be started again later.
+    soltar.set()
+    supervisor.reconciliar([_EN_USO])
+    assert list(supervisor.agentes) == ["c-1"]

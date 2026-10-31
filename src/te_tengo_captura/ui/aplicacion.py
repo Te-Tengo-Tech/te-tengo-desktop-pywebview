@@ -7,6 +7,13 @@ tray menu opens it again, downloads a new version or looks for one (US-43), or a
 updater calls ``salir`` once the installer started (no question). «Restablecer esta PC» and, on a
 Mac, «Desinstalar» (the reset, then the app bundle goes to the Trash) live in «Avanzado ›
 Acerca de».
+
+The exit is bounded (``salida.py``): ``salir`` returns at once, so the bridge call that asked for
+it hands its value back to the page before the window closes; the window closes a moment later,
+pywebview's main loop ends and the tray and the agent stop; a watchdog ends the process if that
+takes longer than 8 s. On a Mac, Cmd+Q, the app menu and the Dock ask the same question
+(``macos.py``); logging out or shutting down, on a Mac or on Windows (``windows.py``), exits
+without asking.
 """
 
 import logging
@@ -14,6 +21,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 from collections.abc import MutableMapping
 from pathlib import Path
 
@@ -22,11 +30,15 @@ from te_tengo_captura.bandeja.avisos import Avisos
 from te_tengo_captura.bandeja.icono import EN_MACOS, IconoBandeja
 from te_tengo_captura.bandeja.iconos import icono
 from te_tengo_captura.coordinador import Coordinador, EstadoVentana
+from te_tengo_captura.salida import Salida
 from te_tengo_captura.ui import arranque
 from te_tengo_captura.ui.puente import Acciones, Puente
 from te_tengo_captura.ui.ventana import VentanaEstado
 
 logger = logging.getLogger(__name__)
+
+CIERRE_S = 0.3  # after «Salir», the bridge call returns its value before the window closes
+EN_WINDOWS = sys.platform == "win32"
 
 
 def quitar_qt_de_opencv(entorno: MutableMapping[str, str] = os.environ) -> None:
@@ -43,6 +55,13 @@ def guardar_icono(carpeta: Path | None = None) -> Path:
     ruta = (carpeta or Path(tempfile.gettempdir())) / "te-tengo-captura.png"
     icono(None, 512).save(ruta)
     return ruta
+
+
+def icono_de_ventana(ruta_icono: Path, plataforma: str = sys.platform) -> str | None:
+    """``webview.start``'s ``icon``: the window icon on Linux (GTK and Qt) only:
+    pywebview's WinForms backend loads it with ``System.Drawing.Icon``, which rejects a PNG with
+    an unhandled .NET exception that ends the process at startup; Windows uses the .exe's icon."""
+    return str(ruta_icono) if plataforma.startswith("linux") else None
 
 
 def mostrar_icono_en_el_dock(ruta: Path) -> None:
@@ -98,8 +117,20 @@ def mover_a_la_papelera(paquete: Path | None) -> bool:
 
 
 class Aplicacion:
-    def __init__(self, agente: Coordinador) -> None:
+    def __init__(
+        self,
+        agente: Coordinador,
+        salida: Salida | None = None,
+        cierre_s: float = CIERRE_S,
+        salir_tras: float | None = None,
+    ) -> None:
         self._agente = agente
+        self.salida = salida or Salida()
+        self._cierre_s = cierre_s
+        self._salir_tras = salir_tras  # ``--salir-tras``: the smoke test of the exit
+        self._saliendo = False
+        self._detenida = False
+        self._candado_salida = threading.Lock()
         self._icono = IconoBandeja(
             abrir=self.abrir,
             salir=self.pedir_salir,
@@ -113,6 +144,7 @@ class Aplicacion:
             buscar_webcam=agente.buscar_webcam,
             reintentar_ahora=agente.reintentar_ahora,
             vista_previa=agente.vista_previa_jpeg,
+            modo_vista_previa=agente.cambiar_vista_previa,
             acciones=Acciones(
                 otro_codigo=agente.otro_codigo,
                 vincular_de_nuevo=agente.vincular_de_nuevo,
@@ -161,14 +193,34 @@ class Aplicacion:
         quitar_qt_de_opencv()
         ruta_icono = guardar_icono()
         if EN_MACOS:
+            from te_tengo_captura.ui import macos
+
             mostrar_icono_en_el_dock(ruta_icono)
             self._icono.iniciar()  # AppKit: from the main thread, before its event loop starts
+            try:
+                macos.interceptar_salida(self.pedir_salir, self._apagar, lambda: self._saliendo)
+            except Exception:  # a pywebview that changed: quitting still works from the tray
+                logger.warning("No se pudo preguntar antes de salir con Cmd+Q", exc_info=True)
         try:
-            # ``icon`` sets the window icon on Linux (GTK and Qt); Windows uses the .exe's icon.
-            webview.start(self._iniciar, icon=str(ruta_icono))
+            webview.start(self._iniciar, icon=icono_de_ventana(ruta_icono))
         finally:
+            self.salida.vigilar()  # whatever ended the main loop, the exit is bounded from here
+            self._detener()
+
+    def _detener(self) -> None:
+        """Stops the tray icon and the agent, once; a failure in one never skips the other."""
+        with self._candado_salida:
+            if self._detenida:
+                return
+            self._detenida = True
+        try:
             self._icono.detener()
+        except Exception:
+            logger.exception("No se pudo quitar el ícono de la bandeja")
+        try:
             self._agente.detener()
+        except Exception:
+            logger.exception("No se pudo detener el agente al salir")
 
     def abrir(self) -> None:
         self._ventana.mostrar()
@@ -178,12 +230,53 @@ class Aplicacion:
         self._ventana.ocultar()
 
     def pedir_salir(self) -> None:
-        """«Salir» in the tray: the window opens and asks to confirm it."""
+        """«Salir» in the tray (or Cmd+Q, the app menu, the Dock on a Mac): the window opens and
+        asks to confirm it."""
+        if self._saliendo:
+            return
+        logger.info("Salir pedido: la ventana pide confirmarlo")
         self._desde_la_bandeja("salir")
 
     def salir(self) -> None:
+        """«Salir» confirmed in the window (a bridge thread) or the updater's installer started.
+
+        Returns at once: the window closes ``cierre_s`` later, from another thread, so the bridge
+        call that asked for it returns first (a call still waiting when the window is gone never
+        returns). Then pywebview's main loop ends and ``ejecutar`` stops everything."""
+        if not self._empezar_salida():
+            return
         logger.info("Salir: se detiene la detección de caídas")
-        self._ventana.destruir()
+        cierre = threading.Timer(self._cierre_s, self._ventana.destruir)
+        cierre.daemon = True
+        cierre.start()
+
+    def _apagar(self) -> None:
+        """The system logs out or shuts down: no question. On a Mac the app terminates right
+        after this returns (``NSTerminateLater``); on Windows the forms are already closing."""
+        if not self._empezar_salida():
+            return
+        if EN_MACOS:
+            self._detener_agente_al_apagar()
+
+    def _detener_agente_al_apagar(self) -> None:
+        # The tray icon goes with the process (AppKit only from the main thread, which is busy).
+        with self._candado_salida:
+            if self._detenida:
+                return
+            self._detenida = True
+        try:
+            self._agente.detener()
+        except Exception:
+            logger.exception("No se pudo detener el agente al apagar")
+
+    def _empezar_salida(self) -> bool:
+        with self._candado_salida:
+            if self._saliendo:
+                return False
+            self._saliendo = True
+        self.salida.vigilar()
+        self._ventana.preparar_salida()
+        return True
 
     def _desinstalar(self) -> dict[str, object]:
         """«Desinstalar» on a Mac: there is no uninstaller for an ``.app``."""
@@ -193,7 +286,9 @@ class Aplicacion:
         papelera = mover_a_la_papelera(paquete_de_la_app())
         resultado["papelera"] = papelera
         if papelera:
-            threading.Timer(3.0, self.salir).start()  # the window says goodbye first
+            despedida = threading.Timer(3.0, self.salir)  # the window says goodbye first
+            despedida.daemon = True
+            despedida.start()
         return resultado
 
     def _exportar_diagnostico(self) -> dict[str, object]:
@@ -237,7 +332,22 @@ class Aplicacion:
         arranque.recorrer(pasos, self._inicio.mostrar)
         self._inicio.cerrar()
         self.abrir()
+        if EN_WINDOWS:
+            from te_tengo_captura.ui import windows
+
+            windows.permitir_apagado(self._ventana.nativa, self._apagar)
         self._agente.publicar_estado()
+        if self._salir_tras is not None:
+            prueba = threading.Timer(self._salir_tras, self._probar_salida)
+            prueba.daemon = True
+            prueba.start()
+
+    def _probar_salida(self) -> None:
+        """``--salir-tras``: the tray's «Salir», then the window's «Salir» through the bridge."""
+        logger.info("Prueba de salida: «Salir» en la bandeja y en la ventana")
+        self.pedir_salir()
+        time.sleep(1.0)
+        self._ventana.confirmar_salida()
 
 
 def ejecutar(agente: Coordinador) -> None:

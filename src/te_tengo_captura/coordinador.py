@@ -63,7 +63,7 @@ from te_tengo_captura.almacen.gestor import AjustesAlmacen, AlmacenLocal
 from te_tengo_captura.almacen.indice import TipoArchivo
 from te_tengo_captura.almacen.repeticion import Repeticion
 from te_tengo_captura.backend.errores import ErrorBackendError
-from te_tengo_captura.backend.modelos import EstadoMovimientos, iso_utc
+from te_tengo_captura.backend.modelos import EstadoMovimientos, ModoVista, iso_utc
 from te_tengo_captura.backend.pc import ClientePc
 from te_tengo_captura.backend.versiones import ClienteVersiones
 from te_tengo_captura.captura.dispositivos import Dispositivo, listar_dispositivos
@@ -101,7 +101,23 @@ ESTADO_DE_LA_IDENTIDAD = (
     "actividad.jsonl",
     "actividad-enviada.txt",
 )
-ARCHIVO_VENTANA = "ventana.json"  # the advanced mode's switch (off by default, CA-32.1)
+# The advanced mode's switch (off by default, CA-32.1) and what the local preview shows.
+ARCHIVO_VENTANA = "ventana.json"
+
+
+def modo_vista_previa(video: bool, esqueleto: bool) -> ModoVista:
+    """«Qué se ve» of the local preview, as the app's live view: Video and Esqueleto switch
+    separately and at least one stays on (by default, only the video)."""
+    if esqueleto:
+        return ModoVista.VIDEO_CON_POSTURA if video else ModoVista.SOLO_POSTURA
+    return ModoVista.VIDEO
+
+
+def json_vista_previa(modo: ModoVista) -> dict[str, bool]:
+    return {
+        "video": modo is not ModoVista.SOLO_POSTURA,
+        "skel": modo is not ModoVista.VIDEO,
+    }
 
 
 class Pantalla(StrEnum):
@@ -189,7 +205,12 @@ class Coordinador:
         self._repetidor_de: AlmacenLocal | None = None
         self._desvinculando = False
         self._tamano: tuple[float, int] | None = None
-        self._avanzado = bool((self._leer_json(ARCHIVO_VENTANA) or {}).get("modoAvanzado", False))
+        ventana = self._leer_json(ARCHIVO_VENTANA) or {}
+        self._avanzado = bool(ventana.get("modoAvanzado", False))
+        try:
+            self._previa = ModoVista(ventana.get("vistaPrevia", ModoVista.VIDEO))
+        except ValueError:
+            self._previa = ModoVista.VIDEO
         self._oyentes: list[Callable[[EstadoVentana], None]] = []
         self._detenido = threading.Event()
         self._hilo_estado = threading.Thread(target=self._notificar, name="estado", daemon=True)
@@ -287,6 +308,7 @@ class Coordinador:
                 {
                     **e.a_json(),
                     "advanced": self._avanzado,
+                    "pvMode": json_vista_previa(self._previa),
                     "store": self.almacen.estado(),
                     "upd": self.actualizador.a_json(),
                 },
@@ -309,6 +331,7 @@ class Coordinador:
                     "unlink": True,
                     "dataBytes": self._tamano_datos(),
                     "advanced": self._avanzado,
+                    "pvMode": json_vista_previa(self._previa),
                     "store": self.almacen.estado(),
                     "upd": self.actualizador.a_json(),
                 },
@@ -396,10 +419,17 @@ class Coordinador:
 
     def vista_previa_jpeg(self, clave: str) -> bytes | None:
         if self.agente is not None:
-            return self.agente.vista_previa_jpeg(clave)
+            return self.agente.vista_previa_jpeg(clave, self._previa)
         if self.pc is not None:
-            return self.pc.vista_previa_jpeg(clave)
+            return self.pc.vista_previa_jpeg(clave, self._previa)
         return None
+
+    def cambiar_vista_previa(self, video: bool, esqueleto: bool) -> dict[str, bool]:
+        """«Qué se ve» in the local preview («Video», «Esqueleto»): remembered on this PC. Only
+        the picture of this window changes; nothing is recorded or sent."""
+        self._previa = modo_vista_previa(video, esqueleto)
+        self._guardar_ventana()
+        return json_vista_previa(self._previa)
 
     def ambientes(self) -> list[dict[str, Any]]:
         """The household's rooms for «Elegir aquí» (CA-29.8), with the camera in each."""
@@ -503,8 +533,8 @@ class Coordinador:
         """The switch of «Avanzado»; the change goes to the activity log (CA-32.1)."""
         if activar == self.modo_avanzado:
             return activar
-        self._guardar_json(ARCHIVO_VENTANA, {"modoAvanzado": activar})
         self._avanzado = activar
+        self._guardar_ventana()
         self.diario.activo = activar
         if not activar:
             self.diario.vaciar()
@@ -1017,6 +1047,11 @@ class Coordinador:
             return int((self._reloj() - float(datos["en"])) // 86400)
         except (KeyError, TypeError, ValueError):
             return 0
+
+    def _guardar_ventana(self) -> None:
+        self._guardar_json(
+            ARCHIVO_VENTANA, {"modoAvanzado": self._avanzado, "vistaPrevia": self._previa.value}
+        )
 
     def _leer_json(self, nombre: str) -> dict[str, Any] | None:
         try:

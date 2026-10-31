@@ -9,7 +9,7 @@ from te_tengo_captura.diario import Diario, ManejadorDiario, Narrador
 from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico
 from te_tengo_deteccion.clasificacion.umbrales import Umbrales
 from te_tengo_deteccion.pose.schemas import Landmark, Pose
-from tests.fabricas import CAYENDO, DE_PIE, TENDIDA
+from tests.fabricas import CAYENDO, DE_PIE, SENTADA_EN_EL_SUELO, TENDIDA, TENDIDA_SIN_BAJAR
 
 
 class Reloj:
@@ -76,6 +76,16 @@ def test_una_caida_contada_en_lenguaje_sencillo(diario: Diario) -> None:
     assert " WARN clasificador fase=CAIDA en_suelo=1 evento=caida aviso=encolado" in caida_.tecnica
     assert caida_.tecnica[:4].isdigit()  # ISO time first: «Ver línea técnica»
     assert narrador.medicion.fase == 0  # standing again
+
+
+def test_caida_lenta_sin_ventana_de_reaccion(diario: Diario) -> None:
+    # R9: no "possible fall" with a reaction window, straight to the floor.
+    secuencia: list[tuple[float, Pose | None]] = [(i * 0.125, DE_PIE) for i in range(12)]
+    secuencia += [(1.5 + i * 0.125, SENTADA_EN_EL_SUELO) for i in range(16)]
+    secuencia += [(3.5 + i * 0.125, TENDIDA_SIN_BAJAR) for i in range(24)]
+    _, lineas = narrar(diario, secuencia)
+    assert "Caída: en el suelo. Aviso enviado" in lineas
+    assert not any(linea.startswith("Posible caída") for linea in lineas)
 
 
 def test_medidores_durante_la_caida(diario: Diario) -> None:

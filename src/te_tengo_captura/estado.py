@@ -71,6 +71,7 @@ class Webcam:
     elegida_desde: str | None = None
     vista_previa: bool = True  # the local preview can be shown
     mirando: bool = False  # a family member previews it from the app to choose it (CA-29.7)
+    esqueleto: bool = False  # in use: its preview can draw the live pose («Qué se ve»)
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +252,7 @@ def _webcam_json(w: Webcam) -> dict[str, Any]:
         "by": w.elegida_desde,
         "preview": w.vista_previa,
         "peek": w.mirando,
+        "skel": w.esqueleto,
     }
 
 

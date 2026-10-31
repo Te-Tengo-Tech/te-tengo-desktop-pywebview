@@ -12,5 +12,7 @@ Each important decision is recorded in a short file using Michael Nygard's forma
 | [0006](0006-mediapipe-video-mode.md) | MediaPipe in VIDEO mode, one tracker per camera | Accepted (replaces the mode of 0003) |
 | [0007](0007-processing-on-household-pc.md) | Process the video on the household PC (this repository becomes the desktop agent) | Accepted by the team; change request to the charter pending |
 | [0008](0008-clip-encoding-with-pyav.md) | Encode clips with PyAV instead of the FFmpeg executable | Accepted |
+| [0009](0009-slow-fall-rule.md) | Rule R9: declare slow falls that end on the floor | Proposed |
+| [0010](0010-sensitivity-candidates-rejected.md) | Keep the validated classifier: the sensitivity candidates are rejected | Accepted |
 
 Nygard, M. (2011, 15 de noviembre). *Documenting architecture decisions*. Cognitect. https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions

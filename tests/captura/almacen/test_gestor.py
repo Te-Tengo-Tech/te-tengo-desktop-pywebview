@@ -1,6 +1,8 @@
 """«Almacenamiento» (US-38) with the movement consent (US-35): what the PC keeps, and how."""
 
 import io
+import itertools
+import os
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -72,14 +74,17 @@ def almacen(tmp_path: Path, llavero: LlaveroEnMemoria) -> Iterator[AlmacenLocal]
 
 
 def analisis(
-    n: int, pose: Pose | None = DE_PIE, imagen: np.ndarray | None = None
+    n: int,
+    pose: Pose | None = DE_PIE,
+    imagen: np.ndarray | None = None,
+    instantes: list[float] | None = None,
 ) -> list[Analisis]:
     clasificador = ClasificadorCinematico(Umbrales(velocidad_descenso_min=0.5))
     if imagen is None:
         imagen = np.zeros((480, 640, 3), dtype=np.uint8)
     resultado = []
     for i in range(n):
-        instante = i / 8
+        instante = instantes[i] if instantes is not None else i / 8
         eventos = clasificador.actualizar(instante, pose)
         resultado.append(
             Analisis(
@@ -298,6 +303,129 @@ def test_video_continuo_cifrado_en_partes(almacen: AlmacenLocal) -> None:
         flujo = contenedor.streams.video[0]
         assert (flujo.codec_context.name, flujo.width, flujo.height) == ("h264", 640, 480)
         assert sum(1 for _ in contenedor.decode(flujo)) == 24
+
+
+def _video(almacen: AlmacenLocal, ruta: Path) -> list[float]:
+    """The instants (s) of the decoded frames of a stored segment."""
+    av = pytest.importorskip("av")
+    clave = almacen.clave()
+    assert clave is not None
+    with av.open(io.BytesIO(descifrar_bytes(clave, ruta.read_bytes()))) as contenedor:
+        return [float(c.time) for c in contenedor.decode(video=0)]
+
+
+def _irregulares(n: int, semilla: int = 7) -> list[float]:
+    """What the capture really hands over: about 8 fps with jitter, repeated instants and the
+    clock moving back a little now and then."""
+    azar = np.random.default_rng(semilla)
+    instantes, t = [], 0.0
+    for i in range(n):
+        if i % 11 == 5:
+            instantes.append(t)  # the same instant twice
+            continue
+        if i % 17 == 9:
+            instantes.append(t - 0.04)  # the clock moved back
+            continue
+        t += float(azar.uniform(0.04, 0.2))
+        instantes.append(t)
+    return instantes
+
+
+def test_video_con_instantes_irregulares_repetidos_y_hacia_atras(
+    almacen: AlmacenLocal, caplog: pytest.LogCaptureFixture
+) -> None:
+    """2026-10-24: «Invalid argument … returned 22» on frames that fell on the same 1/8 s."""
+    almacen.iniciar(Permiso())
+    almacen.cambiar(video=True)
+    grabador = almacen.para_camara("c1")
+    instantes = _irregulares(120)
+    with caplog.at_level("WARNING", logger="te_tengo_captura.almacen.gestor"):
+        for a in analisis(len(instantes), instantes=instantes):
+            grabador.analizado(a)
+        almacen.soltar_camara("c1")
+    assert caplog.records == []
+    [ruta] = archivos(almacen, TipoArchivo.VIDEO)
+    tiempos = _video(almacen, ruta)
+    assert len(tiempos) == 120  # every frame, in a finished segment «Ver qué pasó» can read
+    assert all(b > a for a, b in itertools.pairwise(tiempos))
+    # Each frame keeps its real time (to the ms) since the segment started; a repeated or
+    # earlier one goes 1 ms after the previous frame.
+    esperados, siguiente = [], 0
+    inicio = T0 + timedelta(seconds=instantes[0])
+    for t in instantes:
+        pts = max(siguiente, int((T0 + timedelta(seconds=t) - inicio).total_seconds() * 1000))
+        esperados.append(pts / 1000)
+        siguiente = pts + 1
+    assert tiempos == pytest.approx(esperados, abs=0.0001)
+
+
+def test_video_cambia_de_segmento_cada_10_minutos(almacen: AlmacenLocal) -> None:
+    almacen.iniciar(Permiso())
+    almacen.cambiar(video=True)
+    grabador = almacen.para_camara("c1")
+    # Sparse frames across 10 minutes, with jitter around the change of segment.
+    instantes = [0.0, 0.13, 0.2, 299.97, 300.05, 599.9, 599.95, 600.0, 600.04, 600.1, 660.0]
+    for a in analisis(len(instantes), instantes=instantes):
+        grabador.analizado(a)
+    almacen.soltar_camara("c1")
+    primero, segundo = sorted(archivos(almacen, TipoArchivo.VIDEO))
+    assert (primero.name, segundo.name) == ("154000.mp4.ttg", "155000.mp4.ttg")
+    assert len(_video(almacen, primero)) == 7
+    assert _video(almacen, segundo) == pytest.approx([0.0, 0.04, 0.1, 60.0], abs=0.002)
+    assert almacen.indice is not None
+    [uno, dos] = almacen.indice.anteriores_a(TipoArchivo.VIDEO, 2**62)
+    assert (uno.desde_ms, uno.hasta_ms) == (a_ms(T0), a_ms(T0) + 599_951)
+    assert (dos.desde_ms, dos.hasta_ms) == (a_ms(T0) + 600_000, a_ms(T0) + 660_001)
+    assert not list(almacen.carpeta.rglob("*.tmp"))
+
+
+def test_un_segmento_que_falla_se_cierra_y_se_registra_una_vez(
+    almacen: AlmacenLocal, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    almacen.iniciar(Permiso())
+    almacen.cambiar(video=True)
+    original = gestor._SegmentoVideo.agregar
+    fallar = {"desde": 3}
+
+    def agregar(self: gestor._SegmentoVideo, ahora: datetime, imagen: np.ndarray) -> None:
+        if self.fotogramas >= fallar["desde"]:
+            raise ValueError("Invalid argument: '<none>' returned 22")
+        original(self, ahora, imagen)
+
+    monkeypatch.setattr(gestor._SegmentoVideo, "agregar", agregar)
+    grabador = almacen.para_camara("c1")
+    # 3 good frames, then a failure; the next 30 s are not retried; at 40 s a new segment.
+    instantes = [i / 8 for i in range(40)] + [40.0 + i / 8 for i in range(3)]
+    with caplog.at_level("WARNING", logger="te_tengo_captura.almacen.gestor"):
+        for a in analisis(len(instantes), instantes=instantes):
+            grabador.analizado(a)
+        almacen.soltar_camara("c1")
+    fallos = [r for r in caplog.records if "No se pudo grabar el video" in r.getMessage()]
+    assert len(fallos) == 1  # once, not once per frame
+    assert "c1" in fallos[0].getMessage()
+    assert "fotograma 3" in fallos[0].getMessage()
+    assert not [r for r in caplog.records if "Error al guardar" in r.getMessage()]
+    viejo, nuevo = sorted(archivos(almacen, TipoArchivo.VIDEO))
+    assert len(_video(almacen, viejo)) == 3  # what it had is kept
+    assert len(_video(almacen, nuevo)) == 3
+
+
+def test_borra_los_archivos_a_medio_escribir_de_otra_sesion(tmp_path: Path) -> None:
+    carpeta = tmp_path / "Datos" / "video" / "c1" / "2026" / "10" / "24"
+    carpeta.mkdir(parents=True)
+    viejo = carpeta / ".172211.mp4.ttg.ab12cd.tmp"
+    nuevo = carpeta / ".173000.mp4.ttg.ef34gh.tmp"
+    terminado = carpeta / "171211.mp4.ttg"
+    for ruta in (viejo, nuevo, terminado):
+        ruta.write_bytes(b"x")
+    ahora = time.time()
+    os.utime(viejo, (ahora - 3600, ahora - 3600))
+    os.utime(terminado, (ahora - 3600, ahora - 3600))
+    assert gestor.borrar_temporales(tmp_path / "Datos", ahora) == 1
+    assert not viejo.exists()
+    assert nuevo.exists()  # maybe still being written
+    assert terminado.exists()
+    assert gestor.borrar_temporales(tmp_path / "no-existe", ahora) == 0
 
 
 def test_el_capturador_nunca_espera_al_disco(

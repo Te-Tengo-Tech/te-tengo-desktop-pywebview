@@ -65,6 +65,10 @@ class Puente:
         buscar_webcam: Callable[[], bool],
         reintentar_ahora: Callable[[], bool],
         vista_previa: Callable[[str], bytes | None] = lambda _clave: None,
+        modo_vista_previa: Callable[[bool, bool], dict[str, bool]] = lambda _v, _e: {
+            "video": True,
+            "skel": False,
+        },
         acciones: Acciones | None = None,
     ) -> None:
         self._estado = estado
@@ -72,6 +76,7 @@ class Puente:
         self._buscar_webcam = buscar_webcam
         self._reintentar_ahora = reintentar_ahora
         self._vista_previa = vista_previa
+        self._modo_vista_previa = modo_vista_previa
         self._acciones = acciones or Acciones()
 
     def estado(self) -> dict[str, Any]:
@@ -98,6 +103,10 @@ class Puente:
         """The newest frame of a camera as base64 JPEG, only for this window (CA-29.8)."""
         jpeg = self._vista_previa(str(clave))
         return {"jpeg": base64.b64encode(jpeg).decode("ascii") if jpeg else None}
+
+    def vistaPreviaModo(self, video: bool, esqueleto: bool) -> dict[str, bool]:  # noqa: N802
+        """«Qué se ve» in the local preview: «Video» and «Esqueleto» (at least one stays on)."""
+        return self._modo_vista_previa(bool(video), bool(esqueleto))
 
     def otroCodigo(self) -> None:  # noqa: N802 (JavaScript name)
         """«Mostrar otro código» after «No reconozco esta PC» (D-28.5)."""

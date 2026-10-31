@@ -120,11 +120,23 @@ def test_segundo_lanzamiento_avisa_y_sale(tmp_path: Path) -> None:
 @pytest.mark.skipif(not MODELO.is_file(), reason="Falta el modelo: ejecuta `make modelo`")
 def test_main_ejecuta_la_aplicacion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import te_tengo_captura.__main__ as principal
+    from te_tengo_captura.instancia import Instancia
 
     ejecutadas: list[object] = []
-    monkeypatch.setattr(
-        principal, "ejecutar_aplicacion", lambda agente, abrir: ejecutadas.append(agente)
-    )
+    terminadas: list[tuple[int, bool]] = []
+
+    class SalidaFalsa:
+        def terminar(self, codigo: int = 0) -> None:
+            # The single-instance lock is already released: the next launch can start.
+            otra = Instancia(tmp_path)
+            terminadas.append((codigo, otra.adquirir(lambda: None)))
+            otra.liberar()
+
+    def ejecutar(agente: object, abrir: object, salir_tras: float | None) -> SalidaFalsa:
+        ejecutadas.append(salir_tras)
+        return SalidaFalsa()
+
+    monkeypatch.setattr(principal, "ejecutar_aplicacion", ejecutar)
     ejemplo = Path(__file__).resolve().parents[2] / "config.ejemplo.toml"
     assert (
         main(
@@ -140,7 +152,35 @@ def test_main_ejecuta_la_aplicacion(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         )
         == 0
     )
-    assert len(ejecutadas) == 1
+    assert ejecutadas == [None]
+    # The exit never waits for a thread pywebview left behind (salida.py).
+    assert terminadas == [(0, True)]
+
+
+@pytest.mark.skipif(not MODELO.is_file(), reason="Falta el modelo: ejecuta `make modelo`")
+def test_salir_tras_es_la_prueba_de_la_salida_sin_autoinicio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import te_tengo_captura.__main__ as principal
+
+    ejecutadas: list[float | None] = []
+
+    class SalidaFalsa:
+        def terminar(self, codigo: int = 0) -> None:
+            ejecutadas.append(codigo)
+
+    def ejecutar(agente: object, abrir: object, salir_tras: float | None) -> SalidaFalsa:
+        ejecutadas.append(salir_tras)
+        return SalidaFalsa()
+
+    monkeypatch.setattr(principal, "ejecutar_aplicacion", ejecutar)
+    monkeypatch.setattr(
+        "te_tengo_captura.autoinicio.registrar", lambda: pytest.fail("registró el autoinicio")
+    )
+    ejemplo = Path(__file__).resolve().parents[2] / "config.ejemplo.toml"
+    argumentos_ = ["--config", str(ejemplo), "--backend-falso", "--salir-tras", "2.5"]
+    assert main([*argumentos_, "--datos", str(tmp_path), "--logs", str(tmp_path)]) == 0
+    assert ejecutadas == [2.5, 0]
 
 
 @pytest.mark.skipif(not MODELO.is_file(), reason="Falta el modelo: ejecuta `make modelo`")
@@ -152,7 +192,9 @@ def test_sin_interfaz_no_abre_la_ventana_ni_registra_el_autoinicio(
     sin_ventana: list[object] = []
     monkeypatch.setattr("te_tengo_captura.sin_interfaz.ejecutar", sin_ventana.append)
     monkeypatch.setattr(
-        principal, "ejecutar_aplicacion", lambda agente, abrir: pytest.fail("abrió la ventana")
+        principal,
+        "ejecutar_aplicacion",
+        lambda agente, abrir, salir_tras: pytest.fail("abrió la ventana"),
     )
     monkeypatch.setattr(
         "te_tengo_captura.autoinicio.registrar", lambda: pytest.fail("registró el autoinicio")

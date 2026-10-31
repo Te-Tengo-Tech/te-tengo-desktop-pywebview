@@ -32,11 +32,18 @@ nombre_habitacion = "Sala"
 
 # Optional overrides of the classifier (docs/classification-spec.md). Without this table the agent
 # uses the calibrated values of docs/validation.md. Change them only after re-validating.
+# Re-calibrating the angle and the ratio, and four rule changes aimed at sensitivity, were
+# tested and rejected (nested validation, docs/validation.md section 7): keep these defaults.
 # [clasificacion]
 # velocidad_descenso_min = 0.01
 # angulo_linea_central_max_grados = 45
 # razon_ancho_alto_min = 1
 # confirmacion_suelo_s = 30
+# persistencia_erguido_s = 1
+# ventana_reaccion_s = 1.48
+# descenso_caida_lenta_min = 0.4
+# ventana_caida_lenta_s = 10
+# permanencia_caida_lenta_s = 2
 # sin_deteccion_confiable_s = 300
 
 # Optional live view settings (docs/AGENT_CONTRACT.md, "Live view"). Detection always samples at

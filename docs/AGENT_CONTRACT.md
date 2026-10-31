@@ -16,7 +16,7 @@ Every agent token is checked on every request: the tokens of a PC that left the 
 | `GET /api/agente/estado-captura` | Current consent and pauses: the agent does not process without consent or during a pause | US-05 (CA-05.2), US-22 |
 | `POST /api/agente/senal` | Periodic heartbeat; updates the time of the last signal | US-07 |
 | `POST /api/agente/eventos` | Detected event (body below); idempotent by `eventoId` | US-11 to US-21 |
-| `POST /api/agente/eventos/{eventoId}/clip` | Returns a pre-signed S3 PUT URL to upload the 6 s + 6 s clip | US-18 |
+| `POST /api/agente/eventos/{eventoId}/clip` | Returns a pre-signed PUT URL (Azure Blob SAS, or S3) to upload the 6 s + 6 s clip | US-18 |
 | `GET /api/agente/configuracion` | Current classification thresholds and agent version, so agents can update themselves | — |
 | `GET /api/versiones` | The latest published version of Te Tengo Captura per system, its installer and SHA-256 (public; API contract §12) | US-43 |
 | `POST /api/agente/eventos/{eventoId}/clip/puntos` | Pre-signed PUT URL for the body landmarks of the event's clip | US-36 |
@@ -49,6 +49,7 @@ Every agent token is checked on every request: the tokens of a PC that left the 
   "parametros": { "angulo_grados": 22.1, "razon_ancho_alto": 1.8, "velocidad": 0.41 }
 }
 ```
+A `caida` declared by the slow-fall rule R9 also carries `"caida_lenta": 1` and `"descenso"` (hip drop in body lengths) in `parametros`; the API stores the map as it comes.
 `tipo` is one of:
 - `caida`
 - `caida_confirmada` (30 s on the floor)
@@ -95,7 +96,7 @@ Every agent token is checked on every request: the tokens of a PC that left the 
 ```json
 { "contentType": "video/mp4", "tamanoBytes": 734003 }
 ```
-→ `201 {urlSubida, cabeceras: {nombre: valor}, expiraEn}`: a pre-signed URL valid for 10 minutes. The agent then sends `PUT urlSubida` with exactly those headers (e.g. `Content-Type`; the map may be empty) and the MP4 body. The clip belongs to the alert the event created or updated; the app sees it once the storage has the object. Errors: `404 EVENTO_NO_ENCONTRADO` if the event is unknown or created no alert.
+→ `201 {urlSubida, cabeceras: {nombre: valor}, expiraEn}`: a pre-signed URL valid for 10 minutes. The agent then sends `PUT urlSubida` with exactly those headers and the MP4 body. They depend on the store: `Content-Type` with S3 or R2; `Content-Type` and `x-ms-blob-type: BlockBlob` with Azure Blob Storage, the production store (an Azure Put Blob without `x-ms-blob-type` is refused); the map may be empty. Header names are case-insensitive. The same applies to every `urlSubida` below (movement files, light files, clip landmarks). The clip belongs to the alert the event created or updated; the app sees it once the storage has the object. Errors: `404 EVENTO_NO_ENCONTRADO` if the event is unknown or created no alert.
 
 **Configuration** — `GET /api/agente/configuracion` → `200 {versionAgente, umbrales: {…}}`, where `umbrales` uses the field names of `Umbrales` in the detection package (`docs/classification-spec.md`); unknown or missing fields keep the agent's local values.
 - `versionAgente` is the latest published Windows version of `GET /api/versiones` (below); while nothing is published there, the backend's `tetengo.agente.version-publicada` (`TT_AGENTE_VERSION_PUBLICADA`, default `0.2.0`). The agent only logs a difference: updates use `GET /api/versiones`.
@@ -252,14 +253,14 @@ Body landmarks only, never images (ADR 0010). **Nothing is stored, on the PC or 
   "tamanoBytes": 412345, "sha256": "<64 hex>", "fotogramas": 2400 }
 ```
    → `201 {archivoId, urlSubida, cabeceras: {nombre: valor}, expiraEn}` (10 minutes). The object key is `movimientos/<hogar>/<camara>/YYYY/MM/DD/HH/mm.parquet` from `desde` in UTC: one file per camera and start.
-2. `PUT urlSubida` with exactly those headers (`Content-Type: application/vnd.apache.parquet`) and the file. The bytes go straight to the storage, never through the API.
+2. `PUT urlSubida` with exactly those headers (`Content-Type: application/vnd.apache.parquet`, plus `x-ms-blob-type: BlockBlob` on Azure) and the file. The bytes go straight to the storage, never through the API.
 3. `POST /api/agente/movimientos/{archivoId}/confirmacion` → `200 {archivoId, estado: "DISPONIBLE", tamanoBytes}`: the file enters the index. `409 ARCHIVO_NO_SUBIDO`: the storage does not have it; upload it again.
 - Errors of step 1: `409 SIN_CONSENTIMIENTO_DE_MOVIMIENTOS` or `409 MOVIMIENTOS_EN_LA_NUBE_DESACTIVADOS` (stop uploading and check the state), `422 MOVIMIENTOS_FUERA_DEL_PLAZO` (already older than the retention: drop it from the queue), `409 ARCHIVO_YA_SUBIDO {archivoId}` (it is already in the index: drop it), `400 VALIDACION` (`hasta` after `desde`, at most 10 minutes, `desde` not ahead of the server's clock by more than 1 minute, `tamanoBytes` up to 50 MB, `sha256` 64 hex characters). Asking again for a file still pending returns a new URL for the same `archivoId`.
 - If the consent is revoked between the upload and the confirmation, the confirmation answers `409 SIN_CONSENTIMIENTO_DE_MOVIMIENTOS` and the API deletes the object.
 
 **Light replay file** (US-39): after the Parquet file is in the index, the same frames in the light format below, so the app can draw them on every platform. Same lane, right after its Parquet file; written from the same rows, kept, encrypted and deleted on the PC together with it.
 4. `POST /api/agente/movimientos/{archivoId}/ligero` (camera token) `{"tamanoBytes": 256123, "sha256": "<64 hex>"}` → `201 {urlSubida, cabeceras, expiraEn}` (10 minutes); the object key is the Parquet file's with `.ttmov` (`…/mm.ttmov`). `archivoId` comes from step 1, or from the body of its `409 ARCHIVO_YA_SUBIDO` when the Parquet file was uploaded before.
-5. `PUT urlSubida` with exactly those headers (`Content-Type: application/gzip`) and the file.
+5. `PUT urlSubida` with exactly those headers (`Content-Type: application/gzip`, plus `x-ms-blob-type: BlockBlob` on Azure) and the file.
 6. `POST /api/agente/movimientos/{archivoId}/ligero/confirmacion` → `200 {archivoId, tamanoBytes}`. `409 ARCHIVO_NO_SUBIDO`: the storage does not have it; upload it again.
 - Errors of step 4: `404 ARCHIVO_NO_ENCONTRADO` (not this camera's file, or deleted meanwhile: drop the light file), `409 ARCHIVO_YA_SUBIDO` (the light file is already in the index: drop it), `409 SIN_CONSENTIMIENTO_DE_MOVIMIENTOS` or `409 MOVIMIENTOS_EN_LA_NUBE_DESACTIVADOS` (like step 1), `400 VALIDACION` (`tamanoBytes` up to 50 MB, `sha256` 64 hex characters). A revocation before step 6 deletes the object like step 3. An older API without these paths answers `404` without `codigo`: upload the Parquet file only.
 - The light file is deleted with its Parquet file (retention, revocation, the day's cleanup of unconfirmed uploads).
