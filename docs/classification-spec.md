@@ -130,6 +130,9 @@ M3 = 1  if  P ≥ T ,  T = 1         when walking P < 1; when falling P > 1
 | **R7** | `movimiento_inestable` | M1 and M2 without reaching M3, and the person is upright again within the window | **Proposal** (see below). |
 | **R8** | `deteccion_no_confiable` | 300 consecutive seconds without a valid pose. The notice is sent once, until the person is seen again. | **Backlog:** US-15, "Condiciones de captura". |
 | **R9** | `caida` (slow fall) | Outside `EN_EL_SUELO`: the person was upright during the last 10 s, the hip is ≥ 0.4 center-line lengths below the highest upright hip of those 10 s, and the body has been horizontal (M3) for 2 s. Goes to `EN_EL_SUELO` like R4. | **Proposal** (see below; ADR 0009). |
+| **F1** | — (precondition of R4) | R4 may start only if the person was upright (the R5 test, with A6) during the last T s. Off by default (`erguido_previo_caida_s` unset). | **Proposal, post hoc** (ADR 0011): designed after the hold-out tests (validation.md, sections 6 and 8). |
+| **F2** | — (silent exit) | In `EN_EL_SUELO`, after X s in which every frame with a pose is neither tilted (M2) nor horizontal (M3), go back to `NORMAL` without `recuperacion`; the pending R6 confirmation is dropped. Off by default (`salida_suelo_sin_evidencia_s` unset). | **Proposal, post hoc** (ADR 0011). |
+| **F3** | — (variant of F1) | F1 with the geometric upright test (θ > 45°, P < 1, head above the feet) instead of R5's, i.e. without A6's visibility gate (`erguido_previo_exige_visibles = false`). | **Proposal, post hoc** (ADR 0011): designed after F1's leave-one-dataset-out losses. |
 
 ### Reaction window: 1.48 s
 Gutiérrez et al. (2023) model the body as an inverted pendulum. With the center of mass height of older adults (0.974 m in men and 0.930 m in women), they calculate that a fall without reaction takes **between 1.0 and 1.48 s**. The upper limit is used as the maximum time between the start of the fall and the horizontal posture.
@@ -161,6 +164,15 @@ caida   if  D ≥ 0.4  and  M3 on every frame with a pose during the last P s   
 - The event is the same `caida`, with `caida_lenta = 1` and `descenso = D` in its parameters, and continues to `EN_EL_SUELO` as R4.
 
 **Limitations:** lying down **on the floor** on purpose looks the same as a slow fall that ends lying (it adds false alarms in URFD); a slow fall that ends **sitting** on the floor is not detected; and lying on a bed is excluded only by geometry, because no dataset has it. The default values come from geometry and the reported scenarios; on the datasets they add the slow falls that R4 missed (see validation.md, section 3.6).
+
+### F1–F3: fixes for the hold-out failures (proposals, post hoc, off by default)
+The hold-out tests showed that R4 fires on a person **lying still** (a lying body meets M2 and M3, and with v = 0.01 hip jitter meets M1) and that on MCFD an earlier `caida` can leave the classifier in `EN_EL_SUELO` when a real fall comes. Three rules were written down with their rationale before testing them (ADR 0011) and evaluated leaving one of the five datasets out ([validation.md](validation.md), section 9):
+
+- **F1** (rejected): R4 needs the person upright, with R5's strict test, in the last T s. A fall starts from a body supported over its feet or its seat; a body lying for longer than the fall itself has no balance to lose. It removed the lying-still alarms but lost falls, because the cameras often hide a key point of a standing person and A6 then never sees "upright".
+- **F2** (rejected): leave `EN_EL_SUELO` silently after X s with neither M2 nor M3. No effect: on MCFD's wide-angle views a person sitting or crouching does look tilted.
+- **F3** (accepted under one of the two selection criteria; **not the default**): F1 with the geometric upright test. A6 protects decisions that tell the family the person is fine (R5) or downgrade an alarm (R7); in F1 a doubtful "upright" frame only lets R4 run as it does without F1, so the gate is not needed. Leaving one dataset out, with T = 10 s and v = 0.01: macro sensitivity 72.6 % and specificity 82.9 %, against 74.0 % and 74.5 % for the shipped classifier (UP-Fall lying still 22 → 0 false alarms, GMDCSA24 bed 12 → 9). Opt-in through `[clasificacion]`; to be confirmed in the pilot.
+
+**Limitation:** lying down on a bed right after sitting on it is still a false alarm with any precondition.
 
 ### Changes tested to raise sensitivity and rejected
 None of these is in the code; they are recorded so that they are not tried again without new data. Each one was evaluated with its thresholds chosen inside every training fold ([validation.md](validation.md), section 7; ADR 0010).
@@ -195,6 +207,9 @@ Adaptations A3, A6, A7 and A8 and the speed threshold came from validating with 
 | `descenso_caida_lenta_min` | 0.4 lengths | R9 | Proposal: between a bed (≈ 0.2) and the floor (≈ 0.5) | 0.3–0.6 |
 | `ventana_caida_lenta_s` | 10 s | R9 | Proposal | 5–20 s (untested) |
 | `permanencia_caida_lenta_s` | 2 s | R9 | Proposal | 1.5–5 s |
+| `erguido_previo_caida_s` | unset (off); proposal 10 s | F1, F3 | Proposal, post hoc (ADR 0011) | — (not in US-45) |
+| `erguido_previo_exige_visibles` | true (F1); proposal false (F3) | F1, F3 | Proposal, post hoc (ADR 0011) | — (not in US-45) |
+| `salida_suelo_sin_evidencia_s` | unset (off) | F2 | Proposal, rejected (ADR 0011) | — (not in US-45) |
 | `sin_deteccion_confiable_s` | 300 s | R8 | Backlog, US-15 | — (not in US-45) |
 | `visibilidad_min` | 0.5 | A5 | MediaPipe default value (Google, s.f.-a); to be calibrated | — (not in US-45) |
 
@@ -221,6 +236,7 @@ The safe ranges are those the installer may use per camera (US-45, CA-45.1 and C
 | R1–R3 | `tests/clasificacion/test_parametros.py` |
 | R4–R8 | `tests/clasificacion/test_estados.py`: fall, confirmation, recovery, recovered stumble, stumble that ends in a fall, crouching, bending over, walking and 5 min without a person |
 | R9 | `tests/clasificacion/test_estados.py`: sliding down and slumping back, kneeling and then lying, frames without a pose, lying on a bed, sitting on the floor for longer than the window, lying for less than 2 s, and horizontal after the reaction window |
+| F1–F3 | `tests/deteccion/clasificacion/test_estados.py`: off by default, lying still with hip jitter, fall from standing, upright outside the window, silent exit and the next fall, no exit while lying (confirmation kept), restart of the count and dropped confirmation, geometric upright with hidden ankles |
 
 ---
 

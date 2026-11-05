@@ -80,6 +80,30 @@ class Umbrales(BaseModel):
         ge=0,
         description="R9. Tiempo que el cuerpo debe seguir horizontal y abajo en una caída lenta.",
     )
+    erguido_previo_caida_s: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "R4, precondición F1 (propuesta, ADR 0011). R4 solo puede empezar si la persona se "
+            "vio erguida en los últimos segundos indicados. Sin valor: desactivada (validado)."
+        ),
+    )
+    erguido_previo_exige_visibles: bool = Field(
+        default=True,
+        description=(
+            "F1 (ADR 0011). Si es verdadero, la precondición usa la prueba de erguido de R5 con "
+            "los puntos clave visibles (A6); si es falso (variante F3), solo la geometría."
+        ),
+    )
+    salida_suelo_sin_evidencia_s: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "F2 (propuesta, ADR 0011). Sale de «en el suelo» sin aviso de recuperación cuando, "
+            "durante estos segundos, el cuerpo no está inclinado ni horizontal. Sin valor: "
+            "desactivada (validado)."
+        ),
+    )
     sin_deteccion_confiable_s: float = Field(
         default=300.0,
         gt=0,

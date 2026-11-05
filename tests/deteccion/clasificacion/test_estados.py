@@ -317,3 +317,131 @@ def test_umbrales_de_caida_lenta_por_defecto() -> None:
         10.0,
         2.0,
     )
+
+
+# ---------------------------------------------------------------------- F1 and F2 (ADR 0011)
+
+
+def tendida_con_temblor(desde: float, hasta: float) -> list[tuple[float, Pose | None]]:
+    """Lying still on the floor, with the hip jittering a few pixels up and down."""
+    n = round((hasta - desde) / PASO)
+    return [
+        (
+            round(desde + i * PASO, 2),
+            fabricas.pose(cabeza=(200, 400), cadera=(320, 400 + 4 * (i % 2)), tobillos=(440, 400)),
+        )
+        for i in range(n)
+    ]
+
+
+def de_pie_sin_tobillos(desde: float, hasta: float) -> list[tuple[float, Pose | None]]:
+    """Vertical and narrow, but with the ankles poorly visible (not "upright" for R5, A6)."""
+    puntos = list(fabricas.DE_PIE.landmarks)
+    puntos[27] = puntos[28] = Landmark(puntos[27].x, puntos[27].y, 0.3)
+    return tramo(desde, hasta, Pose(tuple(puntos), fabricas.ANCHO, fabricas.ALTO))
+
+
+F1 = CALIBRADOS.model_copy(update={"erguido_previo_caida_s": 3.0})
+F2 = CALIBRADOS.model_copy(update={"salida_suelo_sin_evidencia_s": 5.0})
+
+
+def test_f1_y_f2_desactivadas_por_defecto() -> None:
+    u = Umbrales()
+    assert u.erguido_previo_caida_s is None
+    assert u.salida_suelo_sin_evidencia_s is None
+
+
+def test_f1_tendida_quieta_no_es_caida() -> None:
+    # Already lying (M2 and M3 on every frame): hip jitter meets M1 with v = 0.01, so R4 alone
+    # fires; with F1 the person was never upright, so R4 cannot start.
+    secuencia = tendida_con_temblor(0, 20.0)
+    assert reproducir(ClasificadorCinematico(CALIBRADOS), secuencia)[0][1] is TipoEvento.CAIDA
+    c = ClasificadorCinematico(F1)
+    assert reproducir(c, secuencia) == []
+    assert c.fase is Fase.NORMAL
+
+
+def test_f1_caida_desde_de_pie_se_detecta() -> None:
+    c = ClasificadorCinematico(F1)
+    assert reproducir(c, [*de_pie(0, 1.0), (1.1, fabricas.CAYENDO)]) == [(1.1, TipoEvento.CAIDA)]
+    assert c.fase is Fase.EN_EL_SUELO
+
+
+def test_f1_exige_haber_estado_erguida_dentro_de_la_ventana() -> None:
+    # Upright until 1.0 s, leaning (not upright) for 4 s, then the hip drops while tilted.
+    secuencia = [*de_pie(0, 1.0), *tramo(1.1, 5.1, fabricas.INCLINADA), (5.1, fabricas.CAYENDO)]
+    assert reproducir(ClasificadorCinematico(F1), secuencia) == []
+    largo = F1.model_copy(update={"erguido_previo_caida_s": 10.0})
+    assert reproducir(ClasificadorCinematico(largo), secuencia) == [(5.1, TipoEvento.CAIDA)]
+
+
+def test_f2_sale_del_suelo_sin_recuperacion_y_detecta_la_siguiente_caida() -> None:
+    # A false alarm, then the person stands with the ankles hidden (R5 cannot see "upright"),
+    # is briefly seen upright (0.5 s, less than A8's 1 s) and falls for real.
+    secuencia = [
+        *de_pie(0, 1.0),
+        (1.1, fabricas.CAYENDO),
+        *de_pie_sin_tobillos(1.2, 7.3),
+        *tramo(7.3, 7.9, fabricas.DE_PIE),
+        (7.9, fabricas.CAYENDO),
+    ]
+    base = ClasificadorCinematico(CALIBRADOS)
+    assert reproducir(base, secuencia) == [(1.1, TipoEvento.CAIDA)]
+    assert base.fase is Fase.EN_EL_SUELO
+
+    c = ClasificadorCinematico(F2)
+    fases = []
+    eventos = []
+    for instante, pose in secuencia:
+        eventos += [(e.instante, e.tipo) for e in c.actualizar(instante, pose)]
+        fases.append((instante, c.fase))
+    assert eventos == [(1.1, TipoEvento.CAIDA), (7.9, TipoEvento.CAIDA)]
+    salida = next(t for t, f in fases if t > 1.1 and f is Fase.NORMAL)
+    assert salida == pytest.approx(6.2)  # 5 s after the first frame without floor evidence
+
+
+def test_f2_no_sale_mientras_esta_tendida_y_confirma() -> None:
+    suelo = [(round(1.2 + i, 1), fabricas.TENDIDA) for i in range(31)]
+    eventos = reproducir(
+        ClasificadorCinematico(F2), [*de_pie(0, 1.0), (1.1, fabricas.CAYENDO), *suelo]
+    )
+    assert eventos == [(1.1, TipoEvento.CAIDA), (31.2, TipoEvento.CAIDA_CONFIRMADA)]
+
+
+def test_f2_un_fotograma_inclinado_reinicia_la_cuenta_y_la_salida_anula_la_confirmacion() -> None:
+    secuencia = [
+        *de_pie(0, 1.0),
+        (1.1, fabricas.CAYENDO),
+        *de_pie_sin_tobillos(1.2, 5.0),
+        (5.0, fabricas.TENDIDA),  # floor evidence: the count restarts
+        *de_pie_sin_tobillos(5.1, 9.0),
+        *tramo(9.0, 40.0, None),  # not seen: neither restarts nor ends the count
+        *de_pie_sin_tobillos(40.0, 40.2),
+    ]
+    c = ClasificadorCinematico(F2)
+    fases = []
+    eventos = []
+    for instante, pose in secuencia:
+        eventos += [(e.instante, e.tipo) for e in c.actualizar(instante, pose)]
+        fases.append((instante, c.fase))
+    assert dict(fases)[9.0 - PASO] is Fase.EN_EL_SUELO
+    # The confirmation (30 s after the fall) comes while the person is not seen, before the
+    # silent exit at the next frame with a pose.
+    assert eventos == [(1.1, TipoEvento.CAIDA), (31.1, TipoEvento.CAIDA_CONFIRMADA)]
+    assert c.fase is Fase.NORMAL
+
+
+def test_f3_acepta_erguida_por_geometria_con_tobillos_dudosos() -> None:
+    # Standing with the ankles poorly visible for 5 s: not upright for F1 (A6), upright for F3.
+    # A short lean (visible, not upright) gives the speed its reference before the fall.
+    secuencia = [
+        *de_pie(0, 1.0),
+        *de_pie_sin_tobillos(1.1, 6.1),
+        *tramo(6.1, 6.6, fabricas.INCLINADA),
+        (6.6, fabricas.CAYENDO),
+    ]
+    assert reproducir(ClasificadorCinematico(F1), secuencia) == []
+    f3 = F1.model_copy(update={"erguido_previo_exige_visibles": False})
+    assert reproducir(ClasificadorCinematico(f3), secuencia) == [(6.6, TipoEvento.CAIDA)]
+    # Lying still is still never upright, by geometry either.
+    assert reproducir(ClasificadorCinematico(f3), tendida_con_temblor(0, 20.0)) == []
