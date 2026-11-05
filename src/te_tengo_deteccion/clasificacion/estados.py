@@ -37,6 +37,16 @@ found in the hold-out tests:
 * **F2** (``salida_suelo_sin_evidencia_s``): the classifier leaves ``EN_EL_SUELO`` without a
   ``recuperacion`` when, for the seconds given, the body is neither tilted nor horizontal, so an
   earlier false alarm does not mask the next real fall. The pending confirmation (R6) is dropped.
+
+Three more optional rules (proposals, ADR 0012, off by default) come from the specificity study:
+
+* **S1** (``retencion_caida_s``): the ``caida`` is held for the seconds given; if the person is
+  seen upright again during the hold (kneeling, picking something up), it is withdrawn as a
+  ``movimiento_inestable`` with ``caida_retirada = 1``.
+* **S3** (``ruta_sin_tobillos``): with the ankles hidden, R4 may start from the hip descent
+  measured with the upper body and from the torso angle (see ``MedidorCinematico``).
+* **S4** (``salto_identidad_max``): a pose whose hip jumped farther than a person can move is
+  treated as another person: the histories of the speed, R9, F1 and R5 are cleared.
 """
 
 from collections import deque
@@ -47,6 +57,8 @@ from te_tengo_deteccion.clasificacion import parametros
 from te_tengo_deteccion.clasificacion.medicion import Medicion, MedidorCinematico
 from te_tengo_deteccion.clasificacion.umbrales import Umbrales
 from te_tengo_deteccion.pose.schemas import Pose
+
+_EPSILON = 1e-9  # S1: tolerance of the timestamp differences
 
 
 class UmbralSinCalibrarError(ValueError):
@@ -128,6 +140,11 @@ class _DetectorCaidaLenta:
     def reiniciar(self) -> None:
         self._abajo_desde = self._referencia = None
 
+    def olvidar(self) -> None:
+        """S4: the upright frames belonged to another person."""
+        self._erguidas.clear()
+        self.reiniciar()
+
     def observar(
         self, instante: float, p: parametros.Parametros, erguido: bool, horizontal: bool
     ) -> bool:
@@ -164,7 +181,11 @@ class ClasificadorCinematico:
         self._u = umbrales
         self._velocidad_min = umbrales.velocidad_descenso_min
         self._medidor = MedidorCinematico(
-            umbrales.intervalo_velocidad_s, umbrales.ventana_velocidad_s, umbrales.visibilidad_min
+            umbrales.intervalo_velocidad_s,
+            umbrales.ventana_velocidad_s,
+            umbrales.visibilidad_min,
+            sin_tobillos=umbrales.ruta_sin_tobillos,
+            salto_max=umbrales.salto_identidad_max,
         )
         self._lenta = _DetectorCaidaLenta(
             umbrales.descenso_caida_lenta_min,
@@ -174,6 +195,8 @@ class ClasificadorCinematico:
         self._erguido_desde: float | None = None
         self._ultimo_erguido: float | None = None  # F1
         self._sin_suelo_desde: float | None = None  # F2
+        self._retenida: tuple[float, dict[str, float]] | None = None  # S1: held caida
+        self._retirar_desde: float | None = None  # S1: upright run during the hold
         self._ultima: Medicion | None = None
         self._fase = Fase.NORMAL
         self._inicio_caida = 0.0
@@ -201,6 +224,11 @@ class ClasificadorCinematico:
         )
 
     @property
+    def caida_retenida(self) -> bool:
+        """S1: a ``caida`` is being held and has not been emitted nor withdrawn yet."""
+        return self._retenida is not None
+
+    @property
     def ultima_medicion(self) -> Medicion | None:
         """Measurement of the last frame with a pose (to display or log it)."""
         return self._ultima
@@ -216,12 +244,24 @@ class ClasificadorCinematico:
         self._aviso_no_confiable = False
         self._ultima = self._medidor.medir(instante, pose)
         p, velocidad = self._ultima.parametros, self._ultima.velocidad
+        if self._ultima.salto:
+            # S4: another person; nothing seen so far tells anything about this one.
+            self._lenta.olvidar()
+            self._ultimo_erguido = self._erguido_desde = None
 
         m1 = velocidad is not None and velocidad >= self._velocidad_min
         # With the head below the feet (a fall towards the camera) the body is neither vertical
         # nor upright, even if the angle and the ratio do not show it (A7).
         m2 = p.angulo_grados < self._u.angulo_linea_central_max_grados or p.cabeza_bajo_pies
         m3 = p.razon_ancho_alto >= self._u.razon_ancho_alto_min or p.cabeza_bajo_pies
+        # S3: with the ankles hidden the center line points to guessed feet, so R4 uses the
+        # torso angle instead (only on the frames whose speed came from the upper body).
+        m2_inicio = m2
+        if self._ultima.sin_tobillos:
+            m2_inicio = (
+                p.angulo_tronco_grados is not None
+                and p.angulo_tronco_grados < self._u.angulo_linea_central_max_grados
+            )
         # "Upright" clears an alert (recovery) or downgrades it (unstable movement), so it is
         # only accepted with the key points clearly visible (A6). The fall conditions do use
         # doubtful poses: a false alarm is preferable to missing a fall.
@@ -260,13 +300,13 @@ class ClasificadorCinematico:
             instante, p, erguido, m3
         )
 
-        if self._fase is Fase.NORMAL and m1 and m2 and self._erguido_hace_poco(instante):
+        if self._fase is Fase.NORMAL and m1 and m2_inicio and self._erguido_hace_poco(instante):
             self._fase = Fase.INICIO_CAIDA
             self._inicio_caida = instante
 
         if self._fase is Fase.INICIO_CAIDA:
             if m3:
-                return [self._entrar_al_suelo(instante, datos)]
+                return self._entrar_al_suelo(instante, datos)
             if erguido:
                 self._fase = Fase.NORMAL
                 return [Evento(TipoEvento.MOVIMIENTO_INESTABLE, instante, datos)]
@@ -275,11 +315,19 @@ class ClasificadorCinematico:
 
         if lenta:
             datos |= {"caida_lenta": 1.0, "descenso": round(self._lenta.descenso, 3)}
-            return [self._entrar_al_suelo(instante, datos)]
+            return self._entrar_al_suelo(instante, datos)
         if self._fase is Fase.INICIO_CAIDA:
             return []
 
         if self._fase is Fase.EN_EL_SUELO:
+            if self._retenida is not None:
+                geometrico = (
+                    not p.cabeza_bajo_pies
+                    and p.angulo_grados > self._u.angulo_linea_central_max_grados
+                    and p.razon_ancho_alto < self._u.razon_ancho_alto_min
+                )
+                vuelve = erguido if self._u.retencion_exige_visibles else geometrico
+                return self._revisar_retencion(instante, vuelve, datos)
             if erguido_sostenido:
                 self._fase = Fase.NORMAL
                 return [Evento(TipoEvento.RECUPERACION, instante, datos)]
@@ -315,17 +363,51 @@ class ClasificadorCinematico:
             self._sin_suelo_desde = instante
         return instante - self._sin_suelo_desde >= espera
 
-    def _entrar_al_suelo(self, instante: float, datos: dict[str, float]) -> Evento:
+    def _entrar_al_suelo(self, instante: float, datos: dict[str, float]) -> list[Evento]:
         self._sin_suelo_desde = None
         self._lenta.reiniciar()
         self._fase = Fase.EN_EL_SUELO
         self._instante_caida = instante
         self._confirmada = False
-        return Evento(TipoEvento.CAIDA, instante, datos)
+        if self._u.retencion_caida_s is not None:
+            self._retenida, self._retirar_desde = (instante, datos), None
+            return []
+        return [Evento(TipoEvento.CAIDA, instante, datos)]
+
+    def _revisar_retencion(
+        self, instante: float, erguido: bool | None, datos: dict[str, float]
+    ) -> list[Evento]:
+        """S1: emit the held ``caida`` after the hold, or withdraw it if the person got up.
+
+        ``erguido`` is ``None`` on frames without a pose: they neither start nor break the
+        upright run, and they can only end the hold.
+        """
+        assert self._retenida is not None
+        assert self._u.retencion_caida_s is not None
+        inicio, datos_caida = self._retenida
+        if instante - inicio >= self._u.retencion_caida_s - _EPSILON:
+            self._retenida = None
+            retenida = {"retenida_s": round(instante - inicio, 3)}
+            return [Evento(TipoEvento.CAIDA, instante, datos_caida | retenida)]
+        if erguido is None:
+            return []
+        if not erguido:
+            self._retirar_desde = None
+            return []
+        if self._retirar_desde is None:
+            self._retirar_desde = instante
+        if instante - self._retirar_desde >= self._u.retencion_erguido_s - _EPSILON:
+            self._retenida = None
+            self._fase = Fase.NORMAL
+            return [
+                Evento(TipoEvento.MOVIMIENTO_INESTABLE, instante, datos | {"caida_retirada": 1.0})
+            ]
+        return []
 
     def _revisar_confirmacion(self, instante: float, datos: dict[str, float]) -> list[Evento]:
         if (
             self._fase is Fase.EN_EL_SUELO
+            and self._retenida is None
             and not self._confirmada
             and instante - self._instante_caida >= self._u.confirmacion_suelo_s
         ):
@@ -336,7 +418,11 @@ class ClasificadorCinematico:
     def _sin_pose(self, instante: float) -> list[Evento]:
         # If the person ended up on the floor out of view (for example, behind furniture), the
         # confirmation keeps counting: not seeing them does not mean they got up.
-        eventos = self._revisar_confirmacion(instante, {})
+        eventos = (
+            self._revisar_retencion(instante, None, {})
+            if self._retenida is not None
+            else self._revisar_confirmacion(instante, {})
+        )
         referencia = (
             self._ultimo_valido if self._ultimo_valido is not None else self._primer_instante
         )
