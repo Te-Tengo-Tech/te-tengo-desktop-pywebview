@@ -1,6 +1,6 @@
 # 0012. Specificity study: hold-and-cancel, ankle-free path and identity-jump gate
 
-**Status:** proposed (2026-11-05). Draft written in two steps: the context, the candidates, their rationale, grids, predictions and the protocol (sections "Context" to "Protocol") were committed **before** any candidate was run on any dataset; "Results" and "Decision" were added afterwards. Every candidate is off by default, so the shipped classifier does not change unless this ADR is accepted.
+**Status:** decided (2026-11-05): S1, S3 and every combination rejected; S4 kept as an opt-in for the pilot; **the shipped classifier does not change.** Draft written in two steps: the context, the candidates, their rationale, grids, predictions and the protocol (sections "Context" to "Protocol") were committed **before** any candidate was run on any dataset; "Results" and "Decision" were added afterwards. Every candidate is off by default, so the shipped classifier does not change unless this ADR is accepted.
 
 ## Context
 On the development data (URFD + CAUCAFall, 170 videos, leaving one group out) the shipped classifier (R4–R9, v = 0.01) has 82.5 % sensitivity and 78.9 % specificity: 19 false alarms in 90 daily activities and 14 missed falls. On the hold-out sets specificity is lower (GMDCSA24 65.4 %, UP-Fall 63.2 %, MCFD 114 false alarms per hour). ADR 0010 rejected five ways of raising sensitivity (relaxing A6, foreshortening, lost pose, re-calibrating angle and ratio), and ADR 0011 proposed F3 (R4 needs a geometric upright frame in the last T s) for lying still.
@@ -69,10 +69,26 @@ A hip-drop or torso-angle gate at the trigger (overlapping distributions in the 
 The diagnosis that motivated S1 and S3 used the same 170 development videos; nesting protects the thresholds, not the choice of rules. The clips are short, so S1's hold is censored in many of them. Units are not independent (cameras of one scenario). Simulated falls by young adults.
 
 ## Results
-*(added after the runs)*
+Full tables: [validation-especificidad.md](../validation-especificidad.md) and `resultados/especificidad/`. 16,400 development configurations (15,200 pre-registered, 1,200 for the exploratory S1 + S3).
+
+| Rule set | Development LOGO sens. / spec. | McNemar all (b/c, p) | GMDCSA24 | UP-Fall | MCFD events (FA/h) |
+|---|---|---|---|---|---|
+| Baseline | 82.5 / 78.9 | — | 91.1 / 65.4 | 68.2 / 63.2 | 47.8 / 87.2 (114) |
+| S1 (D = 5 s, U = 0.5 s, geometric) | 80.0 / 84.4 | 2/5, 0.45 | 91.1 / 82.7 | 60.0 / 67.6 | 26.6 / 94.1 (50) |
+| S2 = F3 | 80.0 / 80.0 | 2/1, 1.00 | (ADR 0011) | | |
+| S3 | 85.0 / 71.1 | 14/9, 0.41 | not run | | |
+| S4 | 82.5 / 78.9 | 0/0 | 91.1 / 65.4 | 68.2 / 63.2 | 47.3 / 87.8 (108) |
+
+- **S1** passed the development rule (specificity +5.5, sensitivity −2.5, CAUCAFall only; URFD's clips end before the hold, 51 decisions censored) and was a finalist with S4. On the hold-out it withdrew falls after which the pose shows a seated person (UP-Fall frontal view, 14 falls: seated bystander or the faller sitting up) and, on MCFD, emitted most alarms 5 s later, after the labelled lying period (46 of 55 lost windows). It fails adoption rule 7.
+- **S3** recovered 6 of the 7 ankle-hidden misses but added 7 false alarms and, with v re-chosen at 0.15, lost 4 other falls.
+- **Leave one dataset out (secondary):** under criterion 2 the folds pick a milder S1 (D = 2 s, U = 1 s, strict): macro 73.1 / 76.8 against 74.0 / 74.5 shipped, UP-Fall sensitivity −4.7; under Youden S1 is worse than the re-chosen baseline. F3 stays the best opt-in for specificity (72.6 / 82.9).
+- **S4** changed nothing on the development data and little on the hold-out (MCFD 114 → 108 false alarms per hour, one fall window lost).
+- The predictions held for S1 on the development data (kneeling and picking up) and for S2 (no gain); the prediction that S1 would not touch lying on purpose held; the risk of falls followed by sitting up was larger than expected.
 
 ## Decision
-*(added after the runs)*
+- S1, S3 and all combinations are **rejected**; their flags stay in the code, off by default, to reproduce the study.
+- S4 passes both rules without a measurable effect; it is an **opt-in** for the pilot (`salto_identidad_max = 1.0`), where bystanders are expected, and must be confirmed there before becoming a default.
+- The shipped classifier, its thresholds and the parity tests do not change.
 
 ## References
 Auvinet, E., Multon, F., Saint-Arnaud, A., Rousseau, J., & Meunier, J. (2011). Fall detection with multiple cameras: An occlusion-resistant method based on 3-D silhouette vertical distribution. *IEEE Transactions on Information Technology in Biomedicine, 15*(2), 290–300. https://doi.org/10.1109/TITB.2010.2087385

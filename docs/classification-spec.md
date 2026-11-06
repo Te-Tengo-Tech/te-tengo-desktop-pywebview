@@ -133,6 +133,9 @@ M3 = 1  if  P ≥ T ,  T = 1         when walking P < 1; when falling P > 1
 | **F1** | — (precondition of R4) | R4 may start only if the person was upright (the R5 test, with A6) during the last T s. Off by default (`erguido_previo_caida_s` unset). | **Proposal, post hoc** (ADR 0011): designed after the hold-out tests (validation.md, sections 6 and 8). |
 | **F2** | — (silent exit) | In `EN_EL_SUELO`, after X s in which every frame with a pose is neither tilted (M2) nor horizontal (M3), go back to `NORMAL` without `recuperacion`; the pending R6 confirmation is dropped. Off by default (`salida_suelo_sin_evidencia_s` unset). | **Proposal, post hoc** (ADR 0011). |
 | **F3** | — (variant of F1) | F1 with the geometric upright test (θ > 45°, P < 1, head above the feet) instead of R5's, i.e. without A6's visibility gate (`erguido_previo_exige_visibles = false`). | **Proposal, post hoc** (ADR 0011): designed after F1's leave-one-dataset-out losses. |
+| **S1** | — (hold of R4/R9) | The `caida` is held D s; if the person is upright (R5's test, or its geometry) for U s during the hold it is withdrawn as `movimiento_inestable` with `caida_retirada = 1`. Off by default (`retencion_caida_s` unset). | **Proposal, rejected** (ADR 0012): loses falls on UP-Fall and MCFD. |
+| **S3** | — (ankle-free R4) | With the ankles hidden and the nose, shoulders and hips visible, M1 uses the hip speed scaled by 2.2 × the nose–hip distance and M2 the torso angle. Off by default (`ruta_sin_tobillos = false`). | **Proposal, rejected** (ADR 0012): more false alarms than recovered falls. |
+| **S4** | — (identity gate) | A hip jump larger than J center-line lengths between consecutive poses (< 0.5 s apart) clears the speed, R9, F1 and R5 histories. Off by default (`salto_identidad_max` unset). | **Proposal, opt-in** (ADR 0012): neutral on the datasets; J = 1 fixed a priori. |
 
 ### Reaction window: 1.48 s
 Gutiérrez et al. (2023) model the body as an inverted pendulum. With the center of mass height of older adults (0.974 m in men and 0.930 m in women), they calculate that a fall without reaction takes **between 1.0 and 1.48 s**. The upper limit is used as the maximum time between the start of the fall and the horizontal posture.
@@ -210,6 +213,9 @@ Adaptations A3, A6, A7 and A8 and the speed threshold came from validating with 
 | `erguido_previo_caida_s` | unset (off); proposal 10 s | F1, F3 | Proposal, post hoc (ADR 0011) | — (not in US-45) |
 | `erguido_previo_exige_visibles` | true (F1); proposal false (F3) | F1, F3 | Proposal, post hoc (ADR 0011) | — (not in US-45) |
 | `salida_suelo_sin_evidencia_s` | unset (off) | F2 | Proposal, rejected (ADR 0011) | — (not in US-45) |
+| `retencion_caida_s`, `retencion_erguido_s`, `retencion_exige_visibles` | unset (off), 1 s, true | S1 | Proposal, rejected (ADR 0012) | — (not in US-45) |
+| `ruta_sin_tobillos` | false | S3 | Proposal, rejected (ADR 0012) | — (not in US-45) |
+| `salto_identidad_max` | unset (off); proposal 1.0 | S4 | Proposal, opt-in (ADR 0012) | — (not in US-45) |
 | `sin_deteccion_confiable_s` | 300 s | R8 | Backlog, US-15 | — (not in US-45) |
 | `visibilidad_min` | 0.5 | A5 | MediaPipe default value (Google, s.f.-a); to be calibrated | — (not in US-45) |
 
@@ -237,6 +243,7 @@ The safe ranges are those the installer may use per camera (US-45, CA-45.1 and C
 | R4–R8 | `tests/clasificacion/test_estados.py`: fall, confirmation, recovery, recovered stumble, stumble that ends in a fall, crouching, bending over, walking and 5 min without a person |
 | R9 | `tests/clasificacion/test_estados.py`: sliding down and slumping back, kneeling and then lying, frames without a pose, lying on a bed, sitting on the floor for longer than the window, lying for less than 2 s, and horizontal after the reaction window |
 | F1–F3 | `tests/deteccion/clasificacion/test_estados.py`: off by default, lying still with hip jitter, fall from standing, upright outside the window, silent exit and the next fall, no exit while lying (confirmation kept), restart of the count and dropped confirmation, geometric upright with hidden ankles |
+| S1, S3, S4 | `tests/deteccion/clasificacion/test_estados.py`, `test_medicion.py`, `test_parametros.py`: off by default, hold emitted after D s or on frames without a pose, withdrawn when upright again, strict vs geometric test, confirmation counted from the trigger, fall with hidden ankles, crouching with the torso upright, jump to another person, a real fall is not a jump |
 
 ---
 

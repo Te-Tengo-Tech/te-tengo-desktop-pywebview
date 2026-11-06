@@ -551,6 +551,19 @@ Criterion 1 (Youden). The baseline's folds move v to 0.12 (0.36 in the CAUCAFall
 - **MCFD negatives** are labelled periods of very different lengths; the per-hour rate is reported too. **UP-Fall "laying"** is lying still from the first frame, the easiest case for a precondition; GMDCSA24's bed shows that lying down after sitting is not solved.
 - **Simulated falls by young adults** onto mattresses; no older adults (section 5).
 
+## 10. Specificity study: hold-and-cancel, ankle-free path, identity-jump gate (2026-11-05)
+
+Four training-free candidates were pre-registered in [ADR 0012](adr/0012-specificity-study.md) and evaluated as in section 7 (nested leave-one-group-out on URFD + CAUCAFall, then a frozen, single run on GMDCSA24, UP-Fall and MCFD); full study in [validation-especificidad.md](validation-especificidad.md).
+
+| Rule set | Development sens. / spec. (LOGO, nested) | GMDCSA24 | UP-Fall | MCFD (events, FA/h) | Decision |
+|---|---|---|---|---|---|
+| Shipped | 82.5 / 78.9 | 91.1 / 65.4 | 68.2 / 63.2 | 47.8 / 87.2, 114 | kept |
+| S1 hold 5 s and cancel if upright | 80.0 / **84.4** | 91.1 / **82.7** | **60.0** / 67.6 | **26.6** / 94.1, 50 | rejected (loses falls on two hold-out sets) |
+| S3 ankle-free path | **85.0** / 71.1 | — | — | — | rejected on development |
+| S4 identity-jump gate | 82.5 / 78.9 | 91.1 / 65.4 | 68.2 / 63.2 | 47.3 / 87.8, 108 | opt-in for the pilot |
+
+S1 withdraws picking-up, kneeling, sitting-on-the-floor and crouching alarms, but also falls after which the pose shows someone sitting (the faller sitting up, or a seated bystander in UP-Fall's frontal view), and on MCFD its 5 s delay pushes most alarms past the labelled lying period. 16,400 development configurations were evaluated; **the shipped classifier does not change.**
+
 ## References
 
 Alam, E., Sufian, A., Dutta, P., Leo, M., & Hameed, I. A. (2024). GMDCSA-24: A dataset for human fall detection in videos. *Data in Brief, 57*, 110892. https://doi.org/10.1016/j.dib.2024.110892 · Data: https://doi.org/10.5281/zenodo.13354453
