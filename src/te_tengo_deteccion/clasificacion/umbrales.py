@@ -80,6 +80,65 @@ class Umbrales(BaseModel):
         ge=0,
         description="R9. Tiempo que el cuerpo debe seguir horizontal y abajo en una caída lenta.",
     )
+    erguido_previo_caida_s: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "R4, precondición F1 (propuesta, ADR 0011). R4 solo puede empezar si la persona se "
+            "vio erguida en los últimos segundos indicados. Sin valor: desactivada (validado)."
+        ),
+    )
+    erguido_previo_exige_visibles: bool = Field(
+        default=True,
+        description=(
+            "F1 (ADR 0011). Si es verdadero, la precondición usa la prueba de erguido de R5 con "
+            "los puntos clave visibles (A6); si es falso (variante F3), solo la geometría."
+        ),
+    )
+    salida_suelo_sin_evidencia_s: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "F2 (propuesta, ADR 0011). Sale de «en el suelo» sin aviso de recuperación cuando, "
+            "durante estos segundos, el cuerpo no está inclinado ni horizontal. Sin valor: "
+            "desactivada (validado)."
+        ),
+    )
+    retencion_caida_s: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "S1 (propuesta, ADR 0012). Retiene la caída estos segundos y la retira si la persona "
+            "vuelve a verse erguida. Sin valor: desactivada (validado)."
+        ),
+    )
+    retencion_erguido_s: float = Field(
+        default=1.0,
+        gt=0,
+        description="S1 (ADR 0012). Tiempo erguida durante la retención que retira la caída.",
+    )
+    retencion_exige_visibles: bool = Field(
+        default=True,
+        description=(
+            "S1 (ADR 0012). Si es verdadero, «erguida» es la prueba de R5 con los puntos clave "
+            "visibles (A6); si es falso, solo la geometría."
+        ),
+    )
+    ruta_sin_tobillos: bool = Field(
+        default=False,
+        description=(
+            "S3 (propuesta, ADR 0012). Con los tobillos ocultos, mide la bajada y la inclinación "
+            "con la parte superior del cuerpo (nariz, hombros y caderas visibles)."
+        ),
+    )
+    salto_identidad_max: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "S4 (propuesta, ADR 0012). Un salto de la cadera mayor que estos largos entre dos "
+            "fotogramas seguidos se trata como otra persona. Sin valor: desactivada (validado)."
+        ),
+    )
     sin_deteccion_confiable_s: float = Field(
         default=300.0,
         gt=0,

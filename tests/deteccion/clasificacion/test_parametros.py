@@ -73,3 +73,22 @@ def test_puntos_clave_visibles() -> None:
     oculto = list(fabricas.DE_PIE.landmarks)
     oculto[0] = Landmark(oculto[0].x, oculto[0].y, 0.2)  # poorly visible nose
     assert not parametros.puntos_clave_visibles(Pose(tuple(oculto), 640, 480), 0.5)
+
+
+def _con_hombros(pose: Pose, hombros: tuple[float, float]) -> Pose:
+    puntos = list(pose.landmarks)
+    for i in (11, 12):
+        puntos[i] = Landmark(hombros[0] / 640, hombros[1] / 480, 1.0)
+    return Pose(tuple(puntos), 640, 480)
+
+
+def test_angulo_y_largo_del_tronco() -> None:
+    # S3 (ADR 0012): the torso line does not use the ankles.
+    de_pie = _con_hombros(fabricas.DE_PIE, (320, 140))
+    assert parametros.angulo_tronco(de_pie) == pytest.approx(90.0)
+    assert parametros.largo_estimado(de_pie) == pytest.approx(2.2 * 120)
+    tendida = _con_hombros(fabricas.TENDIDA, (250, 400))
+    assert parametros.angulo_tronco(tendida) == pytest.approx(0.0)
+    # In the fixtures the shoulders sit on the hip: no torso line.
+    assert parametros.angulo_tronco(fabricas.DE_PIE) is None
+    assert parametros.tronco_visible(de_pie, 0.5)
