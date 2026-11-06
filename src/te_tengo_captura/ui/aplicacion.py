@@ -174,6 +174,7 @@ class Aplicacion:
                 cancelar_actualizacion=agente.actualizador.cancelar,
                 ir_a_la_descarga=agente.actualizador.ir_a_la_descarga,
                 actualizacion_automatica=agente.cambiar_actualizacion_automatica,
+                cambiar_idioma=agente.cambiar_idioma,
                 salir=self.salir,
                 restablecer=agente.restablecer,
                 desinstalar=self._desinstalar,

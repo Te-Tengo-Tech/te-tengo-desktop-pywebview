@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta, tzinfo
 from functools import partial
 from pathlib import Path
 
+from te_tengo_captura import i18n
 from te_tengo_captura.actualizaciones.alerta import SeguimientoAlerta
 from te_tengo_captura.almacen.gestor import AlmacenLocal, GrabadorCamara
 from te_tengo_captura.backend.cliente import ClienteBackend
@@ -155,8 +156,8 @@ class Agente:
             nombre=nombre_pc(),
             sistema=sistema_operativo(),
             programa=f"Te Tengo Captura {version}",
-            instalada_el=instalacion.instalada_el.strftime("%d/%m/%Y") if instalacion else None,
         )
+        self._instalada_el = instalacion.instalada_el if instalacion else None
         self._detenido = threading.Event()
         self.narrador = Narrador(
             camara=lambda: self.clave_camara,
@@ -252,7 +253,12 @@ class Agente:
             segundos_para_reintento=latido.segundos_para_reintento(),
             webcams=(webcam,),
         )
-        return derivar(entradas, self._hogar, self._pc, self.version, self._zona)
+        # The installation date is written in the window's current language.
+        pc = replace(
+            self._pc,
+            instalada_el=i18n.fecha(self._instalada_el) if self._instalada_el else None,
+        )
+        return derivar(entradas, self._hogar, pc, self.version, self._zona)
 
     @property
     def clave_camara(self) -> str:

@@ -17,6 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from te_tengo_captura import i18n
 from te_tengo_captura.coordinador import Coordinador
 from te_tengo_captura.ui.ventana import FONDO_ARRANQUE, WEB
 
@@ -95,7 +96,7 @@ class VentanaArranque:
         return self._cargada.wait(limite_s)
 
     def mostrar(self, porcentaje: int, indice_texto: int) -> None:
-        argumentos = json.dumps([porcentaje, indice_texto, self._version])[1:-1]
+        argumentos = json.dumps([porcentaje, indice_texto, self._version, i18n.idioma()])[1:-1]
         self._ventana.evaluate_js(f"window.ttg && window.ttg.arranque({argumentos})")
 
     def cerrar(self, esperar: Callable[[float], None] = time.sleep) -> None:

@@ -24,8 +24,10 @@ from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 from typing import Any, Protocol
 
+from te_tengo_captura import i18n
 from te_tengo_captura.backend.errores import ErrorBackendError
 from te_tengo_captura.backend.modelos import iso_utc
+from te_tengo_captura.i18n import t
 from te_tengo_captura.ids import uuid7
 
 logger = logging.getLogger(__name__)
@@ -79,7 +81,7 @@ class RegistroActividad:
 
     def anotar(
         self,
-        texto: str,
+        texto: i18n.Texto,
         tipo: str | None = None,
         objeto: str | None = None,
         anterior: str | None = None,
@@ -89,13 +91,20 @@ class RegistroActividad:
     ) -> dict[str, Any]:
         """Appends a change. ``tipo`` (one of ``TIPOS_DE_LA_PC``) makes it go to the API, with
         the extra fields of ``datos`` its type needs; ``quien`` is ``pc`` («Desde esta PC») or a
-        family member's initials."""
+        family member's initials. ``texto`` is kept in Spanish (``texto``, also in the log file)
+        and, when it can be written in other languages, in each of them (``texto_en``) for the
+        window; it is never sent to the API."""
+        espanol = i18n.escribir(texto, i18n.ES)
         entrada: dict[str, Any] = {
             "id": self._generar_id(),
             "ocurridoEn": iso_utc(self._reloj_utc()),
-            "texto": texto,
+            "texto": espanol,
             "quien": quien,
         }
+        if not isinstance(texto, str):
+            for otro in i18n.IDIOMAS:
+                if otro != i18n.ES:
+                    entrada[f"texto_{otro}"] = texto(otro)
         if tipo is not None:
             entrada["tipo"] = tipo
             for campo, valor in (
@@ -115,7 +124,7 @@ class RegistroActividad:
                     archivo.write(json.dumps(entrada, ensure_ascii=False) + "\n")
             except OSError as error:
                 logger.warning("No se pudo anotar la actividad: %s", error)
-        logger.info("Actividad: %s", texto)
+        logger.info("Actividad: %s", espanol)
         return entrada
 
     def entradas(self) -> list[dict[str, Any]]:
@@ -195,17 +204,19 @@ def para_la_ventana(
             continue
         dias = (hoy_local - momento.date()).days
         dia = (
-            "Hoy"
+            t("actividad.hoy")
             if dias == 0
-            else f"Ayer · {momento:%d/%m/%Y}"
+            else t("actividad.ayer", fecha=i18n.fecha(momento.date()))
             if dias == 1
-            else f"{momento:%d/%m/%Y}"
+            else i18n.fecha(momento.date())
         )
+        idioma = i18n.idioma()
+        texto = entrada.get(f"texto_{idioma}") if idioma != i18n.ES else None
         filas.append(
             {
                 "d": dia,
                 "t": f"{momento:%H:%M}",
-                "m": entrada.get("texto", ""),
+                "m": texto or entrada.get("texto", ""),
                 "who": entrada.get("quien", "pc"),
                 "pend": bool(entrada.get("pendiente")),
                 "scope": "pc",

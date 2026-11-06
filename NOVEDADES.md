@@ -8,6 +8,8 @@
 
 ## [Unreleased]
 
+- Ahora la aplicación también está en inglés: elige el idioma en «Avanzado», en «Acerca de».
+
 ## [0.7.1]
 
 - Ahora detecta también caídas lentas, por ejemplo resbalar de una silla hasta el suelo.

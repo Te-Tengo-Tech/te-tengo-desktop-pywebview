@@ -46,7 +46,7 @@ scripts/                  validation and camera test tools (keep them working)
 - **Consent and pauses are hard gates:** while `capturaPermitida` is `false` the agent does not read the webcam frames into the classifier and keeps no clip buffer (CA-05.2, CA-22.1).
 - **Never lose an event:** events go to the outbox first and are sent with retries; `eventoId` (UUID v7) makes resending safe.
 - **Privacy:** no frames on disk except the clip of an event until it is uploaded; delete it after a successful upload.
-- **UI copy:** Spanish, copied verbatim from `src/core.js` of the prototype. Never invent copy or business values; if something is missing, record it in `docs/BLOCKERS.md`.
+- **UI copy:** Spanish, copied verbatim from `src/core.js` of the prototype. Never invent copy or business values; if something is missing, record it in `docs/BLOCKERS.md`. Every text lives in the catalogs (`src/te_tengo_captura/i18n/es.py` and `en.py` for Python, `ui/web/textos.js` for the page) with the same id in Spanish and English: add each new text to both languages; Spanish stays the default.
 - **Language:** domain identifiers are Spanish (the ubiquitous language of the thesis). Code comments, docstrings, docs and commit messages are **English**.
 - **Secrets:** the installation credential and the camera token are never logged.
 
