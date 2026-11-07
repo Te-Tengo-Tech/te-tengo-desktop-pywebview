@@ -83,6 +83,9 @@ def test_ejecutar_abre_la_ventana_inicia_y_detiene_el_agente(
         def cambiar_actualizacion_automatica(self, activar: bool) -> bool:
             return activar
 
+        def cambiar_idioma(self, idioma: str) -> str:
+            return idioma
+
         def __init__(self) -> None:
             self.eventos: list[str] = []
             self.oyentes: list[object] = []

@@ -76,12 +76,29 @@
     cpu:'<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9.5 9.5h5v5h-5zM9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/>',
     layers:'<path d="M12 3.5 21 8.5l-9 5-9-5Z"/><path d="M3 12.5l9 5 9-5M3 16.5l9 5 9-5"/>',
     cube:'<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9Z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
+    globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.6 3.6 5.4 3.6 8.5s-1.2 5.9-3.6 8.5c-2.4-2.6-3.6-5.4-3.6-8.5s1.2-5.9 3.6-8.5Z"/>',
     users:'<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.2A5 5 0 0 1 21.5 19"/>'
   };
   function ic(n, extra){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"'+(extra?' '+extra:'')+'>'+P[n]+'</svg>'; }
   const WG = {min:'<path d="M0 5.5h10"/>', max:'<rect x=".5" y=".5" width="9" height="9" rx="1.4"/>', close:'<path d="M.6.6l8.8 8.8M9.4.6.6 9.4"/>'};
   function wg(n){ return '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">'+WG[n]+'</svg>'; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  /* ---------- texts: the es/en catalog of textos.js; tx(id, {name}) fills {name} placeholders ---------- */
+  if(!global.TTG_TEXTOS && typeof require === 'function'){ try{ require('./textos.js'); }catch(e){} }
+  const TEXTOS = global.TTG_TEXTOS || {es:{}, en:{}};
+  let LANG = 'es';
+  function setIdioma(l){
+    LANG = l==='en' ? 'en' : 'es';
+    if(typeof document !== 'undefined' && document.documentElement) document.documentElement.lang = LANG==='en' ? 'en' : 'es-PE';
+    return LANG;
+  }
+  function tx(id, v){
+    const c = TEXTOS[LANG] || {}, s = c[id] != null ? c[id] : (TEXTOS.es && TEXTOS.es[id] != null ? TEXTOS.es[id] : id);
+    return v ? s.replace(/\{(\w+)\}/g, (m, n) => v[n] != null ? String(v[n]) : m) : s;
+  }
+  /* one or several: id+'.uno' or id+'.otros', with {n} */
+  function tn(id, n, v){ return tx(id+(n===1 ? '.uno' : '.otros'), Object.assign({n:n}, v || {})); }
+  function dec(){ return tx('fmt.decimal'); }
   /* ---------- help behind a «?» icon (core.js infoTip): a 24 px button (44 px to click) whose text shows in a
      card with role="tooltip". A click pins it; hovering with the mouse or keyboard focus shows it; Escape, a click
      outside or scrolling close it. k names the tip so it stays open across renders; up opens it upwards and
@@ -89,7 +106,7 @@
   const ITIP = {open:null, pin:false, n:0, quiet:0, mute:null, on:false};
   function infoTip(text, label, o){ o = o||{}; const k = String(o.k||label), id = 'itip-'+k.replace(/[^a-z0-9]+/gi, '-')+'-'+(++ITIP.n), on = ITIP.open===k;
     return '<span class="itip'+(o.up?' up':'')+(o.end?' end':'')+(o.start?' start':'')+(o.cls?' '+o.cls:'')+(on?' open':'')+'" data-tip="'+esc(k)+'">'+
-      '<button type="button" class="itip-b" aria-label="Más información: '+esc(label)+'" aria-expanded="'+on+'" aria-describedby="'+id+'">'+ic(o.icon||'help')+'</button>'+
+      '<button type="button" class="itip-b" aria-label="'+tx('tip.mas_info', {x:esc(label)})+'" aria-expanded="'+on+'" aria-describedby="'+id+'">'+ic(o.icon||'help')+'</button>'+
       '<span class="itip-pop" role="tooltip" id="'+id+'">'+text+'</span></span>'; }
 
   /* ---------- marca Te Tengo: dos figuras abrazadas (core.js, kit de marca) ---------- */
@@ -156,17 +173,18 @@
   }
 
   /* ---------- textos de la casa (core.js / proto.js) ---------- */
-  const ROOM_ART = r => ({sala:'la Sala', dormitorio:'el Dormitorio', cocina:'la Cocina', comedor:'el Comedor', pasillo:'el Pasillo'})[String(r).trim().toLowerCase()] || '«'+r+'»';
+  /* «la Sala», «el Dormitorio» in Spanish; in English the room's name as the family wrote it */
+  const ROOM_ART = r => LANG==='en' ? String(r) : ({sala:'la Sala', dormitorio:'el Dormitorio', cocina:'la Cocina', comedor:'el Comedor', pasillo:'el Pasillo'})[String(r).trim().toLowerCase()] || '«'+r+'»';
   function pad2(n){ return String(n).padStart(2, '0'); }
   function mmss(s){ s = Math.max(0, s); return Math.floor(s/60) + ':' + pad2(s%60); }
-  function listY(a){ return a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' y ' + a[a.length-1]; }
+  function listY(a){ return a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + tx('lista.y') + a[a.length-1]; }
 
   /* ---------- ventana ---------- */
   function titlebar(){
     return '<div class="tb pywebview-drag-region"><div class="tb-app">'+appIcon('xs')+'<span>Te Tengo Captura</span></div><div class="tb-btns">'+
-      '<button class="tb-btn" data-act="minimize" aria-label="Minimizar" title="Minimizar">'+wg('min')+'</button>'+
-      '<button class="tb-btn" aria-disabled="true" tabindex="-1" aria-label="Maximizar (no disponible)" title="Maximizar">'+wg('max')+'</button>'+
-      '<button class="tb-btn close" data-act="close" aria-label="Cerrar" title="Cerrar">'+wg('close')+'</button></div></div>';
+      '<button class="tb-btn" data-act="minimize" aria-label="'+tx('tb.minimizar')+'" title="'+tx('tb.minimizar')+'">'+wg('min')+'</button>'+
+      '<button class="tb-btn" aria-disabled="true" tabindex="-1" aria-label="'+tx('tb.maximizar_no')+'" title="'+tx('tb.maximizar')+'">'+wg('max')+'</button>'+
+      '<button class="tb-btn close" data-act="close" aria-label="'+tx('tb.cerrar')+'" title="'+tx('tb.cerrar')+'">'+wg('close')+'</button></div></div>';
   }
   function sec(cls, enter, inner){ return '<section class="scr'+(cls?' '+cls:'')+(enter?' '+enter:'')+'" aria-labelledby="scr-h">'+inner+'</section>'; }
   function det(U, k, cls, summary, body){
@@ -176,112 +194,112 @@
   /* =================== Vincular esta PC (QR + código de 8 letras) =================== */
   function qrSVG(qr){
     const n = qr.n;
-    return '<svg class="qr" viewBox="-2 -2 '+(n+4)+' '+(n+4)+'" role="img" aria-label="Código QR para vincular esta PC" shape-rendering="crispEdges"><rect x="-2" y="-2" width="'+(n+4)+'" height="'+(n+4)+'" fill="#fff"/>'+
+    return '<svg class="qr" viewBox="-2 -2 '+(n+4)+' '+(n+4)+'" role="img" aria-label="'+tx('pair.qr')+'" shape-rendering="crispEdges"><rect x="-2" y="-2" width="'+(n+4)+'" height="'+(n+4)+'" fill="#fff"/>'+
       '<path d="'+esc(qr.d)+'" fill="#2B1D4E"/></svg>';
   }
   function pairCard(E){
     const p = E.pair;
     const off = (icon, t, s) => '<div class="card pair-card pair-off" role="status"><span class="ci lg aviso dash">'+ic(icon)+'</span><h2 class="t-h2">'+t+'</h2>'+
-      '<p class="t-small">'+s+' Reintentamos en <span class="mono" id="retry" data-r="pr">'+mmss(p.retry)+'</span>.</p>'+
-      '<button class="btn btn-secondary btn-sm" data-act="retryNow">'+ic('refresh')+'Reintentar ahora</button></div>';
-    if(p.fase==='sin_internet') return off('wifiOff', 'Sin internet', 'Conecta esta PC a internet.');
-    if(p.fase==='sin_servidor') return off('cloud', 'Te Tengo no responde', 'No tienes que hacer nada.');
+      '<p class="t-small">'+tx('pair.reintentamos', {s:s, t:'<span class="mono" id="retry" data-r="pr">'+mmss(p.retry)+'</span>'})+'</p>'+
+      '<button class="btn btn-secondary btn-sm" data-act="retryNow">'+ic('refresh')+tx('accion.reintentar_ahora')+'</button></div>';
+    if(p.fase==='sin_internet') return off('wifiOff', tx('pair.sin_internet'), tx('pair.conecta'));
+    if(p.fase==='sin_servidor') return off('cloud', tx('pair.sin_servidor'), tx('pair.nada'));
     if(!p.code || !p.qr) return '<div class="card pair-card" role="status"><div class="pane-scan"><span class="spin"></span></div></div>';
-    const spoken = p.code.replace('-', '').split('').join(' ').replace(/^(\S \S \S \S) /, '$1, guion, ');
+    const spoken = p.code.replace('-', '').split('').join(' ').replace(/^(\S \S \S \S) /, '$1, '+tx('pair.guion')+', ');
     return '<div class="card pair-card'+(p.fresh?' fresh':'')+'">'+
-      (p.renewed ? '<p class="renew">'+ic('refresh')+'Código nuevo · el anterior venció</p>' : '')+
+      (p.renewed ? '<p class="renew">'+ic('refresh')+tx('pair.renovado')+'</p>' : '')+
       '<div class="qrwrap">'+qrSVG(p.qr)+'<span class="qr-logo" aria-hidden="true">'+LOGO+'</span></div>'+
-      '<p class="t-meta">O escribe este código en la app:</p>'+
+      '<p class="t-meta">'+tx('pair.escribe')+'</p>'+
       '<p class="code-big"><span aria-hidden="true">'+esc(p.code)+'</span><span class="sr">'+esc(spoken)+'</span></p>'+
       '<p class="pair-url">'+esc(p.url)+'</p>'+
-      '<p class="pair-left'+(p.left<=60?' low':'')+'" data-r="pl">'+ic('clock')+'Vence en <span class="mono" id="pair-left">'+mmss(p.left)+'</span></p>'+
-      '<span class="sr" role="status" id="pair-ann">'+(p.renewed?'Código nuevo':'')+'</span></div>';
+      '<p class="pair-left'+(p.left<=60?' low':'')+'" data-r="pl">'+ic('clock')+tx('pair.vence', {t:'<span class="mono" id="pair-left">'+mmss(p.left)+'</span>'})+'</p>'+
+      '<span class="sr" role="status" id="pair-ann">'+(p.renewed?tx('pair.codigo_nuevo'):'')+'</span></div>';
   }
   function scrVincular(E, U, enter){
     const p = E.pair, ok = p.fase==='codigo' || p.fase==='pidiendo';
     return sec('pair', enter,
-      (p.re90 ? '<div class="notice warn band90" role="status">'+ic('clock')+'<div><b>Más de 90 días sin conexión</b><span>Vincúlala de nuevo.</span></div></div>' : '')+
+      (p.re90 ? '<div class="notice warn band90" role="status">'+ic('clock')+'<div><b>'+tx('pair.noventa')+'</b><span>'+tx('pair.noventa_d')+'</span></div></div>' : '')+
       '<div class="pair-grid"><div class="pair-l">'+
-        '<h1 class="t-title" id="scr-h" tabindex="-1">Vincula esta PC con tu celular</h1>'+
-        '<ol class="steps2"><li><span class="n">1</span><span>Abre la app Te Tengo</span></li>'+
-        '<li><span class="n">2</span><span class="path">Ajustes'+ic('chevR')+'PCs y cámaras'+ic('chevR')+'Agregar PC</span></li>'+
-        '<li><span class="n">3</span><span>Escanea este código</span></li></ol>'+
-        '<p class="pcname"><span class="ci">'+ic('monitor')+'</span><span>Esta PC: <b>'+esc(E.pcname)+'</b></span></p>'+
-        det(U, 'help', 'phelp', ic('mobile')+'¿Error en el celular?',
-          '<ul class="helplist"><li><b>«Este código ya venció o ya se usó»</b>Escanea el código nuevo.</li>'+
-          '<li><b>«Demasiados intentos»</b>Espera la hora que indica el celular.</li></ul>')+
+        '<h1 class="t-title" id="scr-h" tabindex="-1">'+tx('pair.titulo')+'</h1>'+
+        '<ol class="steps2"><li><span class="n">1</span><span>'+tx('pair.paso1')+'</span></li>'+
+        '<li><span class="n">2</span><span class="path">'+tx('ruta.ajustes')+ic('chevR')+tx('ruta.pcs')+ic('chevR')+tx('ruta.agregar')+'</span></li>'+
+        '<li><span class="n">3</span><span>'+tx('pair.paso3')+'</span></li></ol>'+
+        '<p class="pcname"><span class="ci">'+ic('monitor')+'</span><span>'+tx('pc.esta', {n:'<b>'+esc(E.pcname)+'</b>'})+'</span></p>'+
+        det(U, 'help', 'phelp', ic('mobile')+tx('pair.error'),
+          '<ul class="helplist"><li><b>'+tx('pair.error_vencio')+'</b>'+tx('pair.error_vencio_d')+'</li>'+
+          '<li><b>'+tx('pair.error_intentos')+'</b>'+tx('pair.error_intentos_d')+'</li></ul>')+
       '</div>'+pairCard(E)+'</div>'+
-      '<div class="pair-foot">'+(ok ? '<p class="wait2" role="status"><span class="spin"></span>Esperando aprobación en el celular…</p>'
-                                     : '<p class="wait2 stop"><span class="spin"></span>El código aparece con conexión</p>')+'</div>');
+      '<div class="pair-foot">'+(ok ? '<p class="wait2" role="status"><span class="spin"></span>'+tx('pair.esperando')+'</p>'
+                                     : '<p class="wait2 stop"><span class="spin"></span>'+tx('pair.con_conexion')+'</p>')+'</div>');
   }
   /* la PC informa las webcams que detectó; la familia las asigna desde la app */
   function foundList(E){
     const devs = E.devices;
-    if(!devs.length) return '<div class="notice warn">'+ic('cam')+'<div><b>No encontramos cámaras</b><span>Conecta una webcam por USB.</span></div></div>';
-    return '<div class="found"><p class="found-h">'+ic('usb')+'<b>Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'</b></p>'+
+    if(!devs.length) return '<div class="notice warn">'+ic('cam')+'<div><b>'+tx('cam.no_encontramos')+'</b><span>'+tx('cam.conecta_usb')+'</span></div></div>';
+    return '<div class="found"><p class="found-h">'+ic('usb')+'<b>'+tn('cam.detectamos', devs.length)+'</b></p>'+
       '<ul class="found-l">'+devs.map(d => '<li><span class="thumb art'+(!d.connected?' dim':'')+'">'+roomSVG(d.room || '')+'</span><span class="grow"><b>'+esc(d.name)+'</b>'+devTag(d)+'</span></li>').join('')+'</ul></div>';
   }
   function scrVinculada(E, U, enter){
     const kept = E.cams.length;
     return sec('', enter, '<div class="result linked"><span class="ok-badge">'+ic('check')+'</span>'+
-      '<h1 class="t-title" id="scr-h" tabindex="-1">Vinculada a la casa de '+esc(E.home.who)+'</h1>'+
-      '<p class="t-lead">Aprobó '+esc(E.linkedBy || '')+' a las <span class="mono">'+esc(E.linkedAt)+'</span> · <b>'+esc(E.pc.nombre)+'</b></p>'+
-      (kept ? '<div class="notice ok next">'+ic('check')+'<div><b>Las cámaras siguen en su habitación</b><span>'+esc(listY(E.cams.map(c => c.room)))+' · se cambian en la app</span></div></div>'
-            : '<div class="notice info next">'+ic('mobile')+'<div><b>Ahora elige las cámaras en la app</b><span class="path">Ajustes'+ic('chevR')+'PCs y cámaras'+ic('chevR')+esc(E.pc.nombre)+'</span></div></div>')+
+      '<h1 class="t-title" id="scr-h" tabindex="-1">'+tx('vinc.titulo', {who:esc(E.home.who)})+'</h1>'+
+      '<p class="t-lead">'+tx('vinc.aprobo', {who:esc(E.linkedBy || ''), t:'<span class="mono">'+esc(E.linkedAt)+'</span>', pc:'<b>'+esc(E.pc.nombre)+'</b>'})+'</p>'+
+      (kept ? '<div class="notice ok next">'+ic('check')+'<div><b>'+tx('vinc.siguen')+'</b><span>'+tx('vinc.siguen_d', {rooms:esc(listY(E.cams.map(c => c.room)))})+'</span></div></div>'
+            : '<div class="notice info next">'+ic('mobile')+'<div><b>'+tx('vinc.elige')+'</b><span class="path">'+tx('ruta.ajustes')+ic('chevR')+tx('ruta.pcs')+ic('chevR')+esc(E.pc.nombre)+'</span></div></div>')+
       foundList(E)+
-      (!E.consent ? '<div class="notice warn">'+ic('doc')+'<div><b>Falta el consentimiento de '+esc(E.home.first)+'</b><span>Hasta registrarlo en la app, las cámaras no se usan.</span></div></div>' : '')+
-      STAY_ON+
-      '<div class="actions"><button class="btn btn-primary btn-lg" data-act="toEstado">'+ic('pulse')+'Ir a Estado</button></div></div>');
+      (!E.consent ? '<div class="notice warn">'+ic('doc')+'<div><b>'+tx('consent.falta', {who:esc(E.home.first)})+'</b><span>'+tx('consent.falta_d')+'</span></div></div>' : '')+
+      stayOn()+
+      '<div class="actions"><button class="btn btn-primary btn-lg" data-act="toEstado">'+ic('pulse')+tx('vinc.ir_estado')+'</button></div></div>');
   }
   /* draft copy (docs/BLOCKERS.md): detection only works while Te Tengo runs */
-  const STAY_ON = '<div class="notice info stay-on">'+ic('power')+'<div><b>Deja Te Tengo encendido</b><span>Se inicia solo con la PC. Al cerrar la ventana, sigue en la bandeja junto al reloj.</span></div></div>';
+  function stayOn(){ return '<div class="notice info stay-on">'+ic('power')+'<div><b>'+tx('vinc.encendido')+'</b><span>'+tx('vinc.encendido_d')+'</span></div></div>'; }
   function scrRechazada(E, U, enter){
     return sec('', enter, '<div class="result"><span class="ci lg pausa">'+ic('x')+'</span>'+
-      '<h1 class="t-title" id="scr-h" tabindex="-1">No se vinculó esta PC</h1>'+
-      '<p class="t-lead">Alguien eligió «No reconozco esta PC» en la app.</p>'+
-      '<div class="actions"><button class="btn btn-primary btn-lg" data-act="otherCode">'+ic('qr')+'Mostrar otro código</button></div></div>');
+      '<h1 class="t-title" id="scr-h" tabindex="-1">'+tx('rech.titulo')+'</h1>'+
+      '<p class="t-lead">'+tx('rech.lead')+'</p>'+
+      '<div class="actions"><button class="btn btn-primary btn-lg" data-act="otherCode">'+ic('qr')+tx('rech.otro')+'</button></div></div>');
   }
   function scrQuitada(E, U, enter){
     return sec('', enter, '<div class="result"><span class="ci lg pausa">'+ic('unlink')+'</span>'+
-      '<h1 class="t-title" id="scr-h" tabindex="-1">'+(E.who ? 'Se quitó de la casa de '+esc(E.who) : 'Se quitó de la vivienda')+'</h1>'+
-      '<p class="t-lead">La familia la quitó desde la app a las <span class="mono">'+esc(E.at)+'</span>.</p>'+
-      '<div class="actions"><button class="btn btn-primary btn-lg" data-act="pairAgain">'+ic('link')+'Vincular de nuevo</button></div></div>');
+      '<h1 class="t-title" id="scr-h" tabindex="-1">'+(E.who ? tx('quit.casa_de', {who:esc(E.who)}) : tx('quit.vivienda'))+'</h1>'+
+      '<p class="t-lead">'+tx('quit.lead', {t:'<span class="mono">'+esc(E.at)+'</span>'})+'</p>'+
+      '<div class="actions"><button class="btn btn-primary btn-lg" data-act="pairAgain">'+ic('link')+tx('quit.vincular')+'</button></div></div>');
   }
 
   /* ---------- barra de pestañas ---------- */
-  function tabs(E){ return [['estado','pulse','Estado'], ['camaras','cam','Cámaras'], ['avanzado','sliders','Avanzado']]; }
+  function tabs(E){ return [['estado','pulse',tx('tab.estado')], ['camaras','cam',tx('tab.camaras')], ['avanzado','sliders',tx('tab.avanzado')]]; }
   function tabbar(E, U){
     const t = x => '<button class="tab'+(U.tab===x[0]?' sel':'')+'" role="tab" id="tab-'+x[0]+'" aria-selected="'+(U.tab===x[0])+'" aria-controls="panel" tabindex="'+(U.tab===x[0]?0:-1)+'" data-act="tab" data-arg="'+x[0]+'">'+ic(x[1])+'<span>'+x[2]+'</span></button>';
     const u = E.upd, up = updAvail(E), ver = u ? u.ver : (E.version || '');
-    const about = u ? '<button class="ab-open'+(up?' up':'')+'" id="sub-acerca" aria-pressed="'+(U.tab==='avanzado' && !(U.rp && U.rp.open) && U.adv.sub==='acerca')+'" data-act="toAbout" aria-label="Acerca de: versión '+esc(ver)+(up?', hay una versión nueva':'')+'" title="Acerca de · versión '+esc(ver)+'">'+ic('info')+'</button>' : '';
-    return '<nav class="tabbar" aria-label="Te Tengo Captura"><div class="tabs" role="tablist" aria-label="Secciones">'+tabs(E).map(t).join('')+'</div>'+
-      '<span class="tb-pc">'+ic('monitor')+'<span>Esta PC: <b>'+esc(E.pc.nombre)+'</b></span>'+about+'</span></nav>';
+    const about = u ? '<button class="ab-open'+(up?' up':'')+'" id="sub-acerca" aria-pressed="'+(U.tab==='avanzado' && !(U.rp && U.rp.open) && U.adv.sub==='acerca')+'" data-act="toAbout" aria-label="'+tx('about.aria', {v:esc(ver)})+(up?tx('about.aria_nueva'):'')+'" title="'+tx('about.title', {v:esc(ver)})+'">'+ic('info')+'</button>' : '';
+    return '<nav class="tabbar" aria-label="Te Tengo Captura"><div class="tabs" role="tablist" aria-label="'+tx('tab.secciones')+'">'+tabs(E).map(t).join('')+'</div>'+
+      '<span class="tb-pc">'+ic('monitor')+'<span>'+tx('pc.esta', {n:'<b>'+esc(E.pc.nombre)+'</b>'})+'</span>'+about+'</span></nav>';
   }
 
   /* =================== Actualizaciones (US-43) ===================
      The band under the tabs (on every tab), «Avanzado › Acerca de» and the dialogs. Python
      (te_tengo_captura/actualizaciones/actualizador.py) decides; the copy is the prototype's. */
-  const KEEP = 'Se mantienen la vinculación, las cámaras y los datos.';
+  function keep(){ return tx('upd.keep'); }
   function updAvail(E){ const u = E.upd; return !!(u && (u.latest || u.minima)); }
-  function updBtn(u, cls){ const ir = !u.download; return '<button class="btn btn-primary '+cls+'" data-act="updGo">'+ic(ir?'link':'download')+(ir?'Ir a la descarga':'Descargar')+'</button>'; }
-  function updTitle(u){ return u.minima ? 'Actualiza Te Tengo para seguir recibiendo alertas' : 'Hay una versión nueva ('+esc(u.latest)+')'; }
+  function updBtn(u, cls){ const ir = !u.download; return '<button class="btn btn-primary '+cls+'" data-act="updGo">'+ic(ir?'link':'download')+(ir?tx('upd.ir'):tx('upd.descargar'))+'</button>'; }
+  function updTitle(u){ return u.minima ? tx('upd.minima') : tx('upd.nueva', {v:esc(u.latest)}); }
   function updBand(E){
     const u = E.upd; if(!u || (!updAvail(E) && u.st!=='restart')) return '';
     const v = esc(u.latest || ''), ver = esc(u.ver);
     const B = (cls, icon, inner, btns) => '<div class="upband'+(cls?' '+cls:'')+'" role="status" id="upband"><span class="ub-i">'+icon+'</span>'+inner+(btns?'<div class="ub-btns">'+btns+'</div>':'')+'</div>';
-    const notes = u.latest ? '<button class="btn btn-ghost btn-xs" data-act="updNotes">Qué cambió</button>' : '';
-    const retry = '<button class="btn btn-secondary btn-xs" data-act="updGo">'+ic('refresh')+'Reintentar</button>';
-    const kept = infoTip('Sigues con la versión '+ver+'. No se instaló nada.', 'versión actual', {k:'upd-kept', end:1});
+    const notes = u.latest ? '<button class="btn btn-ghost btn-xs" data-act="updNotes">'+tx('upd.que_cambio')+'</button>' : '';
+    const retry = '<button class="btn btn-secondary btn-xs" data-act="updGo">'+ic('refresh')+tx('upd.reintentar')+'</button>';
+    const kept = infoTip(tx('upd.kept', {v:ver}), tx('upd.kept_l'), {k:'upd-kept', end:1});
     switch(u.st){
-      case 'dl': return B('', ic('download'), '<div class="ub-p" data-r="ubp"><div class="grow"><b>Descargando la versión '+v+'…</b><div class="ub-bar" role="progressbar" aria-label="Descarga" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+u.pct+'"><i style="transform:scaleX('+(u.pct/100)+')"></i></div></div>'+
-        '<span class="ub-n mono">'+u.pct+' %</span></div>'+(u.mb ? infoTip('La detección sigue mientras se descarga ('+u.mb+' MB).', 'descarga', {k:'upd-dl', end:1}) : ''), '<button class="btn btn-ghost btn-xs" data-act="updCancel">Cancelar</button>');
-      case 'verify': return B('', '<span class="spin"></span>', '<div class="grow"><b>Verificando la descarga…</b></div>'+infoTip('Comprobamos que el archivo es el que publicó Te Tengo (suma SHA-256).', 'verificación', {k:'upd-sha', end:1}));
-      case 'restart': return B('', '<span class="spin"></span>', '<div class="grow"><b>Reiniciando para actualizar…</b><span>'+KEEP+'</span></div>');
-      case 'wait': return B('wait', ic('clock'), '<div class="grow"><b>Se actualizará cuando termine '+(u.why==='alerta' ? 'la alerta' : 'la vista en vivo')+'</b>'+(u.ready ? '<span>La versión '+v+' ya está descargada y verificada.</span>' : '')+'</div>', notes);
-      case 'net': return B('warn', ic('wifiOff'), '<div class="grow"><b>Sin internet: no se puede descargar la versión '+v+'</b></div>'+kept, retry);
-      case 'fail': return B('warn', ic('warn'), '<div class="grow"><b>No se pudo descargar la versión '+v+'</b></div>'+kept, retry);
-      case 'bad': return B('warn', ic('warn'), '<div class="grow"><b>No se pudo verificar la descarga. No se instaló.</b></div>'+infoTip('Borramos el archivo y sigues con la versión '+ver+'. Inténtalo más tarde.', 'verificación', {k:'upd-bad', end:1}), retry);
-      case 'disk': return B('warn', ic('drive'), '<div class="grow"><b>Falta espacio para la descarga</b>'+(u.free ? '<span>Libera '+u.free+' MB en el disco '+esc(u.drive)+'.</span>' : '')+'</div>', retry);
+      case 'dl': return B('', ic('download'), '<div class="ub-p" data-r="ubp"><div class="grow"><b>'+tx('upd.descargando', {v:v})+'</b><div class="ub-bar" role="progressbar" aria-label="'+tx('upd.descarga')+'" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+u.pct+'"><i style="transform:scaleX('+(u.pct/100)+')"></i></div></div>'+
+        '<span class="ub-n mono">'+tx('fmt.pct', {n:u.pct})+'</span></div>'+(u.mb ? infoTip(tx('upd.dl_tip', {mb:u.mb}), tx('upd.dl_l'), {k:'upd-dl', end:1}) : ''), '<button class="btn btn-ghost btn-xs" data-act="updCancel">'+tx('accion.cancelar')+'</button>');
+      case 'verify': return B('', '<span class="spin"></span>', '<div class="grow"><b>'+tx('upd.verificando')+'</b></div>'+infoTip(tx('upd.sha'), tx('upd.verif_l'), {k:'upd-sha', end:1}));
+      case 'restart': return B('', '<span class="spin"></span>', '<div class="grow"><b>'+tx('upd.reiniciando')+'</b><span>'+keep()+'</span></div>');
+      case 'wait': return B('wait', ic('clock'), '<div class="grow"><b>'+(u.why==='alerta' ? tx('upd.espera_alerta') : tx('upd.espera_vivo'))+'</b>'+(u.ready ? '<span>'+tx('upd.lista', {v:v})+'</span>' : '')+'</div>', notes);
+      case 'net': return B('warn', ic('wifiOff'), '<div class="grow"><b>'+tx('upd.net', {v:v})+'</b></div>'+kept, retry);
+      case 'fail': return B('warn', ic('warn'), '<div class="grow"><b>'+tx('upd.fail', {v:v})+'</b></div>'+kept, retry);
+      case 'bad': return B('warn', ic('warn'), '<div class="grow"><b>'+tx('upd.bad')+'</b></div>'+infoTip(tx('upd.bad_tip', {v:ver}), tx('upd.verif_l'), {k:'upd-bad', end:1}), retry);
+      case 'disk': return B('warn', ic('drive'), '<div class="grow"><b>'+tx('upd.disk')+'</b>'+(u.free ? '<span>'+tx('upd.disk_d', {mb:u.free, d:esc(u.drive)})+'</span>' : '')+'</div>', retry);
     }
     return B('', ic('download'), '<div class="grow"><b>'+updTitle(u)+'</b></div>', notes+updBtn(u, 'btn-xs'));
   }
@@ -289,22 +307,25 @@
     const u = E.upd; if(!u) return '';
     const up = updAvail(E), checking = u.checking || U.checking, busy = ['dl', 'verify', 'restart'].includes(u.st);
     let st;
-    if(checking) st = '<p class="ab-st" role="status"><span class="spin"></span><b>Buscando actualizaciones…</b></p>';
+    if(checking) st = '<p class="ab-st" role="status"><span class="spin"></span><b>'+tx('upd.buscando')+'</b></p>';
     else if(up) st = '<p class="ab-st up" role="status"><span class="ci">'+ic('download')+'</span><b>'+updTitle(u)+'</b></p>';
-    else st = '<p class="ab-st ok" role="status"><span class="ci calma">'+ic('check')+'</span><b>Tienes la última versión ('+esc(u.ver)+')</b></p>';
-    const btns = '<div class="ab-btns">'+(up && !checking ? updBtn(u, 'btn-sm').replace('data-act="updGo"', 'data-act="updGo"'+(busy?' disabled':''))+(u.latest ? '<button class="btn btn-ghost btn-sm" data-act="updNotes">Qué cambió</button>' : '')
-        : '<button class="btn btn-secondary btn-sm" data-act="updCheck"'+(checking||busy?' disabled':'')+'>'+ic('refresh')+'Buscar actualizaciones</button>')+'</div>';
+    else st = '<p class="ab-st ok" role="status"><span class="ci calma">'+ic('check')+'</span><b>'+tx('upd.ultima', {v:esc(u.ver)})+'</b></p>';
+    const btns = '<div class="ab-btns">'+(up && !checking ? updBtn(u, 'btn-sm').replace('data-act="updGo"', 'data-act="updGo"'+(busy?' disabled':''))+(u.latest ? '<button class="btn btn-ghost btn-sm" data-act="updNotes">'+tx('upd.que_cambio')+'</button>' : '')
+        : '<button class="btn btn-secondary btn-sm" data-act="updCheck"'+(checking||busy?' disabled':'')+'>'+ic('refresh')+tx('upd.buscar')+'</button>')+'</div>';
     const auto = u.os==='mac'
-      ? '<div class="card ab-card ab-mac"><span class="ci">'+ic('info')+'</span><div class="grow"><b>En Mac, por ahora se actualiza a mano</b><span>Es temporal, hasta que la app esté firmada por Apple.</span></div></div>'
-      : u.os==='windows' ? '<div class="card ab-card"><span class="ci">'+ic('refresh')+'</span><div class="grow"><b id="upd-auto-l">Actualizar automáticamente</b><span>De madrugada, si no hay una alerta.</span></div>'+
-          infoTip('Instala la versión nueva a las 03:00 si no hay una alerta ni una vista en vivo.', 'actualizar automáticamente', {k:'upd-auto', end:1, up:1})+sw(u.auto, 'updAuto', 'upd-auto-l')+'</div>' : '';
+      ? '<div class="card ab-card ab-mac"><span class="ci">'+ic('info')+'</span><div class="grow"><b>'+tx('upd.mac')+'</b><span>'+tx('upd.mac_d')+'</span></div></div>'
+      : u.os==='windows' ? '<div class="card ab-card"><span class="ci">'+ic('refresh')+'</span><div class="grow"><b id="upd-auto-l">'+tx('upd.auto')+'</b><span>'+tx('upd.auto_d')+'</span></div>'+
+          infoTip(tx('upd.auto_tip'), tx('upd.auto_l'), {k:'upd-auto', end:1, up:1})+sw(u.auto, 'updAuto', 'upd-auto-l')+'</div>' : '';
+    /* «Idioma»: Español or English for the window, the tray and the notices (remembered on this PC) */
+    const lang = '<div class="card ab-card ab-lang"><span class="ci">'+ic('globe')+'</span><div class="grow"><b id="lang-l">'+tx('idioma.titulo')+'</b><span>'+tx('idioma.d')+'</span></div>'+
+      '<div class="seg2 sm" role="radiogroup" aria-labelledby="lang-l">'+['es', 'en'].map(l => '<button role="radio" lang="'+l+'" aria-checked="'+(LANG===l)+'" tabindex="'+(LANG===l?0:-1)+'" data-act="lang" data-arg="'+l+'">'+tx('idioma.'+l)+'</button>').join('')+'</div></div>';
     const last = u.last ? u.last.replace(/ (\d\d:\d\d)$/, ' <span class="mono">$1</span>') : null;
-    const reset = '<div class="card ab-card ab-reset"><span class="ci caida">'+ic('trash')+'</span><div class="grow"><b>Restablecer esta PC</b><span>La desvincula y borra todo lo que guardó, como recién instalada.</span></div>'+
-        '<button class="btn btn-danger-ghost btn-sm" data-act="resetAsk">Restablecer…</button></div>'+
-      (u.os==='mac' ? '<div class="card ab-card ab-reset"><span class="ci caida">'+ic('x')+'</span><div class="grow"><b>Desinstalar</b><span>Restablece esta PC y mueve Te Tengo Captura a la Papelera.</span></div>'+
-        '<button class="btn btn-danger-ghost btn-sm" data-act="uninstallAsk">Desinstalar…</button></div>' : '');
-    return '<div class="about"><div class="card ab-main"><span class="ab-icon">'+appIcon()+'</span><div class="grow"><h2 class="t-h2">Te Tengo Captura</h2><p class="t-meta">Versión <span class="mono">'+esc(u.ver)+'</span>'+(up ? ' · instalada' : '')+'</p>'+st+
-        (last ? '<p class="t-meta ab-last"><span>Última búsqueda: '+last+'</span>'+infoTip('Busca sola al abrir el programa y una vez al día.', 'búsqueda de versiones', {k:'upd-when', start:1})+'</p>' : '')+'</div>'+btns+'</div>'+auto+reset+'</div>';
+    const reset = '<div class="card ab-card ab-reset"><span class="ci caida">'+ic('trash')+'</span><div class="grow"><b>'+tx('reset.titulo')+'</b><span>'+tx('reset.d')+'</span></div>'+
+        '<button class="btn btn-danger-ghost btn-sm" data-act="resetAsk">'+tx('reset.btn')+'</button></div>'+
+      (u.os==='mac' ? '<div class="card ab-card ab-reset"><span class="ci caida">'+ic('x')+'</span><div class="grow"><b>'+tx('uninst.titulo')+'</b><span>'+tx('uninst.d')+'</span></div>'+
+        '<button class="btn btn-danger-ghost btn-sm" data-act="uninstallAsk">'+tx('uninst.btn')+'</button></div>' : '');
+    return '<div class="about"><div class="card ab-main"><span class="ab-icon">'+appIcon()+'</span><div class="grow"><h2 class="t-h2">Te Tengo Captura</h2><p class="t-meta">'+tx('about.version', {v:'<span class="mono">'+esc(u.ver)+'</span>'})+(up ? tx('about.instalada') : '')+'</p>'+st+
+        (last ? '<p class="t-meta ab-last"><span>'+tx('about.ultima', {t:last})+'</span>'+infoTip(tx('about.cuando'), tx('about.cuando_l'), {k:'upd-when', start:1})+'</p>' : '')+'</div>'+btns+'</div>'+auto+lang+reset+'</div>';
   }
   function scrMain(E, U, enter){
     const tab = tabs(E).some(x => x[0]===U.tab) ? U.tab : 'estado';
@@ -329,50 +350,50 @@
   function instData(E){
     const pc = E.pc;
     const origen = pc.vinculada_por
-      ? '<div><dt>Vinculada</dt><dd>Por '+esc(pc.vinculada_por)+' el '+esc(pc.vinculada_el)+'</dd></div>'
-      : '<div><dt>Instalación</dt><dd>'+esc(pc.instalada_el || '')+'</dd></div>';
-    return '<dl class="conf-kv"><div><dt>Esta PC</dt><dd>'+esc(pc.nombre)+'</dd></div><div><dt>Sistema</dt><dd>'+esc(pc.sistema)+'</dd></div>'+
-      origen+'<div><dt>Programa</dt><dd>'+esc(pc.programa)+'</dd></div></dl>';
+      ? '<div><dt>'+tx('inst.vinculada')+'</dt><dd>'+tx('inst.por', {who:esc(pc.vinculada_por), d:esc(pc.vinculada_el)})+'</dd></div>'
+      : '<div><dt>'+tx('inst.instalacion')+'</dt><dd>'+esc(pc.instalada_el || '')+'</dd></div>';
+    return '<dl class="conf-kv"><div><dt>'+tx('inst.esta_pc')+'</dt><dd>'+esc(pc.nombre)+'</dd></div><div><dt>'+tx('inst.sistema')+'</dt><dd>'+esc(pc.sistema)+'</dd></div>'+
+      origen+'<div><dt>'+tx('inst.programa')+'</dt><dd>'+esc(pc.programa)+'</dd></div></dl>';
   }
   /* the app asks for the preview of a webcam to choose its room: shown on the PC, as the live view */
   function peekNotice(E, here){
     const d = (E.devices || []).find(x => x.peek);
     if(!d) return '';
-    return '<div class="notice info peek-n" role="status"><span class="led" aria-hidden="true"></span><div><b>'+(here ? 'Un familiar mira esta cámara para elegirla' : 'Un familiar mira la '+esc(d.name)+' para elegirla')+'</b></div>'+infoTip('No se graba. Queda en el registro de accesos que ve la familia en la app.','privacidad',{k:'peek',end:1})+'</div>';
+    return '<div class="notice info peek-n" role="status"><span class="led" aria-hidden="true"></span><div><b>'+(here ? tx('peek.esta') : tx('peek.la', {cam:esc(d.name)}))+'</b></div>'+infoTip(tx('peek.tip'),tx('tip.privacidad'),{k:'peek',end:1})+'</div>';
   }
   function panelEstado(E, U){
-    const list = E.cams.length ? '<ul class="crows" aria-label="Cámaras de esta PC">'+E.cams.map(camRow).join('')+'</ul>' : '';
-    return '<header class="cam-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">Vivienda de '+esc(E.home.who)+'</h1>'+(E.home.addr ? '<p class="t-meta mt4">'+ic('home')+esc(E.home.addr)+'</p>' : '')+'</div></header>'+
+    const list = E.cams.length ? '<ul class="crows" aria-label="'+tx('cam.titulo')+'">'+E.cams.map(camRow).join('')+'</ul>' : '';
+    return '<header class="cam-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">'+tx('estado.vivienda', {who:esc(E.home.who)})+'</h1>'+(E.home.addr ? '<p class="t-meta mt4">'+ic('home')+esc(E.home.addr)+'</p>' : '')+'</div></header>'+
       health(E)+peekNotice(E)+list+
-      '<div class="card instcard">'+det(U, 'inst', '', ic('lock')+'Datos de la instalación', instData(E))+'</div>';
+      '<div class="card instcard">'+det(U, 'inst', '', ic('lock')+tx('inst.datos'), instData(E))+'</div>';
   }
 
   /* ---------- Cámaras: las webcams de esta PC y su vista previa local ---------- */
   function devTag(d){
-    if(!d.connected) return '<span class="ctag off">'+ic('videoOff')+'Desconectada'+(d.room?' · '+esc(d.room):'')+'</span>';
-    if(d.busy) return '<span class="ctag busy">'+ic('warn')+'La usa otro programa</span>';
-    if(d.room) return '<span class="ctag use">'+ic('check')+'En uso · '+esc(d.room)+'</span>';
-    if(d.new) return '<span class="ctag new">'+ic('plus')+'Nueva · Sin usar</span>';
-    return '<span class="ctag">Sin usar</span>';
+    if(!d.connected) return '<span class="ctag off">'+ic('videoOff')+tx('dev.desconectada')+(d.room?' · '+esc(d.room):'')+'</span>';
+    if(d.busy) return '<span class="ctag busy">'+ic('warn')+tx('dev.ocupada')+'</span>';
+    if(d.room) return '<span class="ctag use">'+ic('check')+tx('dev.en_uso', {room:esc(d.room)})+'</span>';
+    if(d.new) return '<span class="ctag new">'+ic('plus')+tx('dev.nueva')+'</span>';
+    return '<span class="ctag">'+tx('dev.sin_usar')+'</span>';
   }
   function thisPc(E){
     if(!E.unlink) return '';
-    return '<div class="thispc"><span class="ci">'+ic('monitor')+'</span><span class="grow"><b>Esta PC: '+esc(E.pc.nombre)+'</b><span>Vinculada por '+esc(E.pc.vinculada_por || '')+' el '+esc(E.pc.vinculada_el || '')+'</span></span>'+
-      '<button class="btn btn-danger-ghost btn-xs" data-act="unlinkAsk">'+ic('unlink')+'Desvincular</button></div>';
+    return '<div class="thispc"><span class="ci">'+ic('monitor')+'</span><span class="grow"><b>'+tx('pc.esta', {n:esc(E.pc.nombre)})+'</b><span>'+tx('pc.vinculada_por', {who:esc(E.pc.vinculada_por || ''), d:esc(E.pc.vinculada_el || '')})+'</span></span>'+
+      '<button class="btn btn-danger-ghost btn-xs" data-act="unlinkAsk">'+ic('unlink')+tx('unlink.btn')+'</button></div>';
   }
   function selDev(E, U){ return E.devices.find(d => d.id===U.sel) || E.devices[0] || null; }
   function camInfo(E, U, d){
-    if(!d.connected) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('videoOff')+'<h2 class="t-h2">No responde: revisa el cable USB</h2>'+
-      '<p class="t-small">'+(d.room ? esc(d.room)+' sigue asignada a esta cámara. ' : '')+'Conéctala y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
-    if(d.busy) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('warn')+'<h2 class="t-h2">Otro programa usa esta cámara</h2>'+
-      '<p class="t-small">Ciérralo y pulsa Buscar de nuevo.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div></div>';
-    const by = d.room ? (d.by==='pc' ? 'Elegida en esta PC' : d.by==='app' ? 'La eligió la familia en la app' : 'El nombre se cambia en la app Te Tengo') : 'Se elige en la app';
+    if(!d.connected) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('videoOff')+'<h2 class="t-h2">'+tx('cam.no_responde')+'</h2>'+
+      '<p class="t-small">'+(d.room ? tx('cam.sigue_asignada', {room:esc(d.room)}) : '')+tx('cam.conectala')+'</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+tx('cam.buscar')+'</button></div></div>';
+    if(d.busy) return '<div class="cpane"><div class="pane-empty" role="status">'+ic('warn')+'<h2 class="t-h2">'+tx('cam.otro_programa')+'</h2>'+
+      '<p class="t-small">'+tx('cam.cierralo')+'</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+tx('cam.buscar')+'</button></div></div>';
+    const by = d.room ? (d.by==='pc' ? tx('cam.by_pc') : d.by==='app' ? tx('cam.by_app') : tx('cam.by_nombre')) : tx('cam.by_ninguna');
     return '<div class="cpane info"><figure class="pv2 art" id="pv" data-clave="'+esc(d.id)+'">'+roomSVG(d.room || '')+'<img class="pv-img" id="pv-img" alt="" hidden>'+
-      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption>'+PV_TIP()+PV_MODE(E, d)+'</figure>'+
+      '<figcaption class="pv-tag">'+ic('eye')+tx('cam.vista_previa', {cam:esc(d.name)})+'</figcaption>'+PV_TIP()+PV_MODE(E, d)+'</figure>'+
       (d.peek ? peekNotice(E, true) : '')+
-      '<dl class="cinfo"><div><dt>Habitación</dt><dd><b>'+(d.room ? esc(d.room) : 'Sin usar')+'</b><span>'+by+'</span></dd></div>'+
-      '<div><dt>Conexión</dt><dd><b class="ok">'+ic('check')+'Conectada</b><span>'+(d.new ? 'Nueva · por USB' : 'Por USB')+'</span></dd></div></dl>'+
-      (E.unlink ? '<div class="pane-actions start"><button class="btn btn-ghost btn-sm" data-act="hereOn">'+ic('cam')+'Elegir aquí (si estás instalando)</button></div>' : '')+'</div>';
+      '<dl class="cinfo"><div><dt>'+tx('cam.habitacion')+'</dt><dd><b>'+(d.room ? esc(d.room) : tx('dev.sin_usar'))+'</b><span>'+by+'</span></dd></div>'+
+      '<div><dt>'+tx('cam.conexion')+'</dt><dd><b class="ok">'+ic('check')+tx('cam.conectada')+'</b><span>'+(d.new ? tx('cam.nueva_usb') : tx('cam.por_usb'))+'</span></dd></div></dl>'+
+      (E.unlink ? '<div class="pane-actions start"><button class="btn btn-ghost btn-sm" data-act="hereOn">'+ic('cam')+tx('cam.elegir_aqui')+'</button></div>' : '')+'</div>';
   }
   /* «Qué se ve» over the preview of a camera in use, as the app's live view (app-movil screens.js
      modeBar): «Video» and «Esqueleto» switch separately, at least one stays on; only video by
@@ -382,10 +403,10 @@
     if(!d.skel) return '';
     const m = pvMode(E);
     const b = (k, icon, t) => '<button type="button" class="pv-t'+(m[k]?' on':'')+'" data-act="pvMode" data-arg="'+k+'" aria-pressed="'+m[k]+'">'+ic(m[k]?'check':icon)+'<span>'+t+'</span></button>';
-    return '<div class="pv-mode" role="group" aria-label="Qué se ve">'+b('video','video','Video')+b('skel','body','Esqueleto')+'</div>';
+    return '<div class="pv-mode" role="group" aria-label="'+tx('pv.que_se_ve')+'">'+b('video','video',tx('pv.video'))+b('skel','body',tx('pv.esqueleto'))+'</div>';
   }
   /* the lock over a local preview opens its help (core.js: 'pvlock' and 'skel-lock') */
-  function PV_TIP(){ return infoTip('La vista previa solo se ve en esta PC: no se graba ni sale de la casa. Úsala para revisar el encuadre.','vista previa local',{k:'pvlock',icon:'lock',cls:'pv-lock',up:1,start:1}); }
+  function PV_TIP(){ return infoTip(tx('pv.tip'),tx('pv.tip_l'),{k:'pvlock',icon:'lock',cls:'pv-lock',up:1,start:1}); }
   /* «Elegir aquí, si estás instalando» (CA-29.8): the same rules as the app */
   const ROOMS = ['Sala', 'Dormitorio', 'Cocina', 'Comedor', 'Pasillo'];
   function norm(s){ return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(); }
@@ -400,56 +421,56 @@
     const room = otherOn ? pk.other : (pk.room!=null ? pk.room : r);
     const chips = nombres.map(x => {
       const o = ocupada(x);
-      if(o) return '<button class="chip2" aria-disabled="true" title="'+(o.estaPc?'Ya tiene cámara en esta PC':'Ya tiene cámara en la PC '+esc(o.pc||''))+'"><span>'+esc(x)+'</span><small>Ya tiene cámara'+(!o.estaPc && o.pc?' · '+esc(o.pc):'')+'</small></button>';
+      if(o) return '<button class="chip2" aria-disabled="true" title="'+(o.estaPc?tx('pick.ocupada_aqui'):tx('pick.ocupada_pc', {pc:esc(o.pc||'')}))+'"><span>'+esc(x)+'</span><small>'+tx('pick.ocupada')+(!o.estaPc && o.pc?' · '+esc(o.pc):'')+'</small></button>';
       const on = !otherOn && room!=null && norm(room)===norm(x);
       return '<button class="chip2'+(on?' sel':'')+'" aria-pressed="'+on+'" data-act="pickRoom" data-arg="'+esc(x)+'">'+(on?ic('check'):'')+esc(x)+'</button>';
-    }).join('') + '<button class="chip2'+(otherOn?' sel':'')+'" aria-pressed="'+otherOn+'" data-act="pickOther">'+(otherOn?ic('check'):'')+'Otra…</button>';
-    const errs = {empty:'Escribe el nombre de la habitación.', bath:'Por privacidad, no se admiten cámaras en el baño.',
-      dup:esc(pk.errRoom||'')+' ya tiene cámara (PC '+esc(pk.errPc||'')+'). Una cámara por habitación.',
-      net:'Aún sin internet.'};
+    }).join('') + '<button class="chip2'+(otherOn?' sel':'')+'" aria-pressed="'+otherOn+'" data-act="pickOther">'+(otherOn?ic('check'):'')+tx('pick.otra')+'</button>';
+    const errs = {empty:tx('pick.err_vacio'), bath:tx('pick.bano'),
+      dup:tx('pick.err_dup', {room:esc(pk.errRoom||''), pc:esc(pk.errPc||'')}),
+      net:tx('net.aun_sin')};
     const err = pk.err ? errs[pk.err] : '';
     const changed = r ? (room && norm(room)!==norm(r)) : (otherOn || !!room);
-    const primary = '<button class="btn btn-primary" data-act="useCam"'+(changed && !U.busy?'':' disabled')+'>'+ic('check')+(r?'Guardar cambio':'Usar esta cámara')+'</button>';
+    const primary = '<button class="btn btn-primary" data-act="useCam"'+(changed && !U.busy?'':' disabled')+'>'+ic('check')+(r?tx('pick.guardar'):tx('pick.usar'))+'</button>';
     return '<div class="cpane"><figure class="pv2 art" id="pv" data-clave="'+esc(d.id)+'">'+roomSVG(d.room || '')+'<img class="pv-img" id="pv-img" alt="" hidden>'+
-      '<figcaption class="pv-tag">'+ic('eye')+'Vista previa · '+esc(d.name)+'</figcaption>'+PV_TIP()+PV_MODE(E, d)+'</figure>'+
-      '<span class="rooms-l"><span id="rooms-l">¿En qué habitación está?</span>'+infoTip('Por privacidad, no se admiten cámaras en el baño.','habitaciones',{k:'bath',start:1})+'</span><div class="chips2" role="group" aria-labelledby="rooms-l">'+chips+'</div>'+
-      (otherOn ? '<div class="other-row field'+(err?' err':'')+'"><label class="sr" for="room-other">Nombre de la habitación</label><input class="input" id="room-other" value="'+esc(pk.other || (custom ? r : ''))+'" placeholder="Por ejemplo, Sala comedor" autocomplete="off"'+(err?' aria-invalid="true" aria-describedby="room-err"':'')+'></div>' : '')+
+      '<figcaption class="pv-tag">'+ic('eye')+tx('cam.vista_previa', {cam:esc(d.name)})+'</figcaption>'+PV_TIP()+PV_MODE(E, d)+'</figure>'+
+      '<span class="rooms-l"><span id="rooms-l">'+tx('pick.donde')+'</span>'+infoTip(tx('pick.bano'),tx('pick.bano_l'),{k:'bath',start:1})+'</span><div class="chips2" role="group" aria-labelledby="rooms-l">'+chips+'</div>'+
+      (otherOn ? '<div class="other-row field'+(err?' err':'')+'"><label class="sr" for="room-other">'+tx('pick.nombre')+'</label><input class="input" id="room-other" value="'+esc(pk.other || (custom ? r : ''))+'" placeholder="'+tx('pick.ejemplo')+'" autocomplete="off"'+(err?' aria-invalid="true" aria-describedby="room-err"':'')+'></div>' : '')+
       (err ? '<p class="field-msg err-msg" id="room-err" role="alert">'+ic('warn')+'<span>'+err+'</span></p>' : '')+
-      '<div class="pane-actions">'+(r ? '<button class="btn btn-danger-ghost btn-sm" data-act="unuse">Dejar de usar</button>' : '')+primary+'</div></div>';
+      '<div class="pane-actions">'+(r ? '<button class="btn btn-danger-ghost btn-sm" data-act="unuse">'+tx('pick.dejar')+'</button>' : '')+primary+'</div></div>';
   }
   function panelCamaras(E, U){
     const devs = E.devices, any = E.cams.length, here = U.here && E.unlink && devs.length;
-    const meta = here ? 'Elige la habitación de cada cámara. La familia lo verá en la app.'
-      : !devs.length || any ? 'Las habitaciones se eligen en la app.'
-      : 'Detectamos '+devs.length+(devs.length===1?' cámara':' cámaras')+'. Elígelas en la app.';
-    const head = '<header class="p-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">'+(here?'Elegir aquí, si estás instalando':'Cámaras de esta PC')+'</h1><p class="t-meta">'+meta+'</p></div>'+
-      (here ? '<button class="btn btn-secondary btn-sm" data-act="hereOff">'+ic('back')+'Volver</button>' : '')+'</header>';
-    if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">No encontramos cámaras</h2>'+
-      '<p class="t-small">Conecta una webcam por USB.</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc(E);
+    const meta = here ? tx('cams.meta_aqui')
+      : !devs.length || any ? tx('cams.meta')
+      : tn('cams.meta_detectamos', devs.length);
+    const head = '<header class="p-head"><div><h1 class="t-title" id="scr-h" tabindex="-1">'+(here?tx('cams.titulo_aqui'):tx('cam.titulo'))+'</h1><p class="t-meta">'+meta+'</p></div>'+
+      (here ? '<button class="btn btn-secondary btn-sm" data-act="hereOff">'+ic('back')+tx('accion.volver')+'</button>' : '')+'</header>';
+    if(!devs.length) return head+'<div class="card empty-big" role="status"><span class="ci lg">'+ic('cam')+'</span><h2 class="t-h2">'+tx('cam.no_encontramos')+'</h2>'+
+      '<p class="t-small">'+tx('cam.conecta_usb')+'</p><button class="btn btn-secondary" data-act="rescan">'+ic('refresh')+tx('cam.buscar')+'</button></div>'+thisPc(E);
     const sel = selDev(E, U);
-    const peekRow = d => !here && d.peek ? '<span class="peek"><span class="led" aria-hidden="true"></span><span>Un familiar la mira para elegirla</span></span>' : '';
+    const peekRow = d => !here && d.peek ? '<span class="peek"><span class="led" aria-hidden="true"></span><span>'+tx('peek.fila')+'</span></span>' : '';
     const rows = devs.map(d => '<button class="cpick'+(!d.connected?' lost':'')+(!here && d.peek?' peeking':'')+'" role="radio" aria-checked="'+(d===sel)+'" tabindex="'+(d===sel?0:-1)+'" data-act="selCam" data-arg="'+esc(d.id)+'">'+
       '<span class="thumb art'+(!d.connected||d.busy?' dim':'')+'">'+roomSVG(d.room || '')+'</span><span class="grow"><b>'+esc(d.name)+'</b>'+devTag(d)+'</span>'+peekRow(d)+'</button>').join('');
-    const many = E.cams.length >= 3 ? infoTip('Si la detección va lenta, pasa alguna cámara a otra PC.','rendimiento',{k:'many',start:1}) : '';
-    return head+'<div class="camgrid"><div class="clist"><p class="grp-l tip-l"><span id="g-cams">Cámaras conectadas</span>'+many+'</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
-      '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+'Buscar de nuevo</button></div>'+thisPc(E)+'</div>'+(here ? camPane(E, U, sel) : camInfo(E, U, sel))+'</div>';
+    const many = E.cams.length >= 3 ? infoTip(tx('cams.muchas'),tx('cams.muchas_l'),{k:'many',start:1}) : '';
+    return head+'<div class="camgrid"><div class="clist"><p class="grp-l tip-l"><span id="g-cams">'+tx('cams.conectadas')+'</span>'+many+'</p><div class="clist-rows" role="radiogroup" aria-labelledby="g-cams">'+rows+'</div>'+
+      '<div class="clist-tools"><button class="btn btn-ghost btn-sm" data-act="rescan">'+ic('refresh')+tx('cam.buscar')+'</button></div>'+thisPc(E)+'</div>'+(here ? camPane(E, U, sel) : camInfo(E, U, sel))+'</div>';
   }
 
 
   /* =================== Avanzado: registro en vivo, medidores y actividad =================== */
-  function num(n, d){ return Number(n).toFixed(d).replace('.', ','); }
+  function num(n, d){ return Number(n).toFixed(d).replace('.', dec()); }
   function sw(on, act, lb, dis, compact){
     if(compact) return '<button class="switch" role="switch" aria-checked="'+(!!on && !dis)+'"'+(lb?' aria-labelledby="'+lb+'"':'')+(dis?' aria-disabled="true"':'')+' data-act="'+act+'"><i></i></button>';
-    return '<span class="sw-l'+(on&&!dis?' on':'')+'"><button class="switch" role="switch" aria-checked="'+(!!on && !dis)+'"'+(lb?' aria-labelledby="'+lb+'"':'')+(dis?' aria-disabled="true"':'')+' data-act="'+act+'"><i></i></button>'+(on&&!dis?'Sí':'No')+'</span>';
+    return '<span class="sw-l'+(on&&!dis?' on':'')+'"><button class="switch" role="switch" aria-checked="'+(!!on && !dis)+'"'+(lb?' aria-labelledby="'+lb+'"':'')+(dis?' aria-disabled="true"':'')+' data-act="'+act+'"><i></i></button>'+(on&&!dis?tx('si'):tx('no'))+'</span>';
   }
-  const LOG_K = [['persona','person','Personas'], ['evento','warn','Eventos'], ['descarte','eyeOff','Descartadas'], ['conexion','wifi','Conexión'], ['programa','monitor','Programa']];
+  const LOG_K = [['persona','person','log.personas'], ['evento','warn','log.eventos'], ['descarte','eyeOff','log.descartadas'], ['conexion','wifi','log.conexion'], ['programa','monitor','log.programa']];
   function advCams(E){ return E.cams.map(c => ({id:c.id, room:c.room})); }
   function advCam(E, U){ const cs = advCams(E); return cs.find(c => c.id===U.adv.cam) || cs[0] || null; }
   function logLine(U, l){
     const open = U.log.open===l.id;
     return '<div class="lline '+(l.tone||'')+'"><time>'+esc(l.t)+'</time><span class="li">'+ic(l.i)+'</span><span class="msg">'+esc(l.m)+'</span>'+
-      '<button class="tech-btn" aria-expanded="'+open+'" aria-controls="tx-'+l.id+'" data-act="techToggle" data-arg="'+l.id+'" aria-label="Ver línea técnica">Técnica'+ic('chevDown')+'</button></div>'+
-      (open ? '<div class="ltech" id="tx-'+l.id+'"><span class="code">'+esc(l.x)+'</span><button class="btn btn-ghost btn-xs" data-act="copyTech" data-arg="'+l.id+'">'+ic('copy')+'Copiar</button></div>' : '');
+      '<button class="tech-btn" aria-expanded="'+open+'" aria-controls="tx-'+l.id+'" data-act="techToggle" data-arg="'+l.id+'" aria-label="'+tx('log.ver_tecnica')+'">'+tx('log.tecnica')+ic('chevDown')+'</button></div>'+
+      (open ? '<div class="ltech" id="tx-'+l.id+'"><span class="code">'+esc(l.x)+'</span><button class="btn btn-ghost btn-xs" data-act="copyTech" data-arg="'+l.id+'">'+ic('copy')+tx('log.copiar')+'</button></div>' : '');
   }
   function logRows(E, U, cam){
     const lg = U.log, all = lg.lines[cam.id] || [];
@@ -457,26 +478,26 @@
     const q = norm(lg.q);
     const vis = shown.filter(l => lg.filters[l.k] && (!q || norm(l.m).includes(q)));
     const fila = E.cams.find(c => c.id===cam.id);
-    const pin = fila && fila.pause ? '<div class="lline pin"><time></time><span class="li">'+ic('pause')+'</span><span class="msg">Cámara en pausa hasta las <span class="mono">'+esc(fila.pause)+'</span></span><span></span></div>' : '';
-    const lost = fila && fila.st.k==='off' ? '<div class="lline aviso pin"><time></time><span class="li">'+ic('videoOff')+'</span><span class="msg">Cámara desconectada: revisa el cable USB</span><span></span></div>' : '';
+    const pin = fila && fila.pause ? '<div class="lline pin"><time></time><span class="li">'+ic('pause')+'</span><span class="msg">'+tx('log.pausa', {t:'<span class="mono">'+esc(fila.pause)+'</span>'})+'</span><span></span></div>' : '';
+    const lost = fila && fila.st.k==='off' ? '<div class="lline aviso pin"><time></time><span class="li">'+ic('videoOff')+'</span><span class="msg">'+tx('log.desconectada')+'</span><span></span></div>' : '';
     let body;
-    if(!all.length) body = '<div class="logempty">'+ic('terminal')+'<b>Aún no pasa nada en esta cámara</b></div>';
-    else if(!vis.length && q) body = '<div class="logempty">'+ic('search')+'<b>No hay líneas con «'+esc(lg.q)+'»</b></div>';
-    else if(!vis.length) body = '<div class="logempty">'+ic('list')+'<b>No hay líneas de ese tipo</b></div>';
+    if(!all.length) body = '<div class="logempty">'+ic('terminal')+'<b>'+tx('log.nada')+'</b></div>';
+    else if(!vis.length && q) body = '<div class="logempty">'+ic('search')+'<b>'+tx('log.sin_q', {q:esc(lg.q)})+'</b></div>';
+    else if(!vis.length) body = '<div class="logempty">'+ic('list')+'<b>'+tx('log.sin_tipo')+'</b></div>';
     else body = vis.map(l => logLine(U, l)).join('');
     return pin + lost + body;
   }
   function logView(E, U, cam){
     const lg = U.log, all = lg.lines[cam.id] || [], nNew = lg.paused ? all.length - lg.cut : 0;
     const cnt = {}; LOG_K.forEach(k => cnt[k[0]] = 0); (lg.paused ? all.slice(0, lg.cut) : all).forEach(l => { if(cnt[l.k]!=null) cnt[l.k]++; });
-    return '<div class="logbar" role="toolbar" aria-label="Filtros del registro">'+LOG_K.map(k => '<button class="fchip" aria-pressed="'+lg.filters[k[0]]+'" data-act="logFilter" data-arg="'+k[0]+'">'+ic(k[1])+'<span class="lbl">'+k[2]+'</span><span class="cnt" id="cnt-'+k[0]+'">'+cnt[k[0]]+'</span></button>').join('')+
-      '<label class="logsearch"><span class="sr">Buscar en el registro</span>'+ic('search')+'<input class="input" id="log-q" type="search" placeholder="Buscar" value="'+esc(lg.q)+'" autocomplete="off"></label>'+
-      '<button class="btn btn-secondary btn-xs" data-act="logPause" aria-pressed="'+lg.paused+'">'+ic(lg.paused?'play':'pause')+(lg.paused?'Seguir':'Pausar')+'</button></div>'+
-      (lg.paused ? '<div class="logband" id="log-band" role="status">'+ic('pause')+'<span class="grow">En pausa · <span id="log-new">'+nNew+' '+(nNew===1?'línea nueva':'líneas nuevas')+'</span></span><button class="btn btn-ghost btn-xs" data-act="logPause">'+ic('play')+'Seguir</button></div>' : '')+
-      '<div class="logbox" id="logbox" role="log" aria-label="Registro en vivo de '+esc(cam.room)+'" aria-live="off" tabindex="0">'+logRows(E, U, cam)+'</div>'+
+    return '<div class="logbar" role="toolbar" aria-label="'+tx('log.filtros')+'">'+LOG_K.map(k => '<button class="fchip" aria-pressed="'+lg.filters[k[0]]+'" data-act="logFilter" data-arg="'+k[0]+'">'+ic(k[1])+'<span class="lbl">'+tx(k[2])+'</span><span class="cnt" id="cnt-'+k[0]+'">'+cnt[k[0]]+'</span></button>').join('')+
+      '<label class="logsearch"><span class="sr">'+tx('log.buscar_en')+'</span>'+ic('search')+'<input class="input" id="log-q" type="search" placeholder="'+tx('log.buscar')+'" value="'+esc(lg.q)+'" autocomplete="off"></label>'+
+      '<button class="btn btn-secondary btn-xs" data-act="logPause" aria-pressed="'+lg.paused+'">'+ic(lg.paused?'play':'pause')+(lg.paused?tx('log.seguir'):tx('log.pausar'))+'</button></div>'+
+      (lg.paused ? '<div class="logband" id="log-band" role="status">'+ic('pause')+'<span class="grow">'+tx('log.en_pausa')+'<span id="log-new">'+tn('log.nuevas', nNew)+'</span></span><button class="btn btn-ghost btn-xs" data-act="logPause">'+ic('play')+tx('log.seguir')+'</button></div>' : '')+
+      '<div class="logbox" id="logbox" role="log" aria-label="'+tx('log.aria', {room:esc(cam.room)})+'" aria-live="off" tabindex="0">'+logRows(E, U, cam)+'</div>'+
       '<span class="sr" role="status" id="log-ann"></span>';
   }
-  const PHASES = [['De pie',''], ['Posible caída','inestable'], ['En el suelo','caida'], ['Caída confirmada','caida']];
+  const PHASES = [['fase.de_pie',''], ['fase.posible','inestable'], ['fase.suelo','caida'], ['fase.confirmada','caida']];
   const SEG = [['h','sL'],['h','sR'],['sL','eL'],['eL','wL'],['sR','eR'],['eR','wR'],['sL','hL'],['sR','hR'],['hL','hR'],['hL','kL'],['kL','aL'],['hR','kR'],['kR','aR']];
   function skelReal(esq){
     const ks = Object.keys(esq||{}); if(!ks.length) return '';
@@ -490,116 +511,118 @@
     return '<svg viewBox="0 0 240 150" preserveAspectRatio="xMidYMax meet" aria-hidden="true"><path d="M0 134H240" stroke="#D9D1E0" stroke-width="2"/>'+s+'</g></svg>';
   }
   function meterReason(E, M){
-    if(!M) return {t:'Sin persona en la imagen', s:'Vuelven cuando la cámara vea a alguien.', i:'person', c:'pausa'};
-    if(M.motivo==='desconectada') return {t:'Cámara desconectada', s:'Revisa el cable USB.', i:'videoOff', c:'aviso dash'};
-    if(M.motivo==='pausa') return {t:'En pausa hasta las '+M.pausa, s:'La pausaron desde la app.', i:'pause', c:'pausa'};
-    if(M.motivo==='consentimiento') return {t:'Cámara detenida', s:'Falta el consentimiento de '+E.home.first+'.', i:'doc', c:'aviso'};
-    if(M.motivo==='sin_persona') return {t:'Sin persona en la imagen', s:'Vuelven cuando la cámara vea a alguien.', i:'person', c:'pausa'};
+    if(!M) return {t:tx('met.sin_persona'), s:tx('met.vuelven'), i:'person', c:'pausa'};
+    if(M.motivo==='desconectada') return {t:tx('met.desconectada'), s:tx('met.revisa'), i:'videoOff', c:'aviso dash'};
+    if(M.motivo==='pausa') return {t:tx('met.pausa', {t:M.pausa}), s:tx('met.pausaron'), i:'pause', c:'pausa'};
+    if(M.motivo==='consentimiento') return {t:tx('met.detenida'), s:tx('met.consent', {who:E.home.first}), i:'doc', c:'aviso'};
+    if(M.motivo==='sin_persona') return {t:tx('met.sin_persona'), s:tx('met.vuelven'), i:'person', c:'pausa'};
     return null;
   }
   function metersInner(E, M){
     const off = meterReason(E, M), D = v => off ? '—' : v, m = M || {};
     const meas = (title, val, unit, thr, si, pct, tp) => '<div class="mcard"><h3>'+title+'</h3><div class="mrow"><span class="mval">'+D(val)+(off?'':'<small>'+unit+'</small>')+'</span>'+
-      (off ? '' : '<span class="yn'+(si?' si':'')+'">'+(si?ic('check')+'Sí':'No')+'</span>')+'</div>'+
+      (off ? '' : '<span class="yn'+(si?' si':'')+'">'+(si?ic('check')+tx('si'):tx('no'))+'</span>')+'</div>'+
       '<div class="mthr'+(si&&!off?' si':'')+'"><i style="width:'+(off?0:Math.max(0, Math.min(100, pct)))+'%"></i><b style="left:'+tp+'%"></b></div><p class="msub">'+thr+'</p></div>';
     const ph = off ? -1 : m.fase;
     const row1 = off
       ? '<div class="mcard mnote" role="status"><span class="ci '+off.c+'">'+ic(off.i)+'</span><div><b>'+esc(off.t)+'</b><span>'+esc(off.s)+'</span></div></div>'
-      : '<div class="mcard"><h3>'+ic('gauge')+'Rendimiento</h3><span class="mval">'+num(m.fps, 1)+'<small>fps</small></span><p class="msub">Objetivo: 8 fps</p>'+
-          '<div class="mkv"><div><span>Uso del procesador</span><b>'+Math.round(m.cpu||0)+' %</b></div><div><span>Demora del análisis</span><b>'+num(m.demora||0, 2)+' s</b></div></div></div>'+
-        '<div class="mcard"><h3>'+ic('person')+'Persona</h3><p class="mperson"><span class="ci calma">'+ic('check')+'</span>Sí, una persona</p></div>'+
-        '<div class="mcard"><h3>'+ic('clock')+'Temporizadores</h3>'+
-          '<p class="timer">Ventana de caída <b>'+num(m.ventana, 2)+' s</b></p><div class="tbar"><i style="transform:scaleX('+(m.ventana/m.ventanaTotal).toFixed(3)+')"></i></div>'+
-          '<p class="timer mt8">En el suelo <b>'+Math.round(m.suelo)+' de '+Math.round(m.confirmacion)+' s</b></p><div class="tbar"><i style="transform:scaleX('+Math.min(1, m.suelo/m.confirmacion).toFixed(3)+')"></i></div></div>';
+      : '<div class="mcard"><h3>'+ic('gauge')+tx('met.rendimiento')+'</h3><span class="mval">'+num(m.fps, 1)+'<small>fps</small></span><p class="msub">'+tx('met.objetivo')+'</p>'+
+          '<div class="mkv"><div><span>'+tx('met.cpu')+'</span><b>'+tx('fmt.pct', {n:Math.round(m.cpu||0)})+'</b></div><div><span>'+tx('met.demora')+'</span><b>'+num(m.demora||0, 2)+' s</b></div></div></div>'+
+        '<div class="mcard"><h3>'+ic('person')+tx('met.persona')+'</h3><p class="mperson"><span class="ci calma">'+ic('check')+'</span>'+tx('met.una_persona')+'</p></div>'+
+        '<div class="mcard"><h3>'+ic('clock')+tx('met.temporizadores')+'</h3>'+
+          '<p class="timer">'+tx('met.ventana')+' <b>'+num(m.ventana, 2)+' s</b></p><div class="tbar"><i style="transform:scaleX('+(m.ventana/m.ventanaTotal).toFixed(3)+')"></i></div>'+
+          '<p class="timer mt8">'+tx('fase.suelo')+' <b>'+tx('met.de_s', {a:Math.round(m.suelo), b:Math.round(m.confirmacion)})+'</b></p><div class="tbar"><i style="transform:scaleX('+Math.min(1, m.suelo/m.confirmacion).toFixed(3)+')"></i></div></div>';
     const vis = m.visibilidad || {Nariz:0, Hombros:0, Caderas:0, Tobillos:0};
     const bars = ['Nariz','Hombros','Caderas','Tobillos'].map(k => { const v = vis[k]||0, low = v < (m.umbralVisibilidad||.5);
-      return '<div class="pbar'+(low&&!off?' low':'')+'"><span>'+k+'</span><span class="ptrack"><i style="width:'+(off?0:v*100)+'%"></i></span><b>'+(off?'—':(low?ic('warn'):'')+num(v, 2))+'</b></div>'; }).join('');
+      return '<div class="pbar'+(low&&!off?' low':'')+'"><span>'+tx('met.punto.'+k)+'</span><span class="ptrack"><i style="width:'+(off?0:v*100)+'%"></i></span><b>'+(off?'—':(low?ic('warn'):'')+num(v, 2))+'</b></div>'; }).join('');
     const v = m.m1==null ? 0 : m.m1, th = m.m2==null ? 90 : m.m2, P = m.m3==null ? 0 : m.m3;
     const uv = m.umbralV || .01, ua = m.umbralAngulo || 45, ur = m.umbralRazon || 1;
     return row1+
-      meas('Descenso de la cadera (M1)', m.m1==null ? '—' : num(v, 3), 'cuerpos/s', 'Avisa desde '+num(uv, 2).replace(/0+$/, '').replace(/,$/, ''), v >= uv, v/(uv*2)*100, 50)+
-      meas('Inclinación del tronco (M2)', m.m2==null ? '—' : Math.round(th)+'°', '', 'Avisa por debajo de '+Math.round(ua)+'°', th < ua || !!m.cabezaBajoPies, (90-th)/90*100, 50)+
-      meas('Forma del cuerpo, ancho/alto (M3)', m.m3==null ? '—' : num(P, 2), '', 'Avisa desde '+num(ur, 0), P >= ur || !!m.cabezaBajoPies, P/(ur*2)*100, 50)+
-      '<div class="mcard mphase"><h3>'+ic('pulse')+'Fase'+infoTip('Avisa si sigue en el suelo tras 1,48 s; confirma a los 30 s.','fases',{k:'fase',start:1})+'</h3><div class="phs">'+PHASES.map((p, i) => (i?ic('chevR'):'')+'<span class="ph'+(i===ph?' cur '+p[1]:'')+'"'+(i===ph?' aria-current="step"':'')+'>'+(i===ph?ic('check'):'')+p[0]+'</span>').join('')+'</div>'+
+      meas(tx('met.m1'), m.m1==null ? '—' : num(v, 3), tx('met.m1_u'), tx('met.avisa_desde', {x:num(uv, 2).replace(/0+$/, '').replace(new RegExp('\\'+dec()+'$'), '')}), v >= uv, v/(uv*2)*100, 50)+
+      meas(tx('met.m2'), m.m2==null ? '—' : Math.round(th)+'°', '', tx('met.avisa_bajo', {x:Math.round(ua)+'°'}), th < ua || !!m.cabezaBajoPies, (90-th)/90*100, 50)+
+      meas(tx('met.m3'), m.m3==null ? '—' : num(P, 2), '', tx('met.avisa_desde', {x:num(ur, 0)}), P >= ur || !!m.cabezaBajoPies, P/(ur*2)*100, 50)+
+      '<div class="mcard mphase"><h3>'+ic('pulse')+tx('met.fase')+infoTip(tx('met.fase_tip'),tx('met.fase_l'),{k:'fase',start:1})+'</h3><div class="phs">'+PHASES.map((p, i) => (i?ic('chevR'):'')+'<span class="ph'+(i===ph?' cur '+p[1]:'')+'"'+(i===ph?' aria-current="step"':'')+'>'+(i===ph?ic('check'):'')+tx(p[0])+'</span>').join('')+'</div>'+
         '</div>'+
-      '<div class="mside"><div class="mcard"><h3>'+ic('person')+'Puntos del cuerpo'+infoTip('Visibilidad de 0 a 1. Por debajo de 0,5 el punto no cuenta.','visibilidad',{k:'plow',end:1})+'</h3><div class="pbars">'+bars+'</div></div>'+
-        '<div class="mcard" style="flex:1;display:flex;flex-direction:column"><h3>'+ic('eye')+'Esqueleto</h3><div class="mskel">'+
-          (off ? '' : skelReal(m.esqueleto))+infoTip('El esqueleto solo se ve en esta PC: no se graba ni sale de la casa.','vista local',{k:'skel-lock',icon:'lock',cls:'pv-lock',start:1})+'</div></div></div>';
+      '<div class="mside"><div class="mcard"><h3>'+ic('person')+tx('met.puntos')+infoTip(tx('met.vis_tip'),tx('met.vis_l'),{k:'plow',end:1})+'</h3><div class="pbars">'+bars+'</div></div>'+
+        '<div class="mcard" style="flex:1;display:flex;flex-direction:column"><h3>'+ic('eye')+tx('pv.esqueleto')+'</h3><div class="mskel">'+
+          (off ? '' : skelReal(m.esqueleto))+infoTip(tx('met.skel_tip'),tx('met.skel_l'),{k:'skel-lock',icon:'lock',cls:'pv-lock',start:1})+'</div></div></div>';
   }
-  function metersView(E, U, cam){ const M = U.meters[cam.id]; return '<div class="mgrid'+(meterReason(E, M)?' off':'')+'" id="meters" aria-label="Medidores de '+esc(cam.room)+'">'+metersInner(E, M)+'</div>'; }
+  function metersView(E, U, cam){ const M = U.meters[cam.id]; return '<div class="mgrid'+(meterReason(E, M)?' off':'')+'" id="meters" aria-label="'+tx('met.aria', {room:esc(cam.room)})+'">'+metersInner(E, M)+'</div>'; }
   function actView(E, U){
     const rows = (U.acts || []);
     const days = [...new Set(rows.map(a => a.d))];
-    const seg = '<div class="seg2 sm" role="radiogroup" aria-label="Qué actividad ver"><button role="radio" aria-checked="'+(U.actScope==='pc')+'" data-act="actScope" data-arg="pc">'+ic('monitor')+'Esta PC</button><button role="radio" aria-checked="'+(U.actScope==='casa')+'" data-act="actScope" data-arg="casa">'+ic('home')+'Toda la casa</button></div>';
+    const seg = '<div class="seg2 sm" role="radiogroup" aria-label="'+tx('act.que')+'"><button role="radio" aria-checked="'+(U.actScope==='pc')+'" data-act="actScope" data-arg="pc">'+ic('monitor')+tx('inst.esta_pc')+'</button><button role="radio" aria-checked="'+(U.actScope==='casa')+'" data-act="actScope" data-arg="casa">'+ic('home')+tx('act.casa')+'</button></div>';
     const av = w => w==='pc' ? '<span class="av pc">'+ic('monitor')+'</span>' : w==='app' ? '<span class="av pc">'+ic('mobile')+'</span>' : '<span class="av">'+esc(w)+'</span>';
     const body = rows.length ? days.map(d => '<h3 class="actday">'+esc(d)+'</h3>'+rows.filter(a => a.d===d).map(a =>
-        '<div class="arow">'+av(a.who)+'<span>'+esc(a.m)+'</span><span class="when">'+(a.pend?'<span class="ptag">'+ic('clock')+'Pendiente de enviar</span>':'')+'<span class="mono">'+esc(a.t)+'</span></span></div>').join('')).join('')
-      : '<div class="actempty">'+ic('list')+'<b>Aún no hay actividad</b><span class="t-meta">Aquí verás quién cambió qué y cuándo.</span></div>';
-    return '<div class="advhead">'+seg+infoTip('Nadie puede editar ni borrar esta lista.','registro de actividad',{k:'act',start:1})+'</div><div class="actlist" id="actlist">'+body+'</div>';
+        '<div class="arow">'+av(a.who)+'<span>'+esc(a.m)+'</span><span class="when">'+(a.pend?'<span class="ptag">'+ic('clock')+tx('act.pendiente')+'</span>':'')+'<span class="mono">'+esc(a.t)+'</span></span></div>').join('')).join('')
+      : '<div class="actempty">'+ic('list')+'<b>'+tx('act.vacia')+'</b><span class="t-meta">'+tx('act.vacia_d')+'</span></div>';
+    return '<div class="advhead">'+seg+infoTip(tx('act.tip'),tx('act.tip_l'),{k:'act',start:1})+'</div><div class="actlist" id="actlist">'+body+'</div>';
   }
 
   /* ---------- almacenamiento en esta PC (US-38) ---------- */
   const RET = {mov:[7, 30, 90, 365, null], vid:[1, 7, 30, null], clip:[30, 90, 365, null], cap:[10, 25, 50, 100, 'otro']};
-  function dias(v){ return v==null ? 'Nunca borrar' : v===365 ? '1 año' : v===1 ? '1 día' : v+' días'; }
+  function dias(v){ return v==null ? tx('st.nunca') : v===365 ? tx('st.anio') : tn('st.dias', v); }
   function gb(b){ return num((b||0)/1e9, 1); }
   function retPills(st, key, campo, cur, dis, label){
     return '<div class="ret'+(key==='cap'?' capret':'')+'" role="radiogroup" aria-label="'+label+'">'+RET[key].map(o => {
       const on = key==='cap' ? (o==='otro' ? ![10,25,50,100].includes(cur) : o===cur) : o===cur;
-      const txt = key==='cap' ? (o==='otro' ? 'Otro' : o+' GB') : dias(o);
+      const txt = key==='cap' ? (o==='otro' ? tx('st.otro') : o+' GB') : dias(o);
       return '<button role="radio" aria-checked="'+on+'"'+(dis?' aria-disabled="true"':'')+' data-act="ret" data-arg="'+campo+'|'+(o==null?'null':o)+'">'+txt+'</button>'; }).join('')+'</div>';
   }
   function storageView(E, U){
     const st = E.store; if(!st) return '';
     const a = st.ajustes, u = st.uso, cap = st.limite || 1, used = u.movimientos + u.video + u.clips, pct = v => (v/cap*100).toFixed(2);
     let band = '';
-    if(st.estado==='lleno') band = '<div class="notice warn stband" role="alert">'+ic('folder')+'<div><b>No podemos guardar en la carpeta</b><span>Revisa el espacio del disco. Detección y avisos siguen.</span></div><button class="btn btn-secondary btn-sm" data-act="folderChange">Elegir otra carpeta</button></div>';
-    else if(st.estado==='cerca') band = '<div class="notice warn stband" role="status">'+ic('drive')+'<div><b>Queda poco espacio: '+gb(used)+' GB de '+gb(cap)+' GB</b><span>Pronto borraremos el video más antiguo.</span></div></div>';
-    else if(st.estado==='limite') band = '<div class="notice info stband" role="status">'+ic('trash')+'<div><b>Borramos el video del '+esc(st.liberado)+' para liberar espacio</b><span>La detección sigue.</span></div></div>';
+    if(st.estado==='lleno') band = '<div class="notice warn stband" role="alert">'+ic('folder')+'<div><b>'+tx('st.lleno')+'</b><span>'+tx('st.lleno_d')+'</span></div><button class="btn btn-secondary btn-sm" data-act="folderChange">'+tx('accion.otra_carpeta')+'</button></div>';
+    else if(st.estado==='cerca') band = '<div class="notice warn stband" role="status">'+ic('drive')+'<div><b>'+tx('st.cerca', {a:gb(used), b:gb(cap)})+'</b><span>'+tx('st.cerca_d')+'</span></div></div>';
+    else if(st.estado==='limite') band = '<div class="notice info stband" role="status">'+ic('trash')+'<div><b>'+tx('st.limite', {d:esc(st.liberado)})+'</b><span>'+tx('st.detec_sigue')+'</span></div></div>';
     const mc = st.permisoMovimientos;
     const trow = (icon, id, name, sub, on, act, key, campo, cur, dis, why) => '<div class="trow"><div class="trow-h"><span class="ci">'+ic(icon)+'</span><span class="grow"><b id="'+id+'">'+name+'</b><span>'+sub+'</span></span>'+sw(on, act, id, dis)+'</div>'+
-      retPills(st, key, campo, cur, dis || !on, 'Cuánto tiempo guardar: '+name)+(why?'<p class="why">'+ic('lock')+'<span>'+why+'</span></p>':'')+'</div>';
+      retPills(st, key, campo, cur, dis || !on, tx('st.cuanto', {x:name}))+(why?'<p class="why">'+ic('lock')+'<span>'+why+'</span></p>':'')+'</div>';
     const capOtro = ![10,25,50,100].includes(a.limite_gb);
     return band+'<div class="stwrap" id="stwrap"><div class="stgrid"><div class="stcol">'+
-      '<div class="stcard"><h3>Uso</h3><p class="usage-n"><b>'+gb(used)+' GB</b><span>de '+gb(cap).replace(/,0$/, '')+' GB</span></p>'+
-        '<div class="ubar" role="img" aria-label="Movimientos '+gb(u.movimientos)+' GB, video '+gb(u.video)+' GB, clips '+gb(u.clips)+' GB de '+gb(cap)+' GB"><i class="u-mov" style="width:'+pct(u.movimientos)+'%"></i><i class="u-vid" style="width:'+pct(u.video)+'%"></i><i class="u-clip" style="width:'+pct(u.clips)+'%"></i></div>'+
-        '<p class="ulg"><span><i class="u-mov"></i>Movimientos <b>'+gb(u.movimientos)+' GB</b></span><span><i class="u-vid"></i>Video <b>'+gb(u.video)+' GB</b></span><span><i class="u-clip"></i>Clips <b>'+gb(u.clips)+' GB</b></span><span>Libre <b>'+gb(Math.max(0, cap-used))+' GB</b></span></p></div>'+
-      '<div class="stcard"><h3>Carpeta</h3><div class="folder"><span class="code" title="'+esc(st.carpeta)+'">'+esc(st.carpeta)+'</span><button class="btn btn-secondary btn-xs" data-act="folderChange"'+(st.estado==='moviendo'?' disabled':'')+'>'+ic('folder')+'Cambiar carpeta</button></div>'+
-        (st.estado==='moviendo' ? '<div class="moving" role="status">Moviendo '+gb(used)+' GB… La detección sigue.<div class="tbar"><i style="transform:scaleX(.45)"></i></div></div>' : '')+'</div>'+
-      '<div class="stcard"><p class="irow"><span class="ci calma">'+ic('lock')+'</span><span><b>Datos cifrados</b>Solo Te Tengo Captura puede leerlos.</span></p></div>'+
-      '<div class="stcard"><p class="irow"><span class="ci">'+ic('cloud')+'</span><span><b>En la nube</b>'+(st.nube ? 'Movimientos: '+dias(st.nube)+' (lo eligió la familia).' : 'Movimientos: desactivado.')+' Video: nunca.</span></p></div>'+
+      '<div class="stcard"><h3>'+tx('st.uso')+'</h3><p class="usage-n"><b>'+gb(used)+' GB</b><span>'+tx('st.de_gb', {x:gb(cap).replace(new RegExp('\\'+dec()+'0$'), '')})+'</span></p>'+
+        '<div class="ubar" role="img" aria-label="'+tx('st.uso_aria', {m:gb(u.movimientos), v:gb(u.video), c:gb(u.clips), t:gb(cap)})+'"><i class="u-mov" style="width:'+pct(u.movimientos)+'%"></i><i class="u-vid" style="width:'+pct(u.video)+'%"></i><i class="u-clip" style="width:'+pct(u.clips)+'%"></i></div>'+
+        '<p class="ulg"><span><i class="u-mov"></i>'+tx('st.movimientos')+' <b>'+gb(u.movimientos)+' GB</b></span><span><i class="u-vid"></i>'+tx('pv.video')+' <b>'+gb(u.video)+' GB</b></span><span><i class="u-clip"></i>'+tx('st.clips')+' <b>'+gb(u.clips)+' GB</b></span><span>'+tx('st.libre')+' <b>'+gb(Math.max(0, cap-used))+' GB</b></span></p></div>'+
+      '<div class="stcard"><h3>'+tx('st.carpeta')+'</h3><div class="folder"><span class="code" title="'+esc(st.carpeta)+'">'+esc(st.carpeta)+'</span><button class="btn btn-secondary btn-xs" data-act="folderChange"'+(st.estado==='moviendo'?' disabled':'')+'>'+ic('folder')+tx('st.cambiar')+'</button></div>'+
+        (st.estado==='moviendo' ? '<div class="moving" role="status">'+tx('st.moviendo', {x:gb(used)})+'<div class="tbar"><i style="transform:scaleX(.45)"></i></div></div>' : '')+'</div>'+
+      '<div class="stcard"><p class="irow"><span class="ci calma">'+ic('lock')+'</span><span><b>'+tx('st.cifrados')+'</b>'+tx('st.cifrados_d')+'</span></p></div>'+
+      '<div class="stcard"><p class="irow"><span class="ci">'+ic('cloud')+'</span><span><b>'+tx('st.nube')+'</b>'+(st.nube ? tx('st.nube_mov', {x:dias(st.nube)}) : tx('st.nube_off'))+tx('st.nube_video')+'</span></p></div>'+
     '</div><div class="stcol">'+
-      '<div class="stcard"><h3>Qué se guarda aquí</h3>'+
-        trow('person', 'st-mov', 'Movimientos (puntos del cuerpo)', 'Sin imagen ni video', mc && a.movimientos, 'stMov', 'mov', 'dias_movimientos', a.dias_movimientos, !mc, mc ? '' : 'Requiere el permiso de '+esc(E.home.first)+' (se registra en la app).')+
-        trow('cam', 'st-vid', 'Video continuo', 'Nunca se sube', a.video, 'stVid', 'vid', 'dias_video', a.dias_video, false, '')+
-        trow('play', 'st-clip', 'Clips de los avisos', '12 s por aviso', a.clips, 'stClip', 'clip', 'dias_clips', a.dias_clips, false, '')+'</div>'+
-      '<div class="stcard"><h3>Límite de espacio'+infoTip('Al llegar, borramos lo más antiguo: primero video, luego movimientos.','límite de espacio',{k:'cap',start:1,up:1})+'</h3>'+retPills(st, 'cap', 'limite_gb', a.limite_gb, false, 'Límite de espacio')+
-        (capOtro || U.capOther ? '<div class="cap-other"><label class="sr" for="cap-val">Límite en GB</label><input class="input mono" id="cap-val" inputmode="numeric" value="'+esc(capOtro ? a.limite_gb : '')+'" placeholder="75"><span class="t-meta">GB</span></div>' : '')+
+      '<div class="stcard"><h3>'+tx('st.que')+'</h3>'+
+        trow('person', 'st-mov', tx('st.mov_t'), tx('st.mov_d'), mc && a.movimientos, 'stMov', 'mov', 'dias_movimientos', a.dias_movimientos, !mc, mc ? '' : tx('st.mov_permiso', {who:esc(E.home.first)}))+
+        trow('cam', 'st-vid', tx('st.vid_t'), tx('st.vid_d'), a.video, 'stVid', 'vid', 'dias_video', a.dias_video, false, '')+
+        trow('play', 'st-clip', tx('st.clip_t'), tx('st.clip_d'), a.clips, 'stClip', 'clip', 'dias_clips', a.dias_clips, false, '')+'</div>'+
+      '<div class="stcard"><h3>'+tx('st.limite_t')+infoTip(tx('st.limite_tip'),tx('st.limite_l'),{k:'cap',start:1,up:1})+'</h3>'+retPills(st, 'cap', 'limite_gb', a.limite_gb, false, tx('st.limite_t'))+
+        (capOtro || U.capOther ? '<div class="cap-other"><label class="sr" for="cap-val">'+tx('st.limite_gb')+'</label><input class="input mono" id="cap-val" inputmode="numeric" value="'+esc(capOtro ? a.limite_gb : '')+'" placeholder="75"><span class="t-meta">GB</span></div>' : '')+
         '</div>'+
     '</div></div></div>';
   }
-  function advSubs(E){ return (E.advanced ? [['registro','terminal','Registro en vivo'], ['medidores','gauge','Medidores']] : []).concat([['actividad','list','Actividad'], ['almacenamiento','drive','Almacenamiento']]); }
+  function advSubs(E){ return (E.advanced ? [['registro','terminal',tx('adv.registro')], ['medidores','gauge',tx('adv.medidores')]] : []).concat([['actividad','list',tx('adv.actividad')], ['almacenamiento','drive',tx('adv.almacenamiento')]]); }
   function advSub(E, U){ const subs = advSubs(E); if(U.adv.sub==='acerca' && E.upd) return 'acerca'; return subs.some(x => x[0]===U.adv.sub) ? U.adv.sub : (E.advanced ? 'registro' : 'actividad'); }
   function panelAvanzado(E, U){
     const sub = advSub(E, U), on = !!E.advanced, cam = advCam(E, U), camSel = on && (sub==='registro' || sub==='medidores');
-    const seg = '<div class="seg2" role="tablist" aria-label="Avanzado">'+advSubs(E).map(x => '<button role="tab" id="sub-'+x[0]+'" aria-selected="'+(x[0]===sub)+'" tabindex="'+(x[0]===sub?0:-1)+'" data-act="advSub" data-arg="'+x[0]+'">'+(on?'':ic(x[1]))+x[2]+'</button>').join('')+'</div>';
-    const btns = '<div class="advbtns"><button class="btn btn-secondary btn-sm" data-act="replayOpen">'+ic('replay')+'Ver qué pasó</button>'+(on ? '<button class="btn btn-secondary btn-sm" data-act="diagOpen">'+ic('download')+'Exportar diagnóstico</button>' : '')+'</div>';
+    const seg = '<div class="seg2" role="tablist" aria-label="'+tx('tab.avanzado')+'">'+advSubs(E).map(x => '<button role="tab" id="sub-'+x[0]+'" aria-selected="'+(x[0]===sub)+'" tabindex="'+(x[0]===sub?0:-1)+'" data-act="advSub" data-arg="'+x[0]+'">'+(on?'':ic(x[1]))+x[2]+'</button>').join('')+'</div>';
+    const btns = '<div class="advbtns"><button class="btn btn-secondary btn-sm" data-act="replayOpen">'+ic('replay')+tx('rp.titulo')+'</button>'+(on ? '<button class="btn btn-secondary btn-sm" data-act="diagOpen">'+ic('download')+tx('diag.titulo')+'</button>' : '')+'</div>';
     const cams = advCams(E);
     const mode = on
-      ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">Modo avanzado</b></span>'+infoTip('Nada sale de esta PC: el registro y los medidores solo se ven aquí.','modo avanzado',{k:'adv',start:1})+
-          (camSel && cams.length ? '<span class="cam-l" id="cam-l">Cámara</span><div class="seg2 sm" role="radiogroup" aria-labelledby="cam-l">'+cams.map(c => '<button role="radio" aria-checked="'+(cam && c.id===cam.id)+'" data-act="advCam" data-arg="'+esc(c.id)+'">'+esc(c.room)+'</button>').join('')+'</div>' : '')+'</div>'
-      : '<div class="card advcard"><span class="ci lg">'+ic('sliders')+'</span><div class="grow"><b id="adv-l">Modo avanzado</b><span>Qué detecta cada cámara y por qué avisa. Nada sale de esta PC.</span></div>'+sw(false, 'advToggle', 'adv-l')+'</div>';
-    const sinCamara = '<div class="logempty">'+ic('cam')+'<b>Aún no pasa nada en esta cámara</b></div>';
+      ? '<div class="card advstrip">'+sw(true, 'advToggle', 'adv-l')+'<span class="grow"><b id="adv-l">'+tx('adv.modo')+'</b></span>'+infoTip(tx('adv.tip'),tx('adv.modo_l'),{k:'adv',start:1})+
+          (camSel && cams.length ? '<span class="cam-l" id="cam-l">'+tx('adv.camara')+'</span><div class="seg2 sm" role="radiogroup" aria-labelledby="cam-l">'+cams.map(c => '<button role="radio" aria-checked="'+(cam && c.id===cam.id)+'" data-act="advCam" data-arg="'+esc(c.id)+'">'+esc(c.room)+'</button>').join('')+'</div>' : '')+'</div>'
+      : '<div class="card advcard"><span class="ci lg">'+ic('sliders')+'</span><div class="grow"><b id="adv-l">'+tx('adv.modo')+'</b><span>'+tx('adv.modo_d')+'</span></div>'+sw(false, 'advToggle', 'adv-l')+'</div>';
+    const sinCamara = '<div class="logempty">'+ic('cam')+'<b>'+tx('log.nada')+'</b></div>';
     const body = sub==='registro' ? (cam ? logView(E, U, cam) : sinCamara) : sub==='medidores' ? (cam ? metersView(E, U, cam) : sinCamara) : sub==='almacenamiento' ? storageView(E, U) : sub==='acerca' ? aboutView(E, U) : actView(E, U);
-    return '<h1 class="sr" id="scr-h" tabindex="-1">Avanzado</h1><div class="advhead">'+seg+btns+'</div>'+mode+'<div class="advbody" role="tabpanel" aria-labelledby="sub-'+sub+'">'+body+'</div>';
+    return '<h1 class="sr" id="scr-h" tabindex="-1">'+tx('tab.avanzado')+'</h1><div class="advhead">'+seg+btns+'</div>'+mode+'<div class="advbody" role="tabpanel" aria-labelledby="sub-'+sub+'">'+body+'</div>';
   }
 
   /* =================== Ver qué pasó: repetición del movimiento (US-39) =================== */
   const SPEEDS = [.5, 1, 2, 4];
-  const RP_FASES = [['De pie','','person'], ['Movimiento inestable','inestable','warn'], ['Posible caída','caida','warn'], ['En el suelo','caida','warn'], ['En el suelo · caída confirmada','caida','warn'], ['Se levantó','calma','arrowUp']];
+  const RP_FASES = [['fase.de_pie','','person'], ['rp.inestable','inestable','warn'], ['fase.posible','caida','warn'], ['fase.suelo','caida','warn'], ['rp.confirmada','caida','warn'], ['rp.levanto','calma','arrowUp']];
   const RP_SEG = [['h','sL'],['h','sR'],['sL','eL'],['eL','wL'],['sR','eR'],['eR','wR'],['sL','hL'],['sR','hR'],['hL','hR'],['hL','kL'],['kL','aL'],['hR','kR'],['kR','aR']];
-  function spTxt(v){ return String(v).replace('.', ',')+'×'; }
+  function spTxt(v){ return String(v).replace('.', dec())+'×'; }
   function hmsMs(ms){ const d = new Date(ms); return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); }
   function hmMs(ms){ return hmsMs(ms).slice(0, 5); }
+  /* a date: «23/09/2026» in Spanish, «Sep 23, 2026» in English */
+  function fecha(d){ return tx('fmt.fecha', {d:pad2(d.getDate()), dd:d.getDate(), m:pad2(d.getMonth()+1), mes:tx('fmt.mes.'+d.getMonth()), y:d.getFullYear()}); }
   function rpSpan(rp){ return (rp.zoom==='60' ? 3600 : 600) * 1000; }
   function rpCamInfo(rp){ const cs = (rp.info && rp.info.camaras) || []; return cs.find(c => c.id===rp.cam) || cs[0] || null; }
   function rpGap(rp, t){ const w = rp.win; return w ? (w.huecos || []).find(g => t >= g.a && t < g.b) || null : null; }
@@ -613,11 +636,11 @@
   function rpPhase(rp, t){
     const g = rpGap(rp, t); if(g) return {label:g.motivo, tone:'gap', i:'person', p:null};
     const k = rpRow(rp, t), p = rp.poses;
-    if(k==null) return {label:'Cargando…', tone:'gap', i:'clock', p:null};
+    if(k==null) return {label:tx('rp.cargando'), tone:'gap', i:'clock', p:null};
     const f = RP_FASES[p.f[k]] || RP_FASES[0], pts = p.p[k];
-    if(!pts) return {label:'Sin persona en la imagen', tone:'gap', i:'person', p:null};
+    if(!pts) return {label:tx('met.sin_persona'), tone:'gap', i:'person', p:null};
     const pose = {}; p.claves.forEach((c, j) => pose[c] = [pts[2*j], pts[2*j+1]]);
-    return {label:f[0], tone:f[1], i:f[2], p:pose};
+    return {label:tx(f[0]), tone:f[1], i:f[2], p:pose};
   }
   /* the skeleton where it was in the image (4:3, the same box as the video under it) */
   function rpFig(rp, t){
@@ -632,7 +655,7 @@
   }
   function rpValText(rp, t){
     const e = ((rp.win && rp.win.eventos) || []).find(x => Math.abs(x.t-t) < 1500), g = rpGap(rp, t);
-    return hmsMs(t)+(e ? ', '+e.l.toLowerCase() : g ? ', sin datos: '+g.corto.toLowerCase() : '');
+    return hmsMs(t)+(e ? ', '+e.l.toLowerCase() : g ? tx('rp.sin_datos_v', {x:g.corto.toLowerCase()}) : '');
   }
   function markSVG(k){
     const sh = k==='caida' ? '<path d="M10 2 18.6 17.2H1.4Z" style="fill:var(--caida)" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>'
@@ -646,7 +669,7 @@
     const gaps = w.huecos.filter(g => g.b > a && g.a < b).map(g => ({a:Math.max(a, g.a), b:Math.min(b, g.b), s:g.corto}));
     const step = (big ? 600 : 120)*1000, ticks = [];
     for(let x = Math.ceil(a/step)*step; x <= b; x += step) ticks.push(x);
-    return '<div class="tl"><div class="tl-track" id="tl-track" role="slider" tabindex="0" aria-label="Línea de tiempo" aria-valuemin="'+Math.round(a/1000)+'" aria-valuemax="'+Math.round(b/1000)+'" aria-valuenow="'+Math.round(t/1000)+'" aria-valuetext="'+esc(rpValText(rp, t))+'">'+
+    return '<div class="tl"><div class="tl-track" id="tl-track" role="slider" tabindex="0" aria-label="'+tx('rp.linea')+'" aria-valuemin="'+Math.round(a/1000)+'" aria-valuemax="'+Math.round(b/1000)+'" aria-valuenow="'+Math.round(t/1000)+'" aria-valuetext="'+esc(rpValText(rp, t))+'">'+
       '<span class="tl-gaps" aria-hidden="true">'+gaps.map(g => '<i class="tl-gap" style="left:'+P(g.a)+'%;width:'+((g.b-g.a)/span*100).toFixed(2)+'%"></i>').join('')+'</span>'+
       evs.map(e => '<button class="tl-m" style="left:'+P(e.t)+'%" data-act="rpSeek" data-arg="'+e.t+'" aria-label="'+e.l+', '+hmsMs(e.t)+'" title="'+e.l+' · '+hmsMs(e.t)+'">'+markSVG(e.k)+'</button>').join('')+
       '<i class="tl-head" id="tl-head" style="left:'+P(Math.min(b, Math.max(a, t)))+'%"></i></div>'+
@@ -657,42 +680,42 @@
   function rpForm(E, rp){
     const info = rp.info || {permitida:false, camaras:[]}, cam = rpCamInfo(rp), dis = !info.permitida, vOk = !!(rp.win && rp.win.video);
     const hoy = new Date(), iso = hoy.getFullYear()+'-'+pad2(hoy.getMonth()+1)+'-'+pad2(hoy.getDate());
-    const dias = cam && cam.dias.length ? cam.dias : [{valor:iso, texto:'Hoy, '+pad2(hoy.getDate())+'/'+pad2(hoy.getMonth()+1)+'/'+hoy.getFullYear(), corto:''}];
-    return '<div class="card rp-form'+(dis?' disabled':'')+'"><span class="label" id="rp-cl">Cámara</span><div class="seg2 sm" role="radiogroup" aria-labelledby="rp-cl">'+
+    const dias = cam && cam.dias.length ? cam.dias : [{valor:iso, texto:tx('rp.hoy', {f:fecha(hoy)}), corto:''}];
+    return '<div class="card rp-form'+(dis?' disabled':'')+'"><span class="label" id="rp-cl">'+tx('adv.camara')+'</span><div class="seg2 sm" role="radiogroup" aria-labelledby="rp-cl">'+
         info.camaras.map(c => '<button role="radio" aria-checked="'+(cam && c.id===cam.id)+'" data-act="rpCam" data-arg="'+esc(c.id)+'"'+(dis?' disabled':'')+'>'+esc(c.room)+'</button>').join('')+'</div>'+
-      '<label class="label" for="rp-day">Fecha</label><select class="input" id="rp-day"'+(dis?' disabled':'')+'>'+dias.map(d => '<option value="'+esc(d.valor)+'"'+(d.valor===rp.day?' selected':'')+'>'+esc(d.texto)+'</option>').join('')+'</select>'+
-      '<label class="label" for="rp-hour">Hora</label><input class="input mono" id="rp-hour" value="'+esc(rp.hour)+'" inputmode="numeric" maxlength="5" autocomplete="off"'+(dis?' disabled':'')+'>'+
-      '<div class="qchips">'+[['Hace 15 min','m15'], ['Hace 1 hora','h1'], ['Hoy 07:00','h7']].map(q => '<button data-act="rpQuick" data-arg="'+q[1]+'"'+(dis?' disabled':'')+'>'+q[0]+'</button>').join('')+'</div>'+
-      '<button class="btn btn-primary btn-sm" data-act="rpGo"'+(dis?' disabled':'')+'>'+ic('replay')+'Ver</button>'+
-      '<p class="t-meta">'+(dis || !cam || !cam.desde ? 'No hay movimientos guardados.' : 'Datos desde el '+esc(cam.desde)+'.')+'</p>'+
-      '<div class="vtoggle mt12"><span><b><span id="rp-vl">Sobre el video guardado</span>'+(vOk ? infoTip('El video nunca sale de esta PC.','video guardado',{k:'rp-vid',start:1,up:1}) : '')+'</b>'+(vOk ? '' : '<span>No hay video de ese momento.</span>')+'</span>'+sw(rp.video && vOk, 'rpVideo', 'rp-vl', !vOk || dis, true)+'</div></div>';
+      '<label class="label" for="rp-day">'+tx('rp.fecha')+'</label><select class="input" id="rp-day"'+(dis?' disabled':'')+'>'+dias.map(d => '<option value="'+esc(d.valor)+'"'+(d.valor===rp.day?' selected':'')+'>'+esc(d.texto)+'</option>').join('')+'</select>'+
+      '<label class="label" for="rp-hour">'+tx('rp.hora')+'</label><input class="input mono" id="rp-hour" value="'+esc(rp.hour)+'" inputmode="numeric" maxlength="5" autocomplete="off"'+(dis?' disabled':'')+'>'+
+      '<div class="qchips">'+[['rp.q15','m15'], ['rp.q60','h1'], ['rp.q7','h7']].map(q => '<button data-act="rpQuick" data-arg="'+q[1]+'"'+(dis?' disabled':'')+'>'+tx(q[0])+'</button>').join('')+'</div>'+
+      '<button class="btn btn-primary btn-sm" data-act="rpGo"'+(dis?' disabled':'')+'>'+ic('replay')+tx('rp.ver')+'</button>'+
+      '<p class="t-meta">'+(dis || !cam || !cam.desde ? tx('rp.sin_mov') : tx('rp.desde', {d:esc(cam.desde)}))+'</p>'+
+      '<div class="vtoggle mt12"><span><b><span id="rp-vl">'+tx('rp.sobre_video')+'</span>'+(vOk ? infoTip(tx('rp.video_tip'),tx('rp.video_l'),{k:'rp-vid',start:1,up:1}) : '')+'</b>'+(vOk ? '' : '<span>'+tx('rp.sin_video')+'</span>')+'</span>'+sw(rp.video && vOk, 'rpVideo', 'rp-vl', !vOk || dis, true)+'</div></div>';
   }
   function panelReplay(E, U){
     const rp = U.rp, info = rp.info || {permitida:false, camaras:[]}, cam = rpCamInfo(rp);
     const dia = cam && (cam.dias.find(d => d.valor===rp.day) || {}).corto;
-    const head = '<div class="rp-head"><button class="back" data-act="replayClose">'+ic('back')+'Volver</button><h1 class="t-title" id="scr-h" tabindex="-1">Ver qué pasó</h1>'+
+    const head = '<div class="rp-head"><button class="back" data-act="replayClose">'+ic('back')+tx('accion.volver')+'</button><h1 class="t-title" id="scr-h" tabindex="-1">'+tx('rp.titulo')+'</h1>'+
       '<span class="t-meta" id="rp-title">'+(cam ? esc(cam.room)+(dia ? ' · '+esc(dia) : '') : '')+'</span></div>';
     let main;
     if(!rp.info) main = '<div class="rp-main"><div class="card rp-block" role="status"><span class="spin"></span></div></div>';
-    else if(!info.permitida) main = '<div class="rp-main"><div class="card rp-block"><div class="notice warn">'+ic('lock')+'<div><b>Falta el permiso de '+esc(E.home.first)+' para guardar movimientos</b><span>Se registra en la app: Privacidad › Guardar movimientos.</span></div></div></div></div>';
-    else if(!cam || !cam.desde) main = '<div class="rp-main"><div class="card rp-block"><div class="notice info">'+ic('clock')+'<div><b>No hay movimientos guardados.</b></div></div></div></div>';
-    else if(rp.state==='old') main = '<div class="rp-main"><div class="card rp-block"><div class="notice info">'+ic('clock')+'<div><b>Ya no hay movimientos de ese momento.</b><span>Hay datos desde el '+esc(cam.desde)+'. Elige otra fecha.</span></div></div></div></div>';
+    else if(!info.permitida) main = '<div class="rp-main"><div class="card rp-block"><div class="notice warn">'+ic('lock')+'<div><b>'+tx('rp.permiso', {who:esc(E.home.first)})+'</b><span>'+tx('rp.permiso_d')+'</span></div></div></div></div>';
+    else if(!cam || !cam.desde) main = '<div class="rp-main"><div class="card rp-block"><div class="notice info">'+ic('clock')+'<div><b>'+tx('rp.sin_mov')+'</b></div></div></div></div>';
+    else if(rp.state==='old') main = '<div class="rp-main"><div class="card rp-block"><div class="notice info">'+ic('clock')+'<div><b>'+tx('rp.viejo')+'</b><span>'+tx('rp.viejo_d', {d:esc(cam.desde)})+'</span></div></div></div></div>';
     else {
       const p = rpPhase(rp, rp.t), w = rp.win || {eventos:[]}, a = rp.w0, b = a + rpSpan(rp), evs = w.eventos.filter(e => e.t >= a && e.t <= b);
       const conVideo = rp.video && w.video;
-      const strip = conVideo ? '<p class="rp-strip video">'+ic('lock')+'Video guardado solo en esta PC'+infoTip('El video nunca sale de esta PC. Ver la repetición queda en el registro de accesos.','privacidad',{k:'rp',start:1})+'</p>'
-        : '<p class="rp-strip">'+ic('eye')+'Solo puntos del cuerpo, nunca video'+infoTip('Ver la repetición queda en el registro de accesos.','privacidad',{k:'rp',start:1})+'</p>';
+      const strip = conVideo ? '<p class="rp-strip video">'+ic('lock')+tx('rp.strip_video')+infoTip(tx('rp.strip_video_tip'),tx('tip.privacidad'),{k:'rp',start:1})+'</p>'
+        : '<p class="rp-strip">'+ic('eye')+tx('rp.strip')+infoTip(tx('rp.strip_tip'),tx('tip.privacidad'),{k:'rp',start:1})+'</p>';
       main = '<div class="rp-main">'+strip+
         '<div class="rp-canvas" id="rp-canvas">'+(conVideo ? '<div class="rp-vid"><img id="rp-img" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain" hidden></div>' : '')+
           '<div class="rp-fig" id="rp-fig">'+rpFig(rp, rp.t)+'</div><span class="rp-phase '+p.tone+'" id="rp-phase" aria-live="polite">'+ic(p.i)+esc(p.label)+'</span><span class="rp-clock" id="rp-clock">'+hmsMs(rp.t)+'</span></div>'+
         timeline(rp)+
-        '<div class="rp-ctrl"><button class="ibtn" data-act="rpPrev" aria-label="Evento anterior" title="Evento anterior">'+ic('prev')+'</button>'+
-          '<button class="ibtn play" data-act="rpPlay" aria-label="'+(rp.playing?'Pausar':'Reproducir')+'" title="'+(rp.playing?'Pausar':'Reproducir')+'">'+ic(rp.playing?'pauseF':'play')+'</button>'+
-          '<button class="ibtn" data-act="rpNext" aria-label="Evento siguiente" title="Evento siguiente">'+ic('next')+'</button>'+
+        '<div class="rp-ctrl"><button class="ibtn" data-act="rpPrev" aria-label="'+tx('rp.anterior')+'" title="'+tx('rp.anterior')+'">'+ic('prev')+'</button>'+
+          '<button class="ibtn play" data-act="rpPlay" aria-label="'+(rp.playing?tx('log.pausar'):tx('rp.reproducir'))+'" title="'+(rp.playing?tx('log.pausar'):tx('rp.reproducir'))+'">'+ic(rp.playing?'pauseF':'play')+'</button>'+
+          '<button class="ibtn" data-act="rpNext" aria-label="'+tx('rp.siguiente')+'" title="'+tx('rp.siguiente')+'">'+ic('next')+'</button>'+
           '<span class="rp-time mono" id="rp-time">'+hmsMs(rp.t)+'</span>'+
-          '<button class="ibtn speed" data-act="rpSpeed" aria-label="Velocidad: '+spTxt(rp.speed)+'" title="Cambiar la velocidad">'+spTxt(rp.speed)+'</button>'+
-          '<div class="seg2 sm" role="radiogroup" aria-label="Rango de la línea de tiempo"><button role="radio" aria-checked="'+(rp.zoom==='10')+'" data-act="rpZoom" data-arg="10">10 min</button><button role="radio" aria-checked="'+(rp.zoom==='60')+'" data-act="rpZoom" data-arg="60">1 h</button></div></div>'+
-        det(U, 'rpev', 'rp-ev', 'Eventos ('+evs.length+')', evs.length ? evs.map(e => '<button class="evrow" data-act="rpSeek" data-arg="'+e.t+'"><time class="mono">'+hmsMs(e.t)+'</time>'+markSVG(e.k)+'<span>'+e.l+' · '+esc(cam.room)+'</span></button>').join('') : '<p class="t-meta" style="padding:4px 0 8px">Sin eventos.</p>')+'</div>';
+          '<button class="ibtn speed" data-act="rpSpeed" aria-label="'+tx('rp.velocidad', {x:spTxt(rp.speed)})+'" title="'+tx('rp.cambiar_vel')+'">'+spTxt(rp.speed)+'</button>'+
+          '<div class="seg2 sm" role="radiogroup" aria-label="'+tx('rp.rango')+'"><button role="radio" aria-checked="'+(rp.zoom==='10')+'" data-act="rpZoom" data-arg="10">10 min</button><button role="radio" aria-checked="'+(rp.zoom==='60')+'" data-act="rpZoom" data-arg="60">1 h</button></div></div>'+
+        det(U, 'rpev', 'rp-ev', tx('rp.eventos', {n:evs.length}), evs.length ? evs.map(e => '<button class="evrow" data-act="rpSeek" data-arg="'+e.t+'"><time class="mono">'+hmsMs(e.t)+'</time>'+markSVG(e.k)+'<span>'+e.l+' · '+esc(cam.room)+'</span></button>').join('') : '<p class="t-meta" style="padding:4px 0 8px">'+tx('rp.sin_eventos')+'</p>')+'</div>';
     }
     return head+'<div class="rp-grid">'+rpForm(E, rp)+main+'</div>';
   }
@@ -701,72 +724,72 @@
   function dlgBox(id, icon, title, text, body, actions){
     return '<div class="dlg-back"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="'+id+'-t"'+(text?' aria-describedby="'+id+'-d"':'')+' id="'+id+'"><div class="dlg-h">'+icon+'<div><h2 id="'+id+'-t">'+title+'</h2>'+(text?'<p id="'+id+'-d">'+text+'</p>':'')+'</div></div>'+body+'<div class="dlg-actions">'+actions+'</div></div></div>';
   }
-  function num1(n){ return n.toFixed(1).replace('.', ','); }
+  function num1(n){ return n.toFixed(1).replace('.', dec()); }
   /* «Restablecer esta PC», «Desinstalar» (Mac) and «Salir»: draft copy (docs/BLOCKERS.md) */
   function roomsOf(E){ return (E.cams || []).map(c => c.room).filter(Boolean); }
-  function stopsText(E){ const r = roomsOf(E); return 'Se dejan de detectar caídas'+(r.length ? ' en '+esc(listY(r)) : '')+'. '; }
+  function stopsText(E){ const r = roomsOf(E); return r.length ? tx('dlg.deja_en', {rooms:esc(listY(r))}) : tx('dlg.deja'); }
   function wipeList(E){
-    const gbs = num1((E.dataBytes || 0) / 1e9), sys = E.upd && E.upd.os==='mac' ? 'la Mac' : 'Windows';
-    return '<ul class="notes wipe">'+['Los accesos de esta PC a Te Tengo', 'La configuración', 'Movimientos, video y clips'+(E.dataBytes ? ' ('+gbs+' GB)' : ''), 'Los avisos que aún no se enviaron', 'El inicio con '+sys].map(x => '<li>'+ic('trash')+x+'</li>').join('')+'</ul>';
+    const gbs = num1((E.dataBytes || 0) / 1e9), sys = E.upd && E.upd.os==='mac' ? tx('wipe.mac') : 'Windows';
+    return '<ul class="notes wipe">'+[tx('wipe.accesos'), tx('wipe.config'), tx('wipe.datos')+(E.dataBytes ? ' ('+gbs+' GB)' : ''), tx('wipe.avisos'), tx('wipe.inicio', {x:sys})].map(x => '<li>'+ic('trash')+x+'</li>').join('')+'</ul>';
   }
   function resetDialog(E, U){
     const mac = U.dlg==='uninstall';
-    return dlgBox(mac ? 'dlg-uninstall' : 'dlg-reset', '<span class="ci lg caida">'+ic(mac ? 'x' : 'trash')+'</span>', mac ? '¿Desinstalar Te Tengo Captura?' : '¿Restablecer esta PC?',
-      stopsText(E)+'La familia recibirá un aviso y la PC desaparecerá de la app. Se borra:',
-      wipeList(E)+'<p class="keep">'+ic('info')+(mac ? 'Después, la app se mueve a la Papelera.' : 'Después verás el código para vincularla de nuevo.')+'</p>',
-      '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-danger" data-act="'+(mac ? 'uninstallDo' : 'resetDo')+'"'+(U.busy?' disabled':'')+'>'+ic(mac ? 'x' : 'trash')+(mac ? 'Desinstalar' : 'Restablecer')+'</button>');
+    return dlgBox(mac ? 'dlg-uninstall' : 'dlg-reset', '<span class="ci lg caida">'+ic(mac ? 'x' : 'trash')+'</span>', mac ? tx('dlg.desinstalar') : tx('dlg.restablecer'),
+      stopsText(E)+tx('dlg.reset_d'),
+      wipeList(E)+'<p class="keep">'+ic('info')+(mac ? tx('dlg.reset_mac') : tx('dlg.reset_codigo'))+'</p>',
+      '<button class="btn btn-secondary" data-act="dlgClose">'+tx('accion.cancelar')+'</button><button class="btn btn-danger" data-act="'+(mac ? 'uninstallDo' : 'resetDo')+'"'+(U.busy?' disabled':'')+'>'+ic(mac ? 'x' : 'trash')+(mac ? tx('uninst.titulo') : tx('dlg.restablecer_btn'))+'</button>');
   }
   function dialog(E, U){
     if((U.dlg==='reset' || U.dlg==='uninstall') && E.screen==='main') return resetDialog(E, U);
-    if(U.dlg==='salir') return dlgBox('dlg-salir', '<span class="ci lg aviso">'+ic('power')+'</span>', '¿Salir de Te Tengo Captura?',
-      stopsText(E)+'La familia no recibirá alertas hasta que lo vuelvas a abrir.',
-      '<div class="notice info">'+ic('info')+'<div><b>¿Solo quieres ocultar la ventana?</b><span>Ciérrala: Te Tengo sigue cuidando desde la bandeja, junto al reloj.</span></div></div>',
-      '<button class="btn btn-secondary" data-act="close">Cerrar la ventana</button><button class="btn btn-danger" data-act="quitDo">'+ic('power')+'Salir</button>');
-    if(U.dlg==='trash') return dlgBox('dlg-trash', '<span class="ci lg calma">'+ic('check')+'</span>', 'Falta un paso',
-      'Esta PC se restableció. Quita la app a mano:',
-      '<ol class="macsteps"><li><span class="n">1</span><span>Elige <b>Salir</b> en el ícono de Te Tengo, junto al reloj</span></li><li><span class="n">2</span><span>Abre <b>Aplicaciones</b> en el Finder</span></li><li><span class="n">3</span><span>Arrastra <b>Te Tengo Captura</b> a la Papelera</span></li></ol>',
-      '<button class="btn btn-primary" data-act="dlgClose">Entendido</button>');
+    if(U.dlg==='salir') return dlgBox('dlg-salir', '<span class="ci lg aviso">'+ic('power')+'</span>', tx('salir.titulo'),
+      stopsText(E)+tx('salir.d'),
+      '<div class="notice info">'+ic('info')+'<div><b>'+tx('salir.ocultar')+'</b><span>'+tx('salir.ocultar_d')+'</span></div></div>',
+      '<button class="btn btn-secondary" data-act="close">'+tx('salir.cerrar')+'</button><button class="btn btn-danger" data-act="quitDo">'+ic('power')+tx('salir.btn')+'</button>');
+    if(U.dlg==='trash') return dlgBox('dlg-trash', '<span class="ci lg calma">'+ic('check')+'</span>', tx('trash.titulo'),
+      tx('trash.d'),
+      '<ol class="macsteps"><li><span class="n">1</span><span>'+tx('trash.p1')+'</span></li><li><span class="n">2</span><span>'+tx('trash.p2')+'</span></li><li><span class="n">3</span><span>'+tx('trash.p3')+'</span></li></ol>',
+      '<button class="btn btn-primary" data-act="dlgClose">'+tx('accion.entendido')+'</button>');
     if(U.dlg==='unlink' && E.screen==='main'){
       const rooms = E.cams.map(c => c.room), gb = (E.dataBytes || 0) / 1e9;
-      return dlgBox('dlg-unlink', '<span class="ci lg caida">'+ic('unlink')+'</span>', '¿Desvincular esta PC?',
-        (rooms.length ? 'Se dejan de detectar caídas en '+esc(listY(rooms))+'. ' : '')+'La familia recibirá un aviso.',
-        '<label class="checkrow"><input type="checkbox" id="unlink-wipe"'+(U.unlinkWipe?' checked':'')+'><span>Borrar también los datos de esta PC ('+num1(gb)+' GB)<span>Movimientos, video y clips.</span></span></label>',
-        '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-danger" data-act="unlinkDo"'+(U.busy?' disabled':'')+'>'+ic('unlink')+'Desvincular</button>');
+      return dlgBox('dlg-unlink', '<span class="ci lg caida">'+ic('unlink')+'</span>', tx('unlink.titulo'),
+        (rooms.length ? tx('dlg.deja_en', {rooms:esc(listY(rooms))}) : '')+tx('unlink.d'),
+        '<label class="checkrow"><input type="checkbox" id="unlink-wipe"'+(U.unlinkWipe?' checked':'')+'><span>'+tx('unlink.borrar', {x:num1(gb)})+'<span>'+tx('unlink.borrar_d')+'</span></span></label>',
+        '<button class="btn btn-secondary" data-act="dlgClose">'+tx('accion.cancelar')+'</button><button class="btn btn-danger" data-act="unlinkDo"'+(U.busy?' disabled':'')+'>'+ic('unlink')+tx('unlink.btn')+'</button>');
     }
-    if(U.dlg==='video') return dlgBox('dlg-video', '<span class="ci lg">'+ic('cam')+'</span>', '¿Guardar video continuo en esta PC?',
-      'Se queda en esta PC, nunca se sube. 480p a 8 fps, en partes de 10 min. Ocupa mucho espacio.', '',
-      '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-primary" data-act="videoOn">Activar</button>');
+    if(U.dlg==='video') return dlgBox('dlg-video', '<span class="ci lg">'+ic('cam')+'</span>', tx('video.titulo'),
+      tx('video.d'), '',
+      '<button class="btn btn-secondary" data-act="dlgClose">'+tx('accion.cancelar')+'</button><button class="btn btn-primary" data-act="videoOn">'+tx('video.activar')+'</button>');
     if(U.dlg==='revoke' || (E.store && E.store.revocado && E.screen==='main' && !U.dlg)){
-      const mb = E.store ? gb(E.store.uso.movimientos) : '0,0';
-      return dlgBox('dlg-revoke', '<span class="ci lg aviso">'+ic('person')+'</span>', '¿Borrar los movimientos de esta PC ('+mb+'&nbsp;GB)?',
-        esc(E.home.first)+' ya no autoriza guardarlos (lo registró la familia). No guardamos nuevos y los de la nube se borran. Las alertas siguen.', '',
-        '<button class="btn btn-secondary" data-act="revokeKeep">Conservar</button><button class="btn btn-danger" data-act="revokeWipe">'+ic('trash')+'Borrar</button>');
+      const mb = E.store ? gb(E.store.uso.movimientos) : gb(0);
+      return dlgBox('dlg-revoke', '<span class="ci lg aviso">'+ic('person')+'</span>', tx('revoke.titulo', {x:mb}),
+        tx('revoke.d', {who:esc(E.home.first)}), '',
+        '<button class="btn btn-secondary" data-act="revokeKeep">'+tx('revoke.conservar')+'</button><button class="btn btn-danger" data-act="revokeWipe">'+ic('trash')+tx('revoke.borrar')+'</button>');
     }
     if(U.dlg==='updNotes' && E.upd && E.upd.latest){
-      const u = E.upd, sub = [u.date ? 'Publicada el '+esc(u.date) : '', u.mb ? u.mb+' MB' : ''].filter(Boolean).join(' · ');
-      return dlgBox('dlg-notes', '<span class="ci lg">'+ic('list')+'</span>', 'Qué cambió en la versión '+esc(u.latest), sub,
-        '<ul class="notes">'+u.notes.map(x => '<li>'+ic('check')+esc(x)+'</li>').join('')+'</ul><p class="keep">'+ic('lock')+KEEP+'</p>',
-        '<button class="btn btn-secondary" data-act="dlgClose">Cerrar</button>'+(!['dl','verify','restart','wait'].includes(u.st) ? updBtn(u, '') : ''));
+      const u = E.upd, sub = [u.date ? tx('notes.publicada', {d:esc(u.date)}) : '', u.mb ? u.mb+' MB' : ''].filter(Boolean).join(' · ');
+      return dlgBox('dlg-notes', '<span class="ci lg">'+ic('list')+'</span>', tx('notes.titulo', {v:esc(u.latest)}), sub,
+        '<ul class="notes">'+u.notes.map(x => '<li>'+ic('check')+esc(x)+'</li>').join('')+'</ul><p class="keep">'+ic('lock')+keep()+'</p>',
+        '<button class="btn btn-secondary" data-act="dlgClose">'+tx('tb.cerrar')+'</button>'+(!['dl','verify','restart','wait'].includes(u.st) ? updBtn(u, '') : ''));
     }
     if(U.dlg==='updMac' && E.upd && E.upd.latest){
       const u = E.upd;
-      return dlgBox('dlg-mac', '<span class="ci lg">'+ic('download')+'</span>', 'Actualizar a la versión '+esc(u.latest), 'Abrimos <b>'+esc(u.page || '')+'</b> en tu navegador. Baja el archivo y:',
-        '<ol class="macsteps"><li><span class="n">1</span><span>Abre <b class="code">'+esc(u.dmg)+'</b></span></li><li><span class="n">2</span><span>Arrastra Te Tengo Captura a <b>Aplicaciones</b></span></li><li><span class="n">3</span><span>Elige <b>Reemplazar</b></span></li></ol>'+
-        '<p class="keep">'+ic('info')+'Es temporal, hasta que la app esté firmada por Apple. '+KEEP+'</p>',
-        '<button class="btn btn-primary" data-act="dlgClose">Entendido</button>');
+      return dlgBox('dlg-mac', '<span class="ci lg">'+ic('download')+'</span>', tx('mac.titulo', {v:esc(u.latest)}), tx('mac.d', {p:'<b>'+esc(u.page || '')+'</b>'}),
+        '<ol class="macsteps"><li><span class="n">1</span><span>'+tx('mac.p1', {f:'<b class="code">'+esc(u.dmg)+'</b>'})+'</span></li><li><span class="n">2</span><span>'+tx('mac.p2')+'</span></li><li><span class="n">3</span><span>'+tx('mac.p3')+'</span></li></ol>'+
+        '<p class="keep">'+ic('info')+tx('upd.mac_d')+' '+keep()+'</p>',
+        '<button class="btn btn-primary" data-act="dlgClose">'+tx('accion.entendido')+'</button>');
     }
     if(U.dlg==='diag'){
       const d = U.diag, nombre = d.nombre || '';
       const file = '<div class="filebox">'+ic('doc')+'<span class="code">'+esc(d.step==='done' ? d.ruta : nombre)+'</span>'+(d.step==='done' ? '<small>'+esc(d.tamano)+'</small>' : '')+'</div>';
-      if(d.step==='busy') return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Un archivo para el equipo de soporte.',
-        file+'<div class="prog" role="status"><div class="tbar"><i></i></div><p>Preparando el diagnóstico…</p></div>', '');
-      if(d.step==='done') return dlgBox('dlg-diag', '<span class="ci lg calma">'+ic('check')+'</span>', 'Diagnóstico guardado · '+esc(d.tamano), 'Envíalo a soporte cuando te lo pidan.',
-        file, '<button class="btn btn-secondary" data-act="diagShow">'+ic('folder')+'Mostrar en la carpeta</button><button class="btn btn-primary" data-act="dlgClose">Listo</button>');
-      const lists = '<div class="inc"><div class="yes"><h3>Incluye</h3><ul>'+['Registros del programa', 'Versión y sistema operativo', 'Cámaras y habitaciones', 'Umbrales de detección'].map(x => '<li>'+ic('check')+x+'</li>').join('')+'</ul></div>'+
-        '<div class="no"><h3>No incluye</h3><ul>'+['Contraseñas ni accesos', 'Imágenes ni video', 'Puntos del cuerpo'].map(x => '<li>'+ic('x')+x+'</li>').join('')+'</ul></div></div>';
-      return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', 'Exportar diagnóstico', 'Un archivo para el equipo de soporte.',
-        (d.step==='err' ? '<div class="notice err" role="alert">'+ic('warn')+'<div><b>No pudimos guardar en esa carpeta</b><span>No quedó ningún archivo. Elige otra.</span></div></div>' : lists)+file,
-        '<button class="btn btn-secondary" data-act="dlgClose">Cancelar</button><button class="btn btn-primary" data-act="diagSave">'+ic('folder')+(d.step==='err'?'Elegir otra carpeta':'Elegir dónde guardar')+'</button>');
+      if(d.step==='busy') return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', tx('diag.titulo'), tx('diag.d'),
+        file+'<div class="prog" role="status"><div class="tbar"><i></i></div><p>'+tx('diag.preparando')+'</p></div>', '');
+      if(d.step==='done') return dlgBox('dlg-diag', '<span class="ci lg calma">'+ic('check')+'</span>', tx('diag.guardado', {x:esc(d.tamano)}), tx('diag.envialo'),
+        file, '<button class="btn btn-secondary" data-act="diagShow">'+ic('folder')+tx('diag.mostrar')+'</button><button class="btn btn-primary" data-act="dlgClose">'+tx('diag.listo')+'</button>');
+      const lists = '<div class="inc"><div class="yes"><h3>'+tx('diag.incluye')+'</h3><ul>'+['diag.i1', 'diag.i2', 'diag.i3', 'diag.i4'].map(x => '<li>'+ic('check')+tx(x)+'</li>').join('')+'</ul></div>'+
+        '<div class="no"><h3>'+tx('diag.no_incluye')+'</h3><ul>'+['diag.n1', 'diag.n2', 'diag.n3'].map(x => '<li>'+ic('x')+tx(x)+'</li>').join('')+'</ul></div></div>';
+      return dlgBox('dlg-diag', '<span class="ci lg">'+ic('download')+'</span>', tx('diag.titulo'), tx('diag.d'),
+        (d.step==='err' ? '<div class="notice err" role="alert">'+ic('warn')+'<div><b>'+tx('diag.err')+'</b><span>'+tx('diag.err_d')+'</span></div></div>' : lists)+file,
+        '<button class="btn btn-secondary" data-act="dlgClose">'+tx('accion.cancelar')+'</button><button class="btn btn-primary" data-act="diagSave">'+ic('folder')+(d.step==='err'?tx('accion.otra_carpeta'):tx('diag.elegir'))+'</button>');
     }
     return '';
   }
@@ -785,14 +808,14 @@
   }
 
   /* ---------- arranque: ventana de inicio (core.js) ---------- */
-  const BOOT_STEPS = ['Iniciando…', 'Abriendo las cámaras…', 'Conectando con Te Tengo…', 'Terminando la actualización…'];
+  function bootSteps(){ return [tx('boot.0'), tx('boot.1'), tx('boot.2'), tx('boot.3')]; }
   function bootMark(){ return symbolSVG(false, 'class="sp-mark"'); }
   function bootWin(o){
     o = o||{}; const pct = o.pct==null ? 34 : o.pct, step = o.step||0;
-    return '<div class="boot'+(o.play?' play':'')+'" role="dialog" aria-label="Te Tengo Captura se está iniciando">'+
+    return '<div class="boot'+(o.play?' play':'')+'" role="dialog" aria-label="'+tx('boot.aria')+'">'+
       '<div class="boot-mark"><span class="sp-glow"></span>'+bootMark()+'</div>'+wordmark(false, true, 'boot-wm')+
-      '<div class="boot-foot"><div class="boot-bar" role="progressbar" aria-label="Progreso del inicio" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'"><i style="transform:scaleX('+(pct/100)+')"></i></div>'+
-      '<p class="boot-st"><span id="boot-st" aria-live="polite">'+BOOT_STEPS[step]+'</span><span class="boot-v">Versión '+esc(o.version||'')+'</span></p></div></div>';
+      '<div class="boot-foot"><div class="boot-bar" role="progressbar" aria-label="'+tx('boot.progreso')+'" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'"><i style="transform:scaleX('+(pct/100)+')"></i></div>'+
+      '<p class="boot-st"><span id="boot-st" aria-live="polite">'+bootSteps()[step]+'</span><span class="boot-v">'+tx('about.version', {v:esc(o.version||'')})+'</span></p></div></div>';
   }
 
   /* ---------- avisos dentro de la ventana al cambiar el estado (proto.js) ---------- */
@@ -801,21 +824,21 @@
     const before = {}; prev.cams.forEach(c => before[c.id] = c);
     for(const c of E.cams){
       const p = before[c.id]; if(!p) continue;
-      if(p.st.k==='off' && c.st.k!=='off') return {kind:'ok', icon:'usb', text:'La '+c.device+' volvió a responder.'};
-      if(!p.pause && c.pause) return {kind:'ok', icon:'pause', text:'La familia pausó '+ROOM_ART(c.room)+' hasta las '+c.pause+'.'};
-      if(p.pause && !c.pause && c.st.k!=='off') return {kind:'ok', icon:'check', text:'Pausa terminada: vuelve a cuidar '+ROOM_ART(c.room)+'.'};
-      if(p.room!==c.room) return {kind:'ok', icon:'check', text:'Habitación renombrada en la app: «'+c.room+'».'};
+      if(p.st.k==='off' && c.st.k!=='off') return {kind:'ok', icon:'usb', text:tx('tr.volvio', {cam:c.device})};
+      if(!p.pause && c.pause) return {kind:'ok', icon:'pause', text:tx('tr.pauso', {room:ROOM_ART(c.room), t:c.pause})};
+      if(p.pause && !c.pause && c.st.k!=='off') return {kind:'ok', icon:'check', text:tx('tr.fin_pausa', {room:ROOM_ART(c.room)})};
+      if(p.room!==c.room) return {kind:'ok', icon:'check', text:tx('tr.renombrada', {room:c.room})};
     }
     const antes = {}; (prev.devices || []).forEach(d => antes[d.uid || d.id] = d);
     for(const d of (E.devices || [])){
       const a = antes[d.uid || d.id]; if(!a) continue;
-      if(!a.room && d.room && d.by==='app') return {kind:'ok', icon:'mobile', text:'La familia eligió la '+d.name+' para '+ROOM_ART(d.room)};
-      if(a.room && !d.room && a.by==='app') return {kind:'ok', icon:'mobile', text:'La familia dejó de usar la '+d.name+': ya no cuida '+ROOM_ART(a.room)+'.'};
+      if(!a.room && d.room && d.by==='app') return {kind:'ok', icon:'mobile', text:tx('tr.eligio', {cam:d.name, room:ROOM_ART(d.room)})};
+      if(a.room && !d.room && a.by==='app') return {kind:'ok', icon:'mobile', text:tx('tr.dejo', {cam:d.name, room:ROOM_ART(a.room)})};
     }
-    if(!prev.online && E.online) return {kind:'ok', icon:'check', text:'Volvió internet. Avisos enviados.'};
-    if(!prev.consent && E.consent) return {kind:'ok', icon:'check', text:'Consentimiento registrado en la app.'};
+    if(!prev.online && E.online) return {kind:'ok', icon:'check', text:tx('tr.internet')};
+    if(!prev.consent && E.consent) return {kind:'ok', icon:'check', text:tx('tr.consent')};
     if(prev.store && E.store && prev.store.estado==='moviendo' && E.store.estado!=='moviendo')
-      return E.store.carpeta!==prev.store.carpeta ? {kind:'ok', icon:'folder', text:'Datos movidos a la carpeta nueva.'} : {kind:'warn', icon:'folder', text:'No pudimos mover los datos. Siguen en la carpeta anterior.'};
+      return E.store.carpeta!==prev.store.carpeta ? {kind:'ok', icon:'folder', text:tx('tr.movidos')} : {kind:'warn', icon:'folder', text:tx('tr.no_movidos')};
     return null;
   }
   /* What forces a full render; the countdown in the summary is only patched in place. */
@@ -827,7 +850,7 @@
     return JSON.stringify(o);
   }
 
-  const api = { ITIP, infoTip, updBand, aboutView, dialog, panelReplay, rpPhase, timeline, storageView, panelAvanzado, metersInner, actView, ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, BOOT_STEPS, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss };
+  const api = { ITIP, infoTip, updBand, aboutView, dialog, panelReplay, rpPhase, timeline, storageView, panelAvanzado, metersInner, actView, ic, esc, roomSVG, titlebar, tabbar, health, camRow, panelEstado, panelCamaras, win, transition, structure, bootWin, get BOOT_STEPS(){ return bootSteps(); }, listY, ROOM_ART, appIcon, LOGO, symbolSVG, mmss, t:tx, setIdioma, TEXTOS };
 
   /* ---------- DOM: render with focus, folded sections and scroll preserved ---------- */
   if(typeof document === 'undefined'){ if(typeof module !== 'undefined') module.exports = api; return; }
@@ -934,6 +957,7 @@
   }
   function actualizar(nuevo){
     const prev = E; E = nuevo;
+    setIdioma(E && E.idioma);
     const devs = E.devices || [];
     if(!devs.some(d => d.id===U.sel)) U.sel = devs.length ? devs[0].id : null;
     if(E.screen!=='main') U.dlg = null;
@@ -944,11 +968,11 @@
     else if(structure(prev) !== structure(E)){
       if(E.pair && prev.pair && E.pair.code !== prev.pair.code && E.pair.code){ E.pair.fresh = true; }
       render();
-      if(E.pair && E.pair.renewed && E.pair.code !== (prev.pair && prev.pair.code)) announce('Código nuevo');
+      if(E.pair && E.pair.renewed && E.pair.code !== (prev.pair && prev.pair.code)) announce(tx('pair.codigo_nuevo'));
     }
     else patch();
-    if(E.upd && E.upd.updated && !U.updToast && E.screen==='main'){ U.updToast = true; toast('ok', 'check', 'Te Tengo Captura se actualizó a '+E.upd.updated); }
-    if(E.pair && prev && prev.pair && prev.pair.left > 60 && E.pair.left <= 60 && E.pair.left > 0) announce('El código vence en 1 minuto');
+    if(E.upd && E.upd.updated && !U.updToast && E.screen==='main'){ U.updToast = true; toast('ok', 'check', tx('toast.actualizada', {v:E.upd.updated})); }
+    if(E.pair && prev && prev.pair && prev.pair.left > 60 && E.pair.left <= 60 && E.pair.left > 0) announce(tx('pair.un_minuto'));
   }
   function announce(text){ const a = $('pair-ann'); if(a){ a.textContent = ''; setTimeout(() => { a.textContent = text; }, 30); } }
 
@@ -995,7 +1019,7 @@
       const activar = !E.advanced;
       call('modoAvanzado', activar).then(r => {
         E.advanced = !!(r && r.on); U.adv.sub = E.advanced ? 'registro' : 'actividad'; U.acts = null;
-        toast('ok', 'sliders', E.advanced ? 'Modo avanzado activado.' : 'Modo avanzado desactivado.');
+        toast('ok', 'sliders', E.advanced ? tx('toast.adv_on') : tx('toast.adv_off'));
         loadActs();
       });
     },
@@ -1007,7 +1031,7 @@
     copyTech(el){
       const id = Number(el.dataset.arg), cam = advCam(E, U), l = cam && (U.log.lines[cam.id] || []).find(x => x.id===id);
       if(!l) return;
-      const hecho = () => toast('ok', 'copy', 'Línea copiada');
+      const hecho = () => toast('ok', 'copy', tx('toast.copiada'));
       try{ navigator.clipboard.writeText(l.x).then(hecho, () => { copiarTexto(l.x); hecho(); }); }catch(e){ copiarTexto(l.x); hecho(); }
     },
     actScope(el){ U.actScope = el.dataset.arg; render(); },
@@ -1021,22 +1045,22 @@
         render();
       });
     },
-    stMov(){ const a = E.store.ajustes; guardarAlmacen({movimientos: !a.movimientos}, !a.movimientos ? 'Guardamos los movimientos en esta PC.' : 'Dejamos de guardar movimientos. Los guardados se borran a su plazo.'); },
-    stVid(el){ const a = E.store.ajustes; if(!a.video){ opener = el; U.dlg = 'video'; render(); return; } guardarAlmacen({video:false}, 'Dejamos de guardar video. El guardado se borra a su plazo.'); },
-    videoOn(){ U.dlg = null; guardarAlmacen({video:true}, 'Guardamos video continuo solo en esta PC.'); if(opener) restore({act:'stVid'}); },
-    stClip(){ const a = E.store.ajustes; guardarAlmacen({clips: !a.clips}, !a.clips ? 'Guardamos los clips de los avisos en esta PC.' : 'Dejamos de guardar clips. La familia los ve en la app.'); },
+    stMov(){ const a = E.store.ajustes; guardarAlmacen({movimientos: !a.movimientos}, !a.movimientos ? tx('toast.mov_on') : tx('toast.mov_off')); },
+    stVid(el){ const a = E.store.ajustes; if(!a.video){ opener = el; U.dlg = 'video'; render(); return; } guardarAlmacen({video:false}, tx('toast.vid_off')); },
+    videoOn(){ U.dlg = null; guardarAlmacen({video:true}, tx('toast.vid_on')); if(opener) restore({act:'stVid'}); },
+    stClip(){ const a = E.store.ajustes; guardarAlmacen({clips: !a.clips}, !a.clips ? tx('toast.clip_on') : tx('toast.clip_off')); },
     ret(el){
       const [campo, v] = el.dataset.arg.split('|');
       if(campo==='limite_gb'){
         if(v==='otro'){ U.capOther = true; render(); const i = $('cap-val'); if(i) i.focus(); return; }
-        U.capOther = false; guardarAlmacen({limite_gb: Number(v)}, 'Límite de espacio: '+v+' GB.'); return;
+        U.capOther = false; guardarAlmacen({limite_gb: Number(v)}, tx('toast.limite', {x:v})); return;
       }
-      const valor = v==='null' ? null : Number(v), nombres = {dias_movimientos:'los movimientos', dias_video:'el video', dias_clips:'los clips'};
-      guardarAlmacen({[campo]: valor}, valor==null ? 'No borraremos '+nombres[campo]+'.' : 'Guardaremos '+nombres[campo]+' '+dias(valor)+'.');
+      const valor = v==='null' ? null : Number(v), nombres = {dias_movimientos:tx('ret.mov'), dias_video:tx('ret.vid'), dias_clips:tx('ret.clip')};
+      guardarAlmacen({[campo]: valor}, valor==null ? tx('toast.no_borrar', {x:nombres[campo]}) : tx('toast.guardar', {x:nombres[campo], d:dias(valor)}));
     },
     folderChange(){ call('cambiarCarpeta').then(r => { if(r && r.ok){ render(); } }); },
-    revokeKeep(){ U.dlg = null; call('conservarMovimientos').then(() => toast('ok', 'check', 'Conservamos los movimientos. No guardaremos nuevos.')); },
-    revokeWipe(){ U.dlg = null; call('borrarMovimientos').then(() => toast('ok', 'trash', 'Borramos los movimientos de esta PC.')); },
+    revokeKeep(){ U.dlg = null; call('conservarMovimientos').then(() => toast('ok', 'check', tx('toast.conservar'))); },
+    revokeWipe(){ U.dlg = null; call('borrarMovimientos').then(() => toast('ok', 'trash', tx('toast.borrados'))); },
     diagShow(){ call('mostrarEnCarpeta', U.diag.ruta || ''); closeDlg(); },
     hereOn(){ U.here = true; U.pick = {room:null, otherOn:false, other:'', err:null}; render(); call('ambientes').then(r => { U.rooms = r || []; render(); }); },
     hereOff(){ U.here = false; render(); },
@@ -1051,7 +1075,7 @@
       U.busy = true; render();
       call('usarAqui', [d.uid || d.id, amb ? amb.id : null, amb ? null : nombre]).then(r => {
         U.busy = false;
-        if(r && r.ok){ U.pick = {room:null, otherOn:false, other:'', err:null}; toast('ok', 'check', d.name+' cuida ahora '+ROOM_ART(nombre)); call('ambientes').then(x => { U.rooms = x || []; }); return; }
+        if(r && r.ok){ U.pick = {room:null, otherOn:false, other:'', err:null}; toast('ok', 'check', tx('toast.cuida', {cam:d.name, room:ROOM_ART(nombre)})); call('ambientes').then(x => { U.rooms = x || []; }); return; }
         const c = r && r.codigo;
         U.pick.err = c==='AMBIENTE_OCUPADO' ? 'dup' : c==='AMBIENTE_NO_PERMITIDO' ? 'bath' : c==='AMBIENTE_NOMBRE_VACIO' ? 'empty' : 'net';
         U.pick.errRoom = r && r.ambiente || nombre; U.pick.errPc = r && r.pc || E.pc.nombre; render();
@@ -1060,7 +1084,7 @@
     unuse(){
       const d = E.devices.find(x => x.id===U.sel); if(!d || !d.room) return;
       U.busy = true; render();
-      call('dejarDeUsar', d.id).then(r => { U.busy = false; if(r && r.ok) toast('ok', 'check', d.name+' ya no cuida '+ROOM_ART(d.room)+'.'); else { U.pick.err = 'net'; render(); } });
+      call('dejarDeUsar', d.id).then(r => { U.busy = false; if(r && r.ok) toast('ok', 'check', tx('toast.no_cuida', {cam:d.name, room:ROOM_ART(d.room)})); else { U.pick.err = 'net'; render(); } });
     },
     toEstado(){ U.tab = 'estado'; call('irAEstado').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },
     otherCode(){ call('otroCodigo').then(() => call('estado')).then(s => { if(s) actualizar(s); }); },
@@ -1072,7 +1096,7 @@
       U.busy = true; render();
       call('restablecer').then(r => {
         U.busy = false; U.dlg = null; opener = null;
-        if(r && r.ok){ U.tab = 'estado'; U.adv.sub = 'actividad'; toast('ok', 'check', r.avisada ? 'PC restablecida. La familia recibió un aviso.' : 'PC restablecida. La app la mostrará sin conexión hasta que haya internet.'); refrescar(); }
+        if(r && r.ok){ U.tab = 'estado'; U.adv.sub = 'actividad'; toast('ok', 'check', r.avisada ? tx('toast.reset') : tx('toast.reset_off')); refrescar(); }
         else render();
       });
     },
@@ -1080,7 +1104,7 @@
       U.busy = true; render();
       call('desinstalar').then(r => {
         U.busy = false; opener = null;
-        if(r && r.ok && r.papelera){ U.dlg = null; toast('ok', 'check', 'Te Tengo Captura se movió a la Papelera. Se cerrará en unos segundos.'); }
+        if(r && r.ok && r.papelera){ U.dlg = null; toast('ok', 'check', tx('toast.papelera')); }
         else if(r && r.ok){ U.dlg = 'trash'; refrescar(); }
         else { U.dlg = null; render(); }
       });
@@ -1092,7 +1116,7 @@
       const wipe = U.unlinkWipe;
       call('desvincular', wipe).then(r => {
         U.busy = false; U.dlg = null; opener = null;
-        if(r && r.ok){ U.tab = 'estado'; toast('ok', 'unlink', wipe ? 'PC desvinculada y datos borrados. La familia recibió un aviso.' : 'PC desvinculada. La familia recibió un aviso.'); call('estado').then(s => { if(s) actualizar(s); }); }
+        if(r && r.ok){ U.tab = 'estado'; toast('ok', 'unlink', wipe ? tx('toast.unlink_wipe') : tx('toast.unlink')); call('estado').then(s => { if(s) actualizar(s); }); }
         else render();
       });
     },
@@ -1103,34 +1127,39 @@
       call('descargarActualizacion').then(r => {
         if(r && r.pagina){
           if(E.upd && E.upd.os==='mac') U.dlg = 'updMac';
-          toast('ok', 'link', 'Abrimos '+r.pagina+' en el navegador.');
+          toast('ok', 'link', tx('toast.abrimos', {p:r.pagina}));
         } else refrescar();
       });
     },
-    updCancel(){ call('cancelarActualizacion').then(r => { const v = (r && r.version) || (E.upd && E.upd.ver) || ''; refrescar(); toast('ok', 'x', 'Descarga cancelada. Sigues con la versión '+v+'.'); }); },
+    updCancel(){ call('cancelarActualizacion').then(r => { const v = (r && r.version) || (E.upd && E.upd.ver) || ''; refrescar(); toast('ok', 'x', tx('toast.cancelada', {v:v})); }); },
     updCheck(){
       U.checking = true; render();
       call('buscarActualizaciones').then(r => {
         U.checking = false;
-        if(!r || !r.ok) toast('warn', 'wifiOff', 'Sin internet. No pudimos buscar.');
-        else if(!r.nueva) toast('ok', 'check', 'Tienes la última versión ('+r.version+').');
+        if(!r || !r.ok) toast('warn', 'wifiOff', tx('toast.no_buscar'));
+        else if(!r.nueva) toast('ok', 'check', tx('toast.ultima', {v:r.version}));
         refrescar();
       });
+    },
+    lang(el){
+      const l = el.dataset.arg; if(l===LANG) return;
+      setIdioma(l); E.idioma = LANG; U.acts = null; render();
+      call('cambiarIdioma', l).then(r => { if(r && r.idioma && r.idioma!==LANG){ setIdioma(r.idioma); E.idioma = LANG; } refrescar(); loadActs(); });
     },
     updAuto(){
       call('actualizarAutomaticamente', !E.upd.auto).then(r => {
         E.upd.auto = !!(r && r.on); U.acts = null;
-        toast('ok', 'refresh', E.upd.auto ? 'Se actualizará sola a las 03:00, si no hay una alerta.' : 'Las actualizaciones esperan a que elijas «Descargar».');
+        toast('ok', 'refresh', E.upd.auto ? tx('toast.auto_on') : tx('toast.auto_off'));
       });
     },
     retryNow(){
-      call('reintentarAhora').then(r => { if(r && !r.ok) toast('warn', 'wifiOff', 'Aún sin internet.'); });
+      call('reintentarAhora').then(r => { if(r && !r.ok) toast('warn', 'wifiOff', tx('net.aun_sin')); });
     },
     rescan(el){
-      el.classList.add('loading'); el.innerHTML = '<span class="spin"></span>Buscando cámaras conectadas…';
+      el.classList.add('loading'); el.innerHTML = '<span class="spin"></span>'+tx('toast.buscando');
       call('buscarWebcam').then(r => {
-        if(r && !r.ok){ const d = E.devices.find(x => !x.connected) || E.devices[0]; toast('warn', 'videoOff', d ? 'No encontramos la '+d.name+'. Revisa el cable USB.' : 'No encontramos cámaras'); }
-        else { const n = E.devices.length; toast('ok', 'check', n+(n===1?' cámara conectada.':' cámaras conectadas.')); }
+        if(r && !r.ok){ const d = E.devices.find(x => !x.connected) || E.devices[0]; toast('warn', 'videoOff', d ? tx('toast.no_encontramos', {cam:d.name}) : tx('cam.no_encontramos')); }
+        else { const n = E.devices.length; toast('ok', 'check', tn('toast.conectadas', n)); }
       });
     }
   };
@@ -1172,7 +1201,7 @@
   function renderAdv(){
     const cam = advCam(E, U), box = $('logbox');
     if(!cam || !box){ render(); return; }
-    if(U.log.paused){ const n = $('log-new'), all = U.log.lines[cam.id] || [], k = all.length - U.log.cut; if(n) n.textContent = k+' '+(k===1?'línea nueva':'líneas nuevas'); return; }
+    if(U.log.paused){ const n = $('log-new'), all = U.log.lines[cam.id] || [], k = all.length - U.log.cut; if(n) n.textContent = tn('log.nuevas', k); return; }
     ITIP.quiet = Date.now() + 200;
     const top = box.scrollTop; box.innerHTML = logRows(E, U, cam); box.scrollTop = top;
     LOG_K.forEach(k => { const c = $('cnt-'+k[0]); if(c) c.textContent = (U.log.lines[cam.id] || []).filter(l => l.k===k[0]).length; });
@@ -1183,7 +1212,7 @@
   }
   function closeDlg(){ U.dlg = null; render(); if(opener && document.body.contains(opener)) opener.focus({preventScroll:true}); else restore({act:'unlinkAsk'}); opener = null; }
   document.addEventListener('change', e => {
-    if(e.target && e.target.id==='cap-val' && Number(e.target.value) > 0){ U.capOther = false; guardarAlmacen({limite_gb: Number(e.target.value)}, 'Límite de espacio: '+e.target.value+' GB.'); return; } if(e.target && e.target.id==='unlink-wipe') U.unlinkWipe = e.target.checked; });
+    if(e.target && e.target.id==='cap-val' && Number(e.target.value) > 0){ U.capOther = false; guardarAlmacen({limite_gb: Number(e.target.value)}, tx('toast.limite', {x:e.target.value})); return; } if(e.target && e.target.id==='unlink-wipe') U.unlinkWipe = e.target.checked; });
   document.addEventListener('input', e => {
     if(e.target && e.target.id==='log-q'){ U.log.q = e.target.value; renderAdv(); return; }
     if(e.target && e.target.id==='cap-val'){ U.capVal = e.target.value; return; } if(e.target && e.target.id==='room-other'){ U.pick.other = e.target.value; if(U.pick.err){ U.pick.err = null; } const b = document.querySelector('#app [data-act="useCam"]'); if(b) b.disabled = !e.target.value.trim(); } });
@@ -1269,7 +1298,7 @@
     const ahora = performance.now(), dt = (ahora - rpLast)*rp.speed; rpLast = ahora;
     let t = rp.t + dt;
     const g = rpGap(rp, t);
-    if(g){ t = g.b; if(rpGapShown!==g){ rpGapShown = g; rp.t = t; toast('warn', 'clock', 'Sin datos de '+hmMs(g.a)+' a '+hmMs(g.b)+' · '+g.motivo); } }
+    if(g){ t = g.b; if(rpGapShown!==g){ rpGapShown = g; rp.t = t; toast('warn', 'clock', tx('toast.sin_datos', {a:hmMs(g.a), b:hmMs(g.b), x:g.motivo})); } }
     const fin = rp.w0 + rpSpan(rp);
     if(t >= fin){ rp.t = fin; rpStop(); render(); return; }
     rp.t = t; rpPintar();
@@ -1287,7 +1316,7 @@
     const elegir = evs => dir < 0 ? evs.filter(x => x.t < t - 600).pop() : evs.find(x => x.t > t + 600);
     const e = elegir((rp.win && rp.win.eventos) || []);
     if(e){ rpIr(e.t); return; }
-    const vacio = () => toast('ok', 'info', dir < 0 ? 'No hay eventos antes.' : 'No hay más eventos.');
+    const vacio = () => toast('ok', 'info', dir < 0 ? tx('toast.sin_antes') : tx('toast.sin_mas'));
     if(!cam){ vacio(); return; }
     call('repeticionVentana', dir < 0 ? [cam.id, t - 3600000, t] : [cam.id, t, t + 3600000]).then(w => {
       const otro = w && elegir(w.eventos || []); if(otro) rpIr(otro.t); else vacio();
@@ -1324,7 +1353,7 @@
       U.rp = Object.assign({}, rp, {open:false});
       render();
       if(rp.visto && cam){
-        call('cerrarRepeticion', [cam.id, rp.w0, rp.w0 + rpSpan(rp), (Date.now() - rp.abierta)/1000]).then(() => toast('ok', 'eye', 'Acceso registrado'));
+        call('cerrarRepeticion', [cam.id, rp.w0, rp.w0 + rpSpan(rp), (Date.now() - rp.abierta)/1000]).then(() => toast('ok', 'eye', tx('toast.acceso')));
       }
       const b = document.querySelector('#app [data-act="replayOpen"]'); if(b) b.focus({preventScroll:true});
     },
@@ -1341,7 +1370,7 @@
     },
     rpGo(){
       const i = $('rp-hour'), v = i ? i.value : U.rp.hour, m = /^(\d{1,2}):(\d{2})$/.exec(String(v).trim());
-      if(!m || +m[1] > 23 || +m[2] > 59){ toast('warn', 'clock', 'Escribe la hora así: 10:40.'); return; }
+      if(!m || +m[1] > 23 || +m[2] > 59){ toast('warn', 'clock', tx('toast.hora')); return; }
       U.rp.hour = pad2(+m[1])+':'+m[2]; rpAbrirMomento();
     },
     rpVideo(){ const rp = U.rp; rp.video = !rp.video; rpVideoT = null; render(); rpPintar(); }
@@ -1368,16 +1397,26 @@
   });
 
   /* ---------- arranque: Python drives the progress with ttg.arranque(pct, paso) ---------- */
-  function arranque(pct, step, version){
+  function arranque(pct, step, version, idioma){
     const bar = document.querySelector('.boot-bar'); if(!bar) return;
-    if(version != null) document.querySelector('.boot-v').textContent = 'Versión '+version;
+    if(idioma != null && setIdioma(idioma) !== bootLang){
+      bootLang = LANG;
+      const b = document.querySelector('.boot'); if(b) b.setAttribute('aria-label', tx('boot.aria'));
+      bar.setAttribute('aria-label', tx('boot.progreso'));
+      const s = $('boot-st'); if(s && step == null) s.textContent = bootSteps()[bootStep];
+    }
+    if(step != null) bootStep = step;
+    if(version != null) document.querySelector('.boot-v').textContent = tx('about.version', {v:version});
     bar.querySelector('i').style.transform = 'scaleX('+(pct/100)+')';
     bar.setAttribute('aria-valuenow', pct);
-    const txt = $('boot-st'); if(step != null && txt.textContent !== BOOT_STEPS[step]) txt.textContent = BOOT_STEPS[step];
+    const txt = $('boot-st'), paso = bootSteps()[bootStep]; if(txt.textContent !== paso) txt.textContent = paso;
   }
+  let bootLang = 'es', bootStep = 0;
   function arranqueFin(){ const b = document.querySelector('.boot'); if(b) b.classList.add('out'); }
 
   global.ttg = { actualizar, arranque, arranqueFin, accion };
+  /* ?idioma=en at load: the language before the first state (Python sends it in every state) */
+  try{ const q = new URLSearchParams(global.location.search).get('idioma'); if(q){ setIdioma(q); bootLang = LANG; } }catch(e){}
   if(document.body.dataset.pagina === 'arranque'){
     $('app').innerHTML = bootWin({play:true, pct:0, step:0});
   } else {

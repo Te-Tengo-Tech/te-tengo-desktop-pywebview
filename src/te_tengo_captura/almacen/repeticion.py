@@ -26,6 +26,7 @@ from typing import Any, cast
 from te_tengo_captura.almacen.gestor import AlmacenLocal
 from te_tengo_captura.almacen.indice import Archivo, TipoArchivo
 from te_tengo_captura.almacen.puntos import FilaMovimiento, instante_ms, leer_parquet
+from te_tengo_captura.i18n import t
 from te_tengo_deteccion.clasificacion.estados import Fase, TipoEvento
 
 logger = logging.getLogger(__name__)
@@ -54,20 +55,21 @@ ARCHIVOS_EN_MEMORIA = 12
 
 # Phase codes for the window (``rpPose`` of the prototype).
 DE_PIE, INESTABLE, POSIBLE_CAIDA, EN_EL_SUELO, CONFIRMADA, SE_LEVANTO = range(6)
+# The marks' kind and the ids of their labels (``i18n``), written in the window's language.
 MARCAS = {
-    TipoEvento.CAIDA: ("caida", "Caída"),
-    TipoEvento.MOVIMIENTO_INESTABLE: ("inestable", "Inestable"),
-    TipoEvento.RECUPERACION: ("calma", "Se levantó"),
+    TipoEvento.CAIDA: ("caida", "repeticion.caida"),
+    TipoEvento.MOVIMIENTO_INESTABLE: ("inestable", "repeticion.inestable"),
+    TipoEvento.RECUPERACION: ("calma", "repeticion.se_levanto"),
 }
-SIN_PERSONA = ("Sin persona en la imagen", "Sin persona")
-SIN_CAPTURA = ("PC apagada o cámara en pausa", "Sin captura")
+SIN_PERSONA = ("repeticion.sin_persona", "repeticion.sin_persona.corto")
+SIN_CAPTURA = ("repeticion.sin_captura", "repeticion.sin_captura.corto")
 
 
 @dataclass(frozen=True, slots=True)
 class Hueco:
     desde_ms: int
     hasta_ms: int
-    motivo: str
+    motivo: str  # ids of the texts (``i18n``)
     corto: str
 
 
@@ -122,7 +124,7 @@ class Repeticion:
         hasta_ms = min(hasta_ms, desde_ms + VENTANA_MAXIMA_MS)
         filas = self._filas_de(camara_id, desde_ms - 1, hasta_ms)
         eventos = [
-            {"t": f.t_ms, "k": MARCAS[f.evento][0], "l": MARCAS[f.evento][1]}
+            {"t": f.t_ms, "k": MARCAS[f.evento][0], "l": t(MARCAS[f.evento][1])}
             for f in filas
             if f.evento in MARCAS and desde_ms <= f.t_ms <= hasta_ms
         ]
@@ -132,7 +134,7 @@ class Repeticion:
             "hayDatos": any(f.landmarks is not None for f in filas),
             "eventos": eventos,
             "huecos": [
-                {"a": h.desde_ms, "b": h.hasta_ms, "motivo": h.motivo, "corto": h.corto}
+                {"a": h.desde_ms, "b": h.hasta_ms, "motivo": t(h.motivo), "corto": t(h.corto)}
                 for h in self.huecos(camara_id, desde_ms, hasta_ms)
             ],
             "video": self._hay_video(camara_id, desde_ms, hasta_ms),

@@ -5,7 +5,8 @@ new version «Descargar la versión X» (Mac: «Ir a la descarga de la versión 
 actualizaciones»; «Salir» opens the window and asks to confirm it, because it stops fall detection
 (draft copy, ``docs/BLOCKERS.md``).
 «Abrir…» is the default item, so a click on the icon opens the window. A new version adds a
-coral dot to the icon and «· versión nueva X» to the tooltip.
+coral dot to the icon and «· versión nueva X» to the tooltip. The labels are read each time the
+menu is drawn, so they follow the language (``i18n``) without rebuilding the icon.
 """
 
 import logging
@@ -13,18 +14,28 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
+from te_tengo_captura import i18n
 from te_tengo_captura.bandeja.iconos import icono
 from te_tengo_captura.estado import Mostrable, Notificacion
+from te_tengo_captura.i18n import t
 
 logger = logging.getLogger(__name__)
 
-TEXTO_ABRIR = "Abrir Te Tengo Captura"
-TEXTO_SALIR = "Salir"
-TEXTO_BUSCAR = "Buscar actualizaciones"
+
+def texto_abrir() -> str:
+    return t("menu.abrir")
+
+
+def texto_salir() -> str:
+    return t("menu.salir")
+
+
+def texto_buscar() -> str:
+    return t("menu.buscar")
 
 
 def texto_descarga(version: str, mac: bool) -> str:
-    return f"{'Ir a la descarga de la' if mac else 'Descargar la'} versión {version}"
+    return t("menu.ir_a_la_descarga" if mac else "menu.descargar", version=version)
 
 
 # macOS: AppKit status items may only be touched from the main thread, which pywebview owns.
@@ -58,19 +69,20 @@ class IconoBandeja:
         self._punto: str | None = None
         self._version: str | None = None  # a new version of the program (US-43)
         self._mac = False
+        self._idioma = i18n.idioma()  # the menu is drawn again when it changes
         self._icono: Any = pystray.Icon(
             "te-tengo-captura",
             icon=icono("ok"),
             title="Te Tengo Captura",
             menu=pystray.Menu(
-                pystray.MenuItem(TEXTO_ABRIR, lambda: abrir(), default=True),
+                pystray.MenuItem(lambda _item: texto_abrir(), lambda: abrir(), default=True),
                 pystray.MenuItem(
                     lambda _item: texto_descarga(self._version or "", self._mac),
                     lambda: descargar(),
                     visible=lambda _item: self._version is not None,
                 ),
-                pystray.MenuItem(TEXTO_BUSCAR, lambda: buscar()),
-                pystray.MenuItem(TEXTO_SALIR, lambda: salir()),
+                pystray.MenuItem(lambda _item: texto_buscar(), lambda: buscar()),
+                pystray.MenuItem(lambda _item: texto_salir(), lambda: salir()),
             ),
         )
 
@@ -95,9 +107,13 @@ class IconoBandeja:
     def actualizar(self, estado: Mostrable) -> None:
         punto, titulo = estado.bandeja.k, descripcion(estado)
         if self._version is not None:
-            titulo += f" · versión nueva {self._version}"
+            titulo += " · " + t("bandeja.version_nueva", version=self._version)
+        idioma, cambio_idioma = i18n.idioma(), i18n.idioma() != self._idioma
+        self._idioma = idioma
 
         def aplicar() -> None:
+            if cambio_idioma:
+                self._icono.update_menu()
             if punto != self._punto:
                 self._punto = punto
                 self._icono.icon = icono(punto, version_nueva=self._version is not None)

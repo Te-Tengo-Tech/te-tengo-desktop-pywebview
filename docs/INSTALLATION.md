@@ -115,6 +115,7 @@ These paths come from `platformdirs` with the app name `TeTengoCaptura` (`src/te
 | `[vivienda] nombre_adulto_mayor`, `direccion` | The household, as the family registered it in the app |
 | `[camara] nombre_habitacion` | The room where the webcam is, e.g. «Sala». It is used on the first registration; afterwards the family renames it in the app (CA-06.2) |
 | `[clasificacion]` | Leave it out. Without it the agent uses the thresholds validated in [validation.md](validation.md); change them only after re-validating |
+| `[interfaz] idioma` | Optional: `"es"` (Spanish) or `"en"` (English) for the window, the tray menu and the system notices. Leave it out to follow the system's language (English when it starts with `en`, Spanish otherwise). A language chosen in «Avanzado › Acerca de › Idioma» wins; it is kept in `ventana.json` in the data folder. A linked PC without `config.toml` can also use a file with only this table |
 
 If a field is missing or invalid, the agent does not start. It exits with code 2, and the log and the console say, in Spanish, which field to fix (`El archivo de configuración … está incompleto: Falta el campo «webcam.indice».`).
 

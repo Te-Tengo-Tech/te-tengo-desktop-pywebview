@@ -69,6 +69,7 @@ def test_el_puente_expone_solo_los_metodos_del_contrato() -> None:
         "cancelarActualizacion",
         "irALaDescarga",
         "actualizarAutomaticamente",
+        "cambiarIdioma",
         "salir",
         "restablecer",
         "desinstalar",

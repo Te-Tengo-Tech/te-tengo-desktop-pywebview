@@ -51,10 +51,12 @@ from typing import Any
 
 import httpx
 
+from te_tengo_captura import i18n
 from te_tengo_captura.actualizaciones import descarga, instalador
 from te_tengo_captura.actualizaciones.comparar import es_mas_nueva
 from te_tengo_captura.backend.errores import ErrorBackendError, SinConexionError
 from te_tengo_captura.backend.modelos import VersionesPublicadas, VersionPublicada
+from te_tengo_captura.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -481,7 +483,7 @@ class Actualizador:
         if mac and canal is not None and canal.url and canal.url.lower().endswith(".dmg"):
             dmg = canal.url.rstrip("/").rsplit("/", 1)[-1]
         publicada = (
-            nueva.publicada_en.astimezone(self._zona).strftime("%d/%m/%Y")
+            i18n.fecha(nueva.publicada_en.astimezone(self._zona).date())
             if nueva is not None and nueva.publicada_en is not None
             else None
         )
@@ -516,8 +518,10 @@ class Actualizador:
         if ultima is None:
             return None
         if ultima.date() == self._reloj().date():
-            return f"hoy {ultima:%H:%M}"
-        return f"{ultima:%d/%m %H:%M}"
+            return t("actualizacion.hoy", hora=f"{ultima:%H:%M}")
+        return t(
+            "actualizacion.otro_dia", fecha=i18n.fecha_corta(ultima.date()), hora=f"{ultima:%H:%M}"
+        )
 
     # ------------------------------------------------------------------ storage
 

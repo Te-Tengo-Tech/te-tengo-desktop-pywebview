@@ -81,14 +81,30 @@ SolidCompression=yes
 ; The running agent is stopped by the [Code] section, not by the Restart Manager.
 CloseApplications=no
 SetupLogging=yes
+; Spanish, or English when Windows' display language is English (no question asked).
+ShowLanguageDialog=no
+LanguageDetectionMethod=uilanguage
 
 [Languages]
+; The first one is the default when Windows' language is neither of them.
 Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "en"; MessagesFile: "compiler:Default.isl"
 
 [Messages]
 ; Draft copy (docs/BLOCKERS.md): detection only works while the program runs.
-FinishedLabel=Te Tengo Captura quedó instalado.%n%nDéjalo encendido: solo detecta caídas mientras está abierto. Se inicia solo con Windows y, al cerrar la ventana, sigue en la bandeja junto al reloj.
-FinishedLabelNoIcons=Te Tengo Captura quedó instalado.%n%nDéjalo encendido: solo detecta caídas mientras está abierto. Se inicia solo con Windows y, al cerrar la ventana, sigue en la bandeja junto al reloj.
+es.FinishedLabel=Te Tengo Captura quedó instalado.%n%nDéjalo encendido: solo detecta caídas mientras está abierto. Se inicia solo con Windows y, al cerrar la ventana, sigue en la bandeja junto al reloj.
+es.FinishedLabelNoIcons=Te Tengo Captura quedó instalado.%n%nDéjalo encendido: solo detecta caídas mientras está abierto. Se inicia solo con Windows y, al cerrar la ventana, sigue en la bandeja junto al reloj.
+en.FinishedLabel=Te Tengo Captura is installed.%n%nKeep it on: it only detects falls while it is open. It starts with Windows and, when you close the window, it stays in the tray next to the clock.
+en.FinishedLabelNoIcons=Te Tengo Captura is installed.%n%nKeep it on: it only detects falls while it is open. It starts with Windows and, when you close the window, it stays in the tray next to the clock.
+
+[CustomMessages]
+; Draft copy (docs/BLOCKERS.md), asked by the uninstaller (PreguntarRestablecer).
+es.QuitarPc=¿Quitar también esta PC de la casa y borrar sus datos?
+es.QuitarPcDetalle=Te Tengo dejará de detectar caídas con esta PC. La familia recibirá un aviso y la PC desaparecerá de la app. Se borrarán los accesos guardados, la configuración, los movimientos, video y clips, los avisos que aún no se enviaron y los registros.
+es.QuitarPcNo=Elige «No» solo si vas a volver a instalarlo en esta PC.
+en.QuitarPc=Also remove this PC from the home and delete its data?
+en.QuitarPcDetalle=Te Tengo will stop detecting falls with this PC. The family will get a notice and the PC will disappear from the app. The saved access, the settings, the movements, video and clips, the notices not sent yet and the logs will be deleted.
+en.QuitarPcNo=Choose «No» only if you are going to install it again on this PC.
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -207,11 +223,8 @@ begin
   if UninstallSilent then
     Result := SeDebeRestablecer
   else
-    Result := MsgBox('¿Quitar también esta PC de la casa y borrar sus datos?' + #13#10#13#10 +
-      'Te Tengo dejará de detectar caídas con esta PC. La familia recibirá un aviso y la PC ' +
-      'desaparecerá de la app. Se borrarán los accesos guardados, la configuración, los ' +
-      'movimientos, video y clips, los avisos que aún no se enviaron y los registros.' + #13#10#13#10 +
-      'Elige «No» solo si vas a volver a instalarlo en esta PC.',
+    Result := MsgBox(CustomMessage('QuitarPc') + #13#10#13#10 +
+      CustomMessage('QuitarPcDetalle') + #13#10#13#10 + CustomMessage('QuitarPcNo'),
       mbConfirmation, MB_YESNO) = IDYES;
 end;
 
