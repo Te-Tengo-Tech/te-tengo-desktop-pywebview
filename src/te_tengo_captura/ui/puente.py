@@ -51,6 +51,8 @@ class Acciones:
     cancelar_actualizacion: Callable[[], dict[str, Any]] = lambda: {"ok": False}
     ir_a_la_descarga: Callable[[], dict[str, Any]] = lambda: {"ok": False}
     actualizacion_automatica: Callable[[bool], bool] = lambda _activar: False
+    # «Idioma» in «Avanzado › Acerca de»: returns the language now in use.
+    cambiar_idioma: Callable[[str], str] = lambda _idioma: "es"
     # «Salir», «Restablecer esta PC» and «Desinstalar» (Mac).
     salir: Callable[[], None] = lambda: None
     restablecer: Callable[[], dict[str, Any]] = lambda: {"ok": False}
@@ -213,6 +215,10 @@ class Puente:
     def actualizarAutomaticamente(self, activar: bool) -> dict[str, bool]:  # noqa: N802
         """The «Actualizar automáticamente» switch (CA-43.7)."""
         return {"on": self._acciones.actualizacion_automatica(bool(activar))}
+
+    def cambiarIdioma(self, idioma: str) -> dict[str, str]:  # noqa: N802 (JavaScript name)
+        """«Idioma»: Español or English for the window, the tray and the notices."""
+        return {"idioma": self._acciones.cambiar_idioma(str(idioma))}
 
     def salir(self) -> None:
         """«Salir» confirmed in the window: the agent stops and fall detection with it."""

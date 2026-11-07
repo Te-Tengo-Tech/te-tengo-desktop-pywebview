@@ -39,7 +39,7 @@ from pathlib import Path
 
 from barrer_rangos import SIN_R9, EventoVideo, eventos_video, wilson
 from evaluar import (
-    DATASETS,
+    DATASETS_VALIDACION,
     RESULTADOS,
     Secuencia,
     Video,
@@ -55,6 +55,8 @@ from te_tengo_deteccion.clasificacion.umbrales import Umbrales
 CONGELADOS = Umbrales(velocidad_descenso_min=0.01)
 VALORES_V = [round(0.01 * i, 2) for i in range(1, 101)]  # the sweep of evaluar.py --barrer
 CAIDA = TipoEvento.CAIDA.value
+# The datasets of the leave-one-group-out of section 6.3 (UP-Fall and MCFD: evaluar_multicamara.py).
+DATASETS = (*DATASETS_VALIDACION, "gmdcsa24")
 # Onset-aware criterion: a fall video counts only if a ``caida`` comes at most this long before
 # the labelled onset (the labels are hand-made to 0.1 s and the descent can start a bit earlier).
 TOLERANCIA_INICIO_S = 1.0

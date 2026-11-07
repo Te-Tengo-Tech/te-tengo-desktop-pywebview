@@ -12,10 +12,11 @@ desktop prototype (docs repo ``05-prototipos/app-escritorio/.impeccable/src/core
 * the tray dot (``trayState``): someone previews a webcam to choose it › not linked › cameras not
   chosen › a camera lost › offline › no consent › live › paused › all good.
 
-All the Spanish copy that depends on the state lives here, copied verbatim from ``core.js``
-(UI term «habitación»); where the prototype has no sentence for a case the agent can reach
-(several cameras lost or paused, nobody named as the viewer) the closest prototype sentence is
-adapted and listed in ``docs/BLOCKERS.md``. The web UI only renders it. Fields named ``*_html``
+All the copy that depends on the state lives here, in the current language (``i18n``): the
+Spanish is copied verbatim from ``core.js`` (UI term «habitación»); where the prototype has no
+sentence for a case the agent can reach (several cameras lost or paused, nobody named as the
+viewer) the closest prototype sentence is adapted and listed in ``docs/BLOCKERS.md``. The web UI
+only renders it. Fields named ``*_html``
 are already escaped and may contain the prototype's ``<span class="mono">``; every other text is
 plain and the UI escapes it.
 """
@@ -26,8 +27,8 @@ from enum import StrEnum
 from html import escape
 from typing import Any, Protocol
 
-QUIEN_MIRA = "Un familiar"  # core.js osToast fallback: the contract does not say who watches
-QUIEN_PAUSA = "la familia"  # core.js health fallback (``S.pauseBy||'la familia'``)
+from te_tengo_captura import i18n
+from te_tengo_captura.i18n import t
 
 
 class Situacion(StrEnum):
@@ -113,12 +114,10 @@ class Ayuda:
     clave: str
 
 
-# core.js health: the live view's privacy note, moved from the summary's detail into the «?» icon
-AYUDA_EN_VIVO = Ayuda(
-    "No se graba. Queda en el registro de accesos que ve la familia en la app.",
-    "privacidad",
-    "health-live",
-)
+def ayuda_en_vivo() -> Ayuda:
+    """core.js health: the live view's privacy note, moved from the summary's detail into the
+    «?» icon."""
+    return Ayuda(t("ayuda.en_vivo"), t("ayuda.en_vivo.tema"), "health-live")
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,12 +200,14 @@ class EstadoAgente:
     version: str
     pausas: dict[str, str] = field(default_factory=dict)  # clave → «15:00», local time
     en_vivo: dict[str, str] = field(default_factory=dict)  # clave → «10:42», since
+    idioma: str = i18n.PREDETERMINADO  # the language of every text above (``i18n``)
 
     def a_json(self) -> dict[str, Any]:
         """The state for ``ttg.actualizar``."""
         e = self.entradas
         return {
             "screen": "main",
+            "idioma": self.idioma,
             # False until the first heartbeat answers; the UI shows no transition notices before.
             "listo": e.en_linea is not None,
             "situacion": self.situacion.value,
@@ -274,33 +275,61 @@ _ARTE = {  # ROOM_ART of proto.js, for the in-window notices
 }
 
 
-def de_habitacion(habitacion: str) -> str:
-    """``deRoomD``: «la sala», «el dormitorio», or «la habitación «Sala comedor»»."""
+def _es(idioma_: str | None) -> bool:
+    return (idioma_ or i18n.idioma()) == i18n.ES
+
+
+def de_habitacion(habitacion: str, idioma_: str | None = None) -> str:
+    """``deRoomD``: «la sala», «el dormitorio», or «la habitación «Sala comedor»». In English the
+    room's name as the family wrote it."""
+    if not _es(idioma_):
+        return habitacion
     return _ARTICULO.get(habitacion.strip().lower(), f"la habitación «{habitacion}»")
 
 
-def del_habitacion(habitacion: str) -> str:
-    """``delRoom``: «de la sala», «del dormitorio»."""
-    texto = de_habitacion(habitacion)
+def del_habitacion(habitacion: str, idioma_: str | None = None) -> str:
+    """``delRoom``: «de la sala», «del dormitorio» (English: the room's name)."""
+    texto = de_habitacion(habitacion, idioma_)
+    if not _es(idioma_):
+        return texto
     if texto.startswith("el "):
         return "del " + texto[3:]
     return "de " + texto
 
 
-def habitacion_arte(habitacion: str) -> str:
-    """``ROOM_ART`` of ``proto.js``: «la Sala», «el Dormitorio», «Sala comedor» in quotes."""
+def habitacion_arte(habitacion: str, idioma_: str | None = None) -> str:
+    """``ROOM_ART`` of ``proto.js``: «la Sala», «el Dormitorio», «Sala comedor» in quotes
+    (English: the room's name)."""
+    if not _es(idioma_):
+        return habitacion
     return _ARTE.get(habitacion.strip().lower(), f"«{habitacion}»")
 
 
-def lista_y(elementos: list[str]) -> str:
-    """``listY``: «Sala, Dormitorio y Pasillo»."""
+def lista_y(elementos: list[str], idioma_: str | None = None) -> str:
+    """``listY``: «Sala, Dormitorio y Pasillo» («Sala, Dormitorio and Pasillo» in English)."""
     if len(elementos) < 2:
         return "".join(elementos)
-    return ", ".join(elementos[:-1]) + " y " + elementos[-1]
+    y = i18n.traducir(idioma_ or i18n.idioma(), "lista.y")
+    return ", ".join(elementos[:-1]) + f" {y} " + elementos[-1]
 
 
 def mayuscula(texto: str) -> str:
     return texto[:1].upper() + texto[1:]
+
+
+def plural(clave: str, n: int, **valores: object) -> str:
+    """``clave.uno`` for one, ``clave.otros`` otherwise."""
+    return t(f"{clave}.{'uno' if n == 1 else 'otros'}", n=n, **valores)
+
+
+def quien_mira() -> str:
+    """core.js osToast fallback: the contract does not say who watches («Un familiar»)."""
+    return t("quien.familiar")
+
+
+def quien_pausa() -> str:
+    """core.js health fallback (``S.pauseBy||'la familia'``)."""
+    return t("quien.familia")
 
 
 def _mono(texto: str, id_: str | None = None) -> str:
@@ -337,14 +366,14 @@ def _aviso(
 ) -> Aviso:
     camaras = list(e.camaras)
     habitaciones = [c.nombre_habitacion for c in camaras]
-    ir_a_camaras = Accion("toCams", "Ir a Cámaras", "cam")
+    ir_a_camaras = Accion("toCams", t("accion.ir_a_camaras"), "cam")
     if s is Situacion.SIN_CAMARAS:
         return Aviso(
             "none",
             "none",
             "cam",
-            "No encontramos cámaras",
-            "Conecta una webcam por USB.",
+            t("aviso.sin_camaras.titulo"),
+            t("aviso.sin_camaras.detalle"),
             ir_a_camaras,
         )
     if s is Situacion.FALTA_ELEGIR:
@@ -353,20 +382,23 @@ def _aviso(
             "none",
             "none",
             "mobile",
-            "Falta elegir las cámaras en la app",
-            f"Detectamos {n} {'cámara' if n == 1 else 'cámaras'}. Mientras tanto, no cuida "
-            "ninguna habitación.",
+            t("aviso.falta_elegir.titulo"),
+            plural("aviso.falta_elegir.detalle", n),
             ir_a_camaras,
         )
-    buscar = Accion("rescan", "Buscar de nuevo", "refresh")
+    buscar = Accion("rescan", t("accion.buscar_de_nuevo"), "refresh")
     if s is Situacion.WEBCAM_DESCONECTADA:
         perdidas = [c for c in camaras if not c.webcam_conectada]
         funcionan = len(camaras) - len(perdidas)
-        titulo = f"{lista_y([c.nombre_habitacion for c in perdidas])} " + (
-            "no responde" if len(perdidas) == 1 else "no responden"
+        titulo = plural(
+            "aviso.desconectada.titulo",
+            len(perdidas),
+            salas=lista_y([c.nombre_habitacion for c in perdidas]),
         )
-        detalle = "Revisa el cable USB" + (
-            f" · {funcionan} de {len(camaras)} cámaras funcionan" if len(camaras) > 1 else "."
+        detalle = (
+            t("aviso.desconectada.detalle_varias", funcionan=funcionan, total=len(camaras))
+            if len(camaras) > 1
+            else t("aviso.desconectada.detalle")
         )
         return Aviso("warn lost", "off", "videoOff", escape(titulo), escape(detalle), buscar)
     if s is Situacion.SIN_INTERNET:
@@ -374,18 +406,20 @@ def _aviso(
             "offline",
             "off",
             "wifiOff",
-            "Sin internet",
-            "Las cámaras siguen cuidando; los avisos esperan. Reintento en "
-            f"{_mono(str(e.segundos_para_reintento), 'retry')} s.",
-            Accion("retryNow", "Reintentar ahora", "refresh"),
+            t("aviso.sin_internet.titulo"),
+            t(
+                "aviso.sin_internet.detalle",
+                segundos=_mono(str(e.segundos_para_reintento), "retry"),
+            ),
+            Accion("retryNow", t("accion.reintentar_ahora"), "refresh"),
         )
     if s is Situacion.SIN_CONSENTIMIENTO:
         return Aviso(
             "warn",
             "consent",
             "doc",
-            escape(f"Falta el consentimiento de {hogar.primer_nombre}"),
-            "Hasta registrarlo en la app, las cámaras no se usan.",
+            escape(t("aviso.consentimiento.titulo", nombre=hogar.primer_nombre)),
+            t("aviso.consentimiento.detalle"),
             None,
         )
     if s is Situacion.EN_PAUSA:
@@ -394,23 +428,18 @@ def _aviso(
             key=lambda c: c.pausada_hasta or datetime.max,
         )
         otras = [c.nombre_habitacion for c in camaras if c.pausada_hasta is None]
-        siguen = (
-            f"{lista_y(otras)} {'siguen' if len(otras) > 1 else 'sigue'} cuidando · "
-            if otras
-            else ""
-        )
+        siguen = plural("aviso.pausa.siguen", len(otras), salas=lista_y(otras)) if otras else ""
+        pauso = t("aviso.pausa.pauso", quien=quien_pausa())
         return Aviso(
             "idle",
             "pause",
             "pause",
-            escape(mayuscula(de_habitacion(pausada.nombre_habitacion)))
-            + " está en pausa hasta las "
-            + _mono(pausas.get(pausada.clave, "")),
-            escape(
-                siguen + f"la pausó {QUIEN_PAUSA} desde la app"
-                if siguen
-                else mayuscula(f"la pausó {QUIEN_PAUSA} desde la app")
+            t(
+                "aviso.pausa.titulo",
+                sala=escape(mayuscula(de_habitacion(pausada.nombre_habitacion))),
+                hora=_mono(pausas.get(pausada.clave, "")),
             ),
+            escape(siguen + pauso if siguen else mayuscula(pauso)),
             None,
         )
     if s is Situacion.EN_VIVO:
@@ -419,56 +448,81 @@ def _aviso(
             "live",
             "live",
             "eye",
-            escape(f"{QUIEN_MIRA} está viendo {de_habitacion(viendo.nombre_habitacion)} en vivo"),
-            "Desde las " + _mono(en_vivo.get(viendo.clave, "")),
+            escape(
+                t(
+                    "aviso.en_vivo.titulo",
+                    quien=quien_mira(),
+                    sala=de_habitacion(viendo.nombre_habitacion),
+                )
+            ),
+            t("aviso.en_vivo.detalle", hora=_mono(en_vivo.get(viendo.clave, ""))),
             None,
-            AYUDA_EN_VIVO,
+            ayuda_en_vivo(),
         )
     if len(camaras) == 1:
-        titulo = f"Te Tengo cuida {de_habitacion(habitaciones[0])}"
+        titulo = t("aviso.cuida.una", sala=de_habitacion(habitaciones[0]))
     else:
-        titulo = f"Te Tengo cuida {len(camaras)} habitaciones"
-    return Aviso("ok", "send", "check", escape(titulo), "Todo funciona bien.", None)
+        titulo = t("aviso.cuida.varias", n=len(camaras))
+    return Aviso("ok", "send", "check", escape(titulo), t("aviso.cuida.detalle"), None)
 
 
 def _estado_camara(c: CamaraEntradas, e: Entradas, pausa: str | None) -> EstadoCamara:
     if not c.webcam_conectada:
-        return EstadoCamara("off", "Desconectada", "Revisa el cable USB", "videoOff")
+        return EstadoCamara(
+            "off", t("camara.desconectada"), t("camara.desconectada.detalle"), "videoOff"
+        )
     if not e.consentimiento:
-        return EstadoCamara("consent", "Detenida", "Falta el consentimiento", "doc")
+        return EstadoCamara("consent", t("camara.detenida"), t("camara.detenida.detalle"), "doc")
     if c.pausada_hasta is not None:
-        return EstadoCamara("pause", "En pausa", f"Hasta las {_mono(pausa or '')}", "pause")
+        return EstadoCamara(
+            "pause",
+            t("camara.en_pausa"),
+            t("camara.en_pausa.detalle", hora=_mono(pausa or "")),
+            "pause",
+        )
     if c.en_vivo_desde is not None:
-        return EstadoCamara("live", "En vivo", escape(f"{QUIEN_MIRA} mira"), "eye")
+        return EstadoCamara(
+            "live",
+            t("camara.en_vivo"),
+            escape(t("camara.en_vivo.detalle", quien=quien_mira())),
+            "eye",
+        )
     if e.en_linea is False:
-        return EstadoCamara("warn", "Sin internet", "Los avisos esperan", "wifiOff")
-    return EstadoCamara("send", "En línea", "", "check")
+        return EstadoCamara(
+            "warn", t("camara.sin_internet"), t("camara.sin_internet.detalle"), "wifiOff"
+        )
+    return EstadoCamara("send", t("camara.en_linea"), "", "check")
 
 
 def _bandeja(s: Situacion, e: Entradas, pausas: dict[str, str]) -> EstadoBandeja:
     camaras = e.camaras
     if any(w.mirando for w in e.webcams):
-        return EstadoBandeja("live", f"{QUIEN_MIRA} mira una cámara para elegirla")
+        return EstadoBandeja("live", t("bandeja.mira_para_elegir", quien=quien_mira()))
     if s in (Situacion.SIN_CAMARAS, Situacion.FALTA_ELEGIR):
-        return EstadoBandeja("warn", "falta elegir las cámaras en la app")
+        return EstadoBandeja("warn", t("bandeja.falta_elegir"))
     if s is Situacion.WEBCAM_DESCONECTADA:
-        return EstadoBandeja("warn", "una cámara no responde")
+        return EstadoBandeja("warn", t("bandeja.no_responde"))
     if s is Situacion.SIN_INTERNET:
-        return EstadoBandeja("warn", "sin internet, reintentando")
+        return EstadoBandeja("warn", t("bandeja.sin_internet"))
     if s is Situacion.SIN_CONSENTIMIENTO:
-        return EstadoBandeja("warn", "esperando consentimiento")
+        return EstadoBandeja("warn", t("bandeja.esperando_consentimiento"))
     if any(c.en_vivo_desde is not None for c in camaras):
-        return EstadoBandeja("live", f"{QUIEN_MIRA} está viendo en vivo")
+        return EstadoBandeja("live", t("bandeja.en_vivo", quien=quien_mira()))
     pausada = next((c for c in camaras if c.pausada_hasta is not None), None)
     if pausada is not None:
         return EstadoBandeja(
             "idle",
-            f"{de_habitacion(pausada.nombre_habitacion)} en pausa hasta las "
-            f"{pausas.get(pausada.clave, '')}",
+            t(
+                "bandeja.en_pausa",
+                sala=de_habitacion(pausada.nombre_habitacion),
+                hora=pausas.get(pausada.clave, ""),
+            ),
         )
     if len(camaras) == 1:
-        return EstadoBandeja("ok", f"cuidando {de_habitacion(camaras[0].nombre_habitacion)}")
-    return EstadoBandeja("ok", f"cuidando {len(camaras)} habitaciones")
+        return EstadoBandeja(
+            "ok", t("bandeja.cuidando.una", sala=de_habitacion(camaras[0].nombre_habitacion))
+        )
+    return EstadoBandeja("ok", t("bandeja.cuidando.varias", n=len(camaras)))
 
 
 def derivar(
@@ -503,81 +557,78 @@ def derivar(
         version=version,
         pausas=pausas,
         en_vivo=en_vivo,
+        idioma=i18n.idioma(),
     )
 
 
 # ------------------------------------------------------------------ system notifications
-
-_ABRELO = "Ábrelo junto al reloj."
 
 
 def aviso_al_cerrar(estado: EstadoAgente) -> Notificacion:
     """``osToast(S, 'closed')``: the window was closed or minimized for the first time."""
     s, camaras = estado.situacion, estado.entradas.camaras
     if s in (Situacion.SIN_CAMARAS, Situacion.FALTA_ELEGIR):
-        texto = "Falta elegir las cámaras en la app."
+        texto = t("notificacion.falta_elegir")
     elif s is Situacion.WEBCAM_DESCONECTADA:
         perdida = next(c for c in camaras if not c.webcam_conectada)
-        texto = (
-            f"La cámara {del_habitacion(perdida.nombre_habitacion)} está desconectada: revisa el "
-            "cable USB."
-        )
+        texto = t("notificacion.desconectada", sala=del_habitacion(perdida.nombre_habitacion))
     elif s is Situacion.SIN_INTERNET:
-        texto = "Sin internet: las cámaras siguen cuidando."
+        texto = t("notificacion.sin_internet")
     elif s is Situacion.SIN_CONSENTIMIENTO:
-        texto = "Empieza cuando la familia registre el consentimiento."
+        texto = t("notificacion.sin_consentimiento")
     elif s is Situacion.EN_PAUSA:
         pausada = next(c for c in camaras if c.pausada_hasta is not None)
-        texto = (
-            f"{mayuscula(de_habitacion(pausada.nombre_habitacion))} en pausa hasta las "
-            f"{estado.pausas.get(pausada.clave, '')}."
+        texto = t(
+            "notificacion.en_pausa",
+            sala=mayuscula(de_habitacion(pausada.nombre_habitacion)),
+            hora=estado.pausas.get(pausada.clave, ""),
         )
     else:
         cuida = (
             de_habitacion(camaras[0].nombre_habitacion)
             if len(camaras) == 1
-            else f"{len(camaras)} habitaciones"
+            else t("habitaciones", n=len(camaras))
         )
-        texto = f"Cuida {cuida}. {_ABRELO}"
-    return Notificacion("Sigue funcionando en segundo plano", texto)
+        texto = t("notificacion.cuida", cuida=cuida)
+    return Notificacion(t("notificacion.segundo_plano"), texto)
 
 
 def aviso_camara_desconectada(habitacion: str) -> Notificacion:
     """``osToast(S, 'lost')``: a camera stopped answering while the window was closed."""
     return Notificacion(
-        f"La cámara {del_habitacion(habitacion)} no responde",
-        "Revisa el cable USB.",
+        t("notificacion.no_responde", sala=del_habitacion(habitacion)),
+        t("notificacion.no_responde.detalle"),
     )
 
 
 def aviso_en_vivo(habitacion: str) -> Notificacion:
     """``osToast(S, 'live')``: someone started watching while the window was closed."""
     return Notificacion(
-        f"{QUIEN_MIRA} está viendo {de_habitacion(habitacion)} en vivo",
-        "No se graba · queda registrado.",
+        t("aviso.en_vivo.titulo", quien=quien_mira(), sala=de_habitacion(habitacion)),
+        t("notificacion.en_vivo.detalle"),
     )
 
 
 def aviso_sin_vincular(estado: EstadoAgente | None) -> Notificacion:
     """``osToast(S, 'closed')`` before the cameras run: not linked yet, or none chosen."""
     if estado is not None and estado.entradas.vinculada:
-        texto = "Falta elegir las cámaras en la app."
+        texto = t("notificacion.falta_elegir")
     else:
-        texto = "Ábrelo junto al reloj para vincular esta PC."
-    return Notificacion("Sigue funcionando en segundo plano", texto)
+        texto = t("notificacion.sin_vincular")
+    return Notificacion(t("notificacion.segundo_plano"), texto)
 
 
 def aviso_version_nueva(version: str, mac: bool = False) -> Notificacion:
     """``osToast(S, 'update')`` (screen 67, US-43): one notice per new version."""
     return Notificacion(
-        f"Hay una versión nueva: {version}",
-        "Ábrelo para ir a la descarga." if mac else "Ábrelo para descargarla. La detección sigue.",
+        t("notificacion.version_nueva", version=version),
+        t("notificacion.version_nueva.mac" if mac else "notificacion.version_nueva.windows"),
     )
 
 
 def aviso_pc_quitada(hora: str) -> Notificacion:
     """``osToast(S, 'removed')``: the PC was removed from the household in the app (D-31.2)."""
     return Notificacion(
-        "Esta PC se quitó de la vivienda",
-        f"{mayuscula(QUIEN_PAUSA)} la quitó a las {hora}. Ábrela para vincularla de nuevo.",
+        t("notificacion.quitada"),
+        t("notificacion.quitada.detalle", quien=mayuscula(quien_pausa()), hora=hora),
     )

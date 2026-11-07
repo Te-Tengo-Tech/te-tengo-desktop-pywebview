@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, tzinfo
 from typing import Any
 
+from te_tengo_captura import i18n
 from te_tengo_deteccion.clasificacion.estados import (
     ClasificadorCinematico,
     Evento,
@@ -135,7 +136,7 @@ class ManejadorDiario(logging.Handler):
                 str(datos.get("k", "programa")),
                 str(datos.get("tono", "")),
                 str(datos.get("icono", "monitor")),
-                registro.getMessage(),
+                str(datos.get("texto") or registro.getMessage()),
                 tecnica,
                 momento.strftime("%H:%M:%S"),
             )
@@ -148,17 +149,25 @@ def anotar(
     k: str,
     tono: str,
     icono: str,
-    texto: str,
+    texto: i18n.Texto,
     tecnica: str,
     nivel: int = logging.INFO,
 ) -> None:
-    """Logs one plain-language line of a camera (the file log gets it too)."""
+    """Logs one plain-language line of a camera: in Spanish for the file log (as always) and in
+    the window's language for the live log."""
     logger.log(
         nivel,
         "%s",
-        texto,
+        i18n.escribir(texto, i18n.ES),
         extra={
-            "diario": {"camara": camara, "k": k, "tono": tono, "icono": icono, "tecnica": tecnica}
+            "diario": {
+                "camara": camara,
+                "k": k,
+                "tono": tono,
+                "icono": icono,
+                "tecnica": tecnica,
+                "texto": i18n.escribir(texto, i18n.idioma()),
+            }
         },
     )
 
@@ -247,7 +256,7 @@ class Narrador:
                         "persona",
                         "",
                         "person",
-                        "Sin persona en la imagen",
+                        i18n.frase("diario.sin_persona"),
                         "INFO pose persona=0",
                     )
         else:
@@ -269,7 +278,7 @@ class Narrador:
                     "persona",
                     "persona",
                     "person",
-                    f"Persona detectada en {_en(sala)}",
+                    lambda idioma: i18n.traducir(idioma, "diario.persona", sala=_en(sala, idioma)),
                     f"INFO pose persona=1 puntos=33 visibilidad_media={visible:.2f}",
                 )
             ultima = clasificador.ultima_medicion
@@ -285,9 +294,11 @@ class Narrador:
                         "descarte",
                         "aviso",
                         "eyeOff",
-                        "Imagen descartada: no se ven los tobillos"
-                        if tobillos < u.visibilidad_min
-                        else "Imagen descartada: no se ven bien los puntos del cuerpo",
+                        i18n.frase(
+                            "diario.descarte.tobillos"
+                            if tobillos < u.visibilidad_min
+                            else "diario.descarte.puntos"
+                        ),
                         "DEBUG calidad descartada=1 motivo=puntos_no_visibles "
                         f"vis_tobillo={tobillos:.2f} min={u.visibilidad_min}",
                     )
@@ -300,7 +311,7 @@ class Narrador:
                         "evento",
                         "inestable",
                         "arrowDown",
-                        "La cadera bajó rápido (sobre el umbral)",
+                        i18n.frase("diario.cadera"),
                         f"INFO clasificador M1=1 v_cadera={_num(ultima.velocidad)} "
                         f"umbral_v={u.velocidad_descenso_min}",
                     )
@@ -335,7 +346,9 @@ class Narrador:
                 "evento",
                 "caida",
                 "warn",
-                f"Posible caída: ventana de {_coma(m.ventana_total)} s",
+                lambda idioma: i18n.traducir(
+                    idioma, "diario.posible_caida", segundos=_coma(m.ventana_total, idioma)
+                ),
                 f"INFO clasificador fase=INICIO_CAIDA v={_num(v)} theta={_num(theta, 1)} "
                 f"P={_num(razon, 2)} M1=1 M2=1 M3=0",
             )
@@ -363,7 +376,7 @@ class Narrador:
                 "evento",
                 "caida",
                 "warn",
-                "Caída: en el suelo. Aviso enviado",
+                i18n.frase("diario.caida"),
                 (
                     "WARN clasificador fase=CAIDA en_suelo=1 evento=caida aviso=encolado " + datos
                 ).rstrip(),
@@ -376,7 +389,7 @@ class Narrador:
                 "evento",
                 "caida",
                 "warn",
-                "Caída confirmada: 30 s en el suelo",
+                i18n.frase("diario.confirmada"),
                 f"WARN clasificador fase=CAIDA_CONFIRMADA t_suelo={_num(self.medicion.suelo, 1)}",
                 logging.WARNING,
             )
@@ -386,7 +399,7 @@ class Narrador:
                 "evento",
                 "calma",
                 "arrowUp",
-                "Se levantó",
+                i18n.frase("diario.se_levanto"),
                 f"INFO clasificador fase=DE_PIE evento=se_levanto {datos}".strip(),
             )
         elif evento.tipo is TipoEvento.MOVIMIENTO_INESTABLE:
@@ -395,7 +408,7 @@ class Narrador:
                 "evento",
                 "inestable",
                 "warn",
-                "Inestable: recuperó el equilibrio",
+                i18n.frase("diario.inestable"),
                 f"WARN clasificador evento=inestable recuperado=1 {datos}".strip(),
                 logging.WARNING,
             )
@@ -405,7 +418,7 @@ class Narrador:
                 "persona",
                 "aviso",
                 "eyeOff",
-                "Sin persona en la imagen durante 5 minutos: revisa la luz y el encuadre",
+                i18n.frase("diario.no_confiable"),
                 "WARN clasificador evento=deteccion_no_confiable",
                 logging.WARNING,
             )
@@ -416,13 +429,19 @@ class Narrador:
         camara, sala = self._camara(), self._habitacion()
         if webcam != self._webcam:
             if webcam:
+                dispositivo = self._dispositivo()
                 anotar(
                     camara,
                     "programa",
                     "",
                     "monitor",
-                    f"Se abrió la cámara {_de(sala)} ({self._dispositivo()})",
-                    f'INFO camara abierta nombre="{self._dispositivo()}"',
+                    lambda idioma: i18n.traducir(
+                        idioma,
+                        "diario.camara_abierta",
+                        sala=_de(sala, idioma),
+                        dispositivo=dispositivo,
+                    ),
+                    f'INFO camara abierta nombre="{dispositivo}"',
                 )
             elif self._webcam is not None:
                 anotar(
@@ -430,7 +449,7 @@ class Narrador:
                     "conexion",
                     "aviso",
                     "videoOff",
-                    "Cámara desconectada: revisa el cable USB",
+                    i18n.frase("diario.desconectada"),
                     "WARN camara desconectada",
                     logging.WARNING,
                 )
@@ -442,7 +461,7 @@ class Narrador:
                     "conexion",
                     "aviso",
                     "wifiOff",
-                    "Sin internet: avisos en cola",
+                    i18n.frase("diario.sin_internet"),
                     "WARN conexion estado=sin_red",
                     logging.WARNING,
                 )
@@ -452,7 +471,7 @@ class Narrador:
                     "conexion",
                     "calma",
                     "wifi",
-                    "Volvió internet: avisos enviados",
+                    i18n.frase("diario.volvio_internet"),
                     "INFO conexion estado=en_linea",
                 )
             self._en_linea = en_linea
@@ -464,7 +483,7 @@ class Narrador:
                     "programa",
                     "",
                     "pause",
-                    f"Cámara en pausa hasta las {hora}",
+                    i18n.frase("diario.pausa", hora=hora),
                     f"INFO captura pausada_hasta={pausada_hasta.isoformat()}",
                 )
             self._pausada = pausada_hasta
@@ -479,16 +498,21 @@ _ARTICULO = {
 }
 
 
-def _en(sala: str) -> str:
-    """«en la Sala», «en el Dormitorio» (core.js LOG)."""
+def _en(sala: str, idioma: str = i18n.ES) -> str:
+    """«en la Sala», «en el Dormitorio» (core.js LOG); in English the room's name."""
+    if idioma != i18n.ES:
+        return sala
     return _ARTICULO.get(sala.strip().lower(), f"«{sala}»")
 
 
-def _de(sala: str) -> str:
-    """«de la Sala», «del Dormitorio»."""
-    texto = _en(sala)
+def _de(sala: str, idioma: str = i18n.ES) -> str:
+    """«de la Sala», «del Dormitorio»; in English the room's name."""
+    texto = _en(sala, idioma)
+    if idioma != i18n.ES:
+        return texto
     return "del " + texto[3:] if texto.startswith("el ") else "de " + texto
 
 
-def _coma(valor: float) -> str:
-    return f"{valor:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+def _coma(valor: float, idioma: str = i18n.ES) -> str:
+    texto = f"{valor:.2f}".rstrip("0").rstrip(".")
+    return texto if idioma != i18n.ES else texto.replace(".", ",")

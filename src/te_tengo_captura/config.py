@@ -19,7 +19,7 @@ import re
 import tomllib
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
@@ -77,6 +77,15 @@ class VistaEnVivo(_Seccion):
     )
 
 
+class Interfaz(_Seccion):
+    """Optional ``[interfaz]`` table: the language of the window, the tray and the notices."""
+
+    idioma: Literal["es", "en"] | None = Field(
+        default=None,
+        description="«es» o «en»; sin valor, el idioma del sistema (inglés si empieza con «en»).",
+    )
+
+
 class Configuracion(_Seccion):
     api_url: str = Field(min_length=1)
     credencial_instalacion: SecretStr
@@ -86,6 +95,7 @@ class Configuracion(_Seccion):
     camara: Camara
     clasificacion: Umbrales = Umbrales(**UMBRALES_CALIBRADOS)
     vista_en_vivo: VistaEnVivo = VistaEnVivo()
+    interfaz: Interfaz = Interfaz()
 
     @field_validator("api_url")
     @classmethod
@@ -118,6 +128,7 @@ class AjustesPc(_Seccion):
     api_url: str = API_PREDETERMINADA
     clasificacion: Umbrales = Umbrales(**UMBRALES_CALIBRADOS)
     vista_en_vivo: VistaEnVivo = VistaEnVivo()
+    interfaz: Interfaz = Interfaz()
 
     @field_validator("api_url")
     @classmethod

@@ -45,7 +45,7 @@ from typing import Any
 
 import httpx
 
-from te_tengo_captura import autoinicio
+from te_tengo_captura import autoinicio, i18n
 from te_tengo_captura.actividad import RegistroActividad, para_la_ventana
 from te_tengo_captura.actualizaciones.actualizador import (
     Actualizador,
@@ -69,7 +69,15 @@ from te_tengo_captura.backend.versiones import ClienteVersiones
 from te_tengo_captura.captura.dispositivos import Dispositivo, listar_dispositivos
 from te_tengo_captura.diagnostico import exportar, nombre_archivo
 from te_tengo_captura.diario import Diario
-from te_tengo_captura.estado import EstadoAgente, EstadoBandeja, Hogar, habitacion_arte, hora_local
+from te_tengo_captura.estado import (
+    EstadoAgente,
+    EstadoBandeja,
+    Hogar,
+    habitacion_arte,
+    hora_local,
+    mayuscula,
+)
+from te_tengo_captura.i18n import t
 from te_tengo_captura.restablecer import Motivo, vaciar_carpeta
 from te_tengo_captura.sistema import nombre_pc, sistema_operativo
 from te_tengo_captura.vinculacion.credenciales import (
@@ -101,8 +109,18 @@ ESTADO_DE_LA_IDENTIDAD = (
     "actividad.jsonl",
     "actividad-enviada.txt",
 )
-# The advanced mode's switch (off by default, CA-32.1) and what the local preview shows.
+# The advanced mode's switch (off by default, CA-32.1), what the local preview shows and the
+# language chosen in «Avanzado» (none: the configuration file's, else the system's).
 ARCHIVO_VENTANA = "ventana.json"
+
+
+def idioma_elegido(directorio_datos: Path) -> str | None:
+    """The language chosen in the window («Avanzado › Acerca de»), read before the window opens."""
+    try:
+        datos = json.loads((directorio_datos / ARCHIVO_VENTANA).read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+    return i18n.normalizar(datos.get("idioma")) if isinstance(datos, dict) else None
 
 
 def modo_vista_previa(video: bool, esqueleto: bool) -> ModoVista:
@@ -139,7 +157,7 @@ class EstadoVentana:
     quitada: bool = False  # removed from the app (D-31.2): a system notice when hidden
 
     def a_json(self) -> dict[str, Any]:
-        return self.datos
+        return {"idioma": i18n.idioma(), **self.datos}
 
 
 class Coordinador:
@@ -211,6 +229,7 @@ class Coordinador:
             self._previa = ModoVista(ventana.get("vistaPrevia", ModoVista.VIDEO))
         except ValueError:
             self._previa = ModoVista.VIDEO
+        self._idioma = i18n.normalizar(ventana.get("idioma"))  # only when chosen in the window
         self._oyentes: list[Callable[[EstadoVentana], None]] = []
         self._detenido = threading.Event()
         self._hilo_estado = threading.Thread(target=self._notificar, name="estado", daemon=True)
@@ -294,7 +313,7 @@ class Coordinador:
             datos = {"screen": "quitada", **self._quitada}
             return EstadoVentana(
                 Pantalla.QUITADA,
-                EstadoBandeja("off", "se quitó de la vivienda"),
+                EstadoBandeja("off", t("bandeja.quitada")),
                 None,
                 datos,
                 quitada=True,
@@ -318,7 +337,7 @@ class Coordinador:
             if pantalla is Pantalla.VINCULADA:
                 return EstadoVentana(
                     Pantalla.VINCULADA,
-                    EstadoBandeja("warn", "falta elegir las cámaras en la app"),
+                    EstadoBandeja("warn", t("bandeja.falta_elegir")),
                     e,
                     self._datos_vinculada(pc, e),
                 )
@@ -339,13 +358,13 @@ class Coordinador:
         if vinculador is not None and vinculador.fase is Fase.RECHAZADA:
             return EstadoVentana(
                 Pantalla.RECHAZADA,
-                EstadoBandeja("off", "sin vincular"),
+                EstadoBandeja("off", t("bandeja.sin_vincular")),
                 None,
                 {"screen": "rechazada"},
             )
         return EstadoVentana(
             Pantalla.VINCULAR,
-            EstadoBandeja("off", "sin vincular"),
+            EstadoBandeja("off", t("bandeja.sin_vincular")),
             None,
             self._datos_vincular(vinculador),
         )
@@ -499,9 +518,7 @@ class Coordinador:
         ahora = self.actualizador.cambiar_automatica(activar)
         if ahora != antes:
             self.actividad.anotar(
-                "Desde esta PC: se activó la actualización automática"
-                if ahora
-                else "Desde esta PC: se desactivó la actualización automática",
+                i18n.frase("actividad.auto.on" if ahora else "actividad.auto.off"),
                 tipo="ACTUALIZACION_AUTOMATICA_ACTIVADA"
                 if ahora
                 else "ACTUALIZACION_AUTOMATICA_DESACTIVADA",
@@ -516,12 +533,27 @@ class Coordinador:
         if cambio is not None:
             anterior, nueva = cambio
             self.actividad.anotar(
-                f"Esta PC se actualizó a {nueva}",
+                i18n.frase("actividad.actualizada", version=nueva),
                 tipo="PC_ACTUALIZADA",
                 objeto="Te Tengo Captura",
                 anterior=anterior,
                 nuevo=nueva,
             )
+
+    # ------------------------------------------------------------------ language
+
+    def cambiar_idioma(self, idioma: str) -> str:
+        """«Idioma» in «Avanzado › Acerca de»: the window, the tray and the notices change at
+        once, and the choice is remembered on this PC (``ventana.json``)."""
+        elegido = i18n.normalizar(idioma)
+        if elegido is None:
+            return i18n.idioma()
+        self._idioma = elegido
+        i18n.establecer(elegido)
+        self._guardar_ventana()
+        logger.info("Idioma de la ventana: %s", elegido)
+        self.publicar_estado()
+        return elegido
 
     # ------------------------------------------------------------------ advanced (US-32 to US-34)
 
@@ -539,9 +571,7 @@ class Coordinador:
         if not activar:
             self.diario.vaciar()
         self.actividad.anotar(
-            "Desde esta PC: se activó el modo avanzado"
-            if activar
-            else "Desde esta PC: se desactivó el modo avanzado",
+            i18n.frase("actividad.avanzado.on" if activar else "actividad.avanzado.off"),
             tipo="MODO_AVANZADO_ACTIVADO" if activar else "MODO_AVANZADO_DESACTIVADO",
         )
         return activar
@@ -742,7 +772,7 @@ class Coordinador:
             return {"ok": False, "codigo": "SIN_PERMISO"}  # CA-35.3: disabled with its reason
         for cambio in self.almacen.cambiar(**validos):
             self.actividad.anotar(
-                cambio.texto,
+                cambio.frase or cambio.texto,
                 tipo="GUARDADO_LOCAL_CAMBIADO",
                 objeto=cambio.objeto,
                 anterior=cambio.anterior,
@@ -756,7 +786,7 @@ class Coordinador:
         def terminado(ok: bool) -> None:
             if ok:
                 self.actividad.anotar(
-                    "Desde esta PC: se cambió la carpeta de los datos",
+                    i18n.frase("actividad.carpeta"),
                     tipo="GUARDADO_LOCAL_CAMBIADO",
                     objeto="Carpeta",
                 )
@@ -768,7 +798,7 @@ class Coordinador:
         """«Borrar» after the movement consent was revoked (CA-35.4)."""
         bytes_borrados = self.almacen.borrar_tipo(TipoArchivo.MOVIMIENTOS)
         self.actividad.anotar(
-            "Desde esta PC: se borraron los movimientos guardados",
+            i18n.frase("actividad.movimientos_borrados"),
             tipo="DATOS_LOCALES_ELIMINADOS",
             objeto="Movimientos",
         )
@@ -801,9 +831,9 @@ class Coordinador:
                     "room": agente.nombre_habitacion,
                     "dias": [_dia(d, hoy) for d in dias],
                     "desde": (
-                        datetime.fromtimestamp(desde / 1000, UTC)
-                        .astimezone(self._zona)
-                        .strftime("%d/%m/%Y")
+                        i18n.fecha(
+                            datetime.fromtimestamp(desde / 1000, UTC).astimezone(self._zona).date()
+                        )
                         if desde is not None
                         else None
                     ),
@@ -837,10 +867,17 @@ class Coordinador:
         inicio = inicio_utc.astimezone(self._zona)
         fin = fin_utc.astimezone(self._zona)
         minutos = max(1, round(float(segundos) / 60))
-        texto = (
-            f"Desde esta PC: se vio qué pasó en {habitacion_arte(habitacion)} "
-            f"({inicio:%d/%m %H:%M}–{fin:%H:%M}, {minutos} min)"
-        )
+
+        def texto(idioma: str) -> str:
+            return i18n.traducir(
+                idioma,
+                "actividad.repeticion",
+                sala=habitacion_arte(habitacion, idioma),
+                desde=f"{i18n.fecha_corta(inicio.date(), idioma)} {inicio:%H:%M}",
+                hasta=f"{fin:%H:%M}",
+                minutos=minutos,
+            )
+
         if self.pc is None:
             # An installation has no PC token: its log stays on this PC.
             self.actividad.anotar(texto)
@@ -921,9 +958,10 @@ class Coordinador:
                 return
             datos = pc.latido.pc
             if datos is not None:
-                quien = datos.vinculada_por or "La familia"
+                por = datos.vinculada_por
                 self.actividad.anotar(
-                    f"{quien} vinculó la PC {datos.nombre}", quien=_iniciales(quien)
+                    _frase_vinculada(por, datos.nombre),
+                    quien=_iniciales(por or "La familia"),
                 )
                 return
             self._detenido.wait(0.2)
@@ -1049,9 +1087,10 @@ class Coordinador:
             return 0
 
     def _guardar_ventana(self) -> None:
-        self._guardar_json(
-            ARCHIVO_VENTANA, {"modoAvanzado": self._avanzado, "vistaPrevia": self._previa.value}
-        )
+        datos: dict[str, Any] = {"modoAvanzado": self._avanzado, "vistaPrevia": self._previa.value}
+        if self._idioma is not None:
+            datos["idioma"] = self._idioma
+        self._guardar_json(ARCHIVO_VENTANA, datos)
 
     def _leer_json(self, nombre: str) -> dict[str, Any] | None:
         try:
@@ -1094,6 +1133,16 @@ def _plataforma(valor: Plataforma | str | None) -> Plataforma | None:
     return Plataforma(valor) if valor else None
 
 
+def _frase_vinculada(por: str | None, pc: str) -> Callable[[str], str]:
+    """«Carmen vinculó la PC Sala-Rosa» («La familia …» when the API does not say who)."""
+
+    def frase(idioma: str) -> str:
+        quien = por or mayuscula(i18n.traducir(idioma, "quien.familia"))
+        return i18n.traducir(idioma, "actividad.vinculada", quien=quien, pc=pc)
+
+    return frase
+
+
 def _iniciales(nombre: str) -> str:
     """«CH» for «Carmen Huamán»: the avatar of a family member in «Actividad»."""
     partes = [p for p in nombre.split() if p]
@@ -1117,16 +1166,15 @@ class MedidorProceso:
         return self.uso
 
 
-DIAS_SEMANA = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
-
-
 def _dia(dia: date, hoy: date) -> dict[str, str]:
-    """A day of «Fecha» in «Ver qué pasó»: «Hoy, 23/09/2026», «Ayer, …», «Lunes 21/09/2026»."""
-    nombre = DIAS_SEMANA[dia.weekday()]
+    """A day of «Fecha» in «Ver qué pasó»: «Hoy, 23/09/2026», «Ayer, …», «Lunes 21/09/2026»
+    (English: «Today, Sep 23, 2026», «Monday, Sep 21, 2026»)."""
+    nombre, fecha = t(f"dia.{dia.weekday()}"), i18n.fecha(dia)
     if dia == hoy:
-        texto = f"Hoy, {dia:%d/%m/%Y}"
+        texto = t("fecha.hoy", fecha=fecha)
     elif dia == hoy - timedelta(days=1):
-        texto = f"Ayer, {dia:%d/%m/%Y}"
+        texto = t("fecha.ayer", fecha=fecha)
     else:
-        texto = f"{nombre.capitalize()} {dia:%d/%m/%Y}"
-    return {"valor": dia.isoformat(), "texto": texto, "corto": f"{nombre} {dia:%d/%m}"}
+        texto = t("fecha.dia", dia=mayuscula(nombre), fecha=fecha)
+    corto = t("fecha.dia_corto", dia=nombre, fecha=i18n.fecha_corta(dia))
+    return {"valor": dia.isoformat(), "texto": texto, "corto": corto}

@@ -46,6 +46,12 @@ nombre_habitacion = "Sala"
 # permanencia_caida_lenta_s = 2
 # sin_deteccion_confiable_s = 300
 
+# Optional language of the window, the tray menu and the system notices: "es" (Spanish) or "en"
+# (English). Without it, the system's language: English if it starts with "en", else Spanish. A
+# language chosen in the window («Avanzado › Acerca de») takes precedence.
+# [interfaz]
+# idioma = "es"
+
 # Optional live view settings (docs/AGENT_CONTRACT.md, "Live view"). Detection always samples at
 # 8 fps; the live view takes its own rate from the webcam.
 # [vista_en_vivo]

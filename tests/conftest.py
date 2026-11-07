@@ -1,12 +1,22 @@
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from te_tengo_captura import config
+from te_tengo_captura import config, i18n
 from te_tengo_captura.config import Configuracion
 from te_tengo_deteccion.clasificacion.umbrales import Umbrales
 
 RAIZ = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(autouse=True)
+def idioma_espanol() -> Iterator[None]:
+    """Every test starts in Spanish (the default) whatever the machine's language, and a test
+    that changes the language does not leak it into the next one."""
+    i18n.establecer(i18n.ES)
+    yield
+    i18n.establecer(i18n.ES)
 
 
 @pytest.fixture

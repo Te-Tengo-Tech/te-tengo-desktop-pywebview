@@ -30,7 +30,7 @@ import sys
 import time
 from pathlib import Path
 
-from evaluar import ALTO_MAX, CALIDAD_JPEG, DATASETS, RESULTADOS, listar_videos
+from evaluar import ALTO_MAX, CALIDAD_JPEG, DATASETS_VALIDACION, RESULTADOS, listar_videos
 
 from te_tengo_deteccion.clasificacion.estados import ClasificadorCinematico
 from te_tengo_deteccion.clasificacion.umbrales import Umbrales
@@ -63,7 +63,12 @@ def main() -> int:
     parser.add_argument("--fps", type=float, default=8.0)
     parser.add_argument("--modelo", type=Path, default=Path("models/pose_landmarker_lite.task"))
     parser.add_argument("--datos", type=Path, default=Path("datos"))
-    parser.add_argument("--datasets", nargs="+", choices=DATASETS, default=["gmdcsa24"])
+    parser.add_argument(
+        "--datasets",
+        nargs="+",
+        choices=[*DATASETS_VALIDACION, "gmdcsa24"],  # video files only
+        default=["gmdcsa24"],
+    )
     parser.add_argument("--max-videos", type=int, default=0, help="0 = all")
     parser.add_argument("--salida", type=Path, default=RESULTADOS / "latencia.md")
     args = parser.parse_args()

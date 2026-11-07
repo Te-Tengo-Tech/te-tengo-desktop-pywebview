@@ -44,12 +44,13 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, replace
-from datetime import UTC, datetime, timedelta
+from dataclasses import asdict, dataclass, field, replace
+from datetime import UTC, date, datetime, timedelta
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
+from te_tengo_captura import i18n
 from te_tengo_captura.almacen.cifrado import (
     AlmacenCredenciales,
     ClaveDatos,
@@ -118,23 +119,26 @@ class AjustesAlmacen:
         )
 
 
-def texto_dias(dias: int | None) -> str:
-    """«90 días», «1 año», «Nunca borrar» (the prototype's period pills)."""
+def texto_dias(dias: int | None, idioma: str = i18n.ES) -> str:
+    """«90 días», «1 año», «Nunca borrar» (the prototype's period pills). Spanish unless
+    ``idioma`` says otherwise: the activity sent to the API keeps the Spanish values."""
     if dias is None:
-        return "Nunca borrar"
+        return i18n.traducir(idioma, "dias.nunca")
     if dias == 365:
-        return "1 año"
-    return f"{dias} día" if dias == 1 else f"{dias} días"
+        return i18n.traducir(idioma, "dias.anio")
+    return i18n.traducir(idioma, "dias.uno" if dias == 1 else "dias.otros", n=dias)
 
 
 @dataclass(frozen=True, slots=True)
 class Cambio:
     """One setting changed on this PC, for the activity log (``GUARDADO_LOCAL_CAMBIADO``)."""
 
-    texto: str
+    texto: str  # Spanish, as the log file keeps it
     objeto: str
     anterior: str
     nuevo: str
+    # The same sentence in any language, for the window («Actividad»); never sent to the API.
+    frase: Callable[[str], str] | None = field(default=None, compare=False)
 
 
 class AlmacenLocal:
@@ -159,6 +163,7 @@ class AlmacenLocal:
         self.revocado = False  # the consent ended: the window asks whether to delete (CA-35.4)
         self.problema: str | None = None  # "lleno" (CA-38.5) or "sin_clave"
         self.liberado: str | None = None  # «Borramos el video del 01/10 …» (CA-38.3)
+        self._liberado_dia: date | None = None  # the same day, written in the window's language
         self.moviendo: float | None = None  # bytes being moved to a new folder
         self.al_movimientos: list[Callable[[str, int], None]] = []  # (camera, index id): US-37
         self.al_cambiar_permiso: list[Callable[[], None]] = []  # the cloud turned on or off
@@ -349,6 +354,7 @@ class AlmacenLocal:
         if videos:
             dia = datetime.fromtimestamp(videos[0].desde_ms / 1000, UTC).astimezone()
             self.liberado = f"{dia:%d/%m}"
+            self._liberado_dia = dia.date()
             logger.info("Se borró el video más antiguo (%s) para liberar espacio", self.liberado)
         if not liberacion.suficiente:
             if self.problema != "limite":
@@ -471,7 +477,9 @@ class AlmacenLocal:
             },
             "limite": limite,
             "estado": estado,
-            "liberado": self.liberado,
+            "liberado": i18n.fecha_corta(self._liberado_dia)
+            if self._liberado_dia is not None
+            else self.liberado,
             "ajustes": asdict(self.ajustes),
             "permisoMovimientos": self.puede_movimientos,
             "nube": permiso.retencion_dias
@@ -579,23 +587,39 @@ def borrar_temporales(carpeta: Path, ahora: float, viejo_s: float = TEMPORAL_VIE
     return borrados
 
 
+def _frase_plazo(campo: str, antes: int | None, despues: int | None) -> Callable[[str], str]:
+    """«Desde esta PC: los movimientos pasaron de 90 días a 30 días», in any language."""
+
+    def frase(idioma: str) -> str:
+        return i18n.traducir(
+            idioma,
+            f"actividad.plazo.{campo}",
+            antes=texto_dias(antes, idioma),
+            despues=texto_dias(despues, idioma),
+        )
+
+    return frase
+
+
 def _cambios(antes: AjustesAlmacen, despues: AjustesAlmacen) -> list[Cambio]:
     """«Desde esta PC: …» sentences of the prototype for each changed setting."""
     cambios: list[Cambio] = []
+    # ``objeto`` and the values go to the API: they stay in Spanish.
     si_no = {True: "Sí", False: "No"}
-    for campo, dias, nombre, objeto in (
-        ("movimientos", "dias_movimientos", "los movimientos", "Movimientos"),
-        ("video", "dias_video", "el video continuo", "Video continuo"),
-        ("clips", "dias_clips", "los clips", "Clips de los avisos"),
+
+    def cambio(frase: Callable[[str], str], objeto: str, anterior: str, nuevo: str) -> Cambio:
+        return Cambio(frase(i18n.ES), objeto, anterior, nuevo, frase)
+
+    for campo, dias, objeto in (
+        ("movimientos", "dias_movimientos", "Movimientos"),
+        ("video", "dias_video", "Video continuo"),
+        ("clips", "dias_clips", "Clips de los avisos"),
     ):
         a, d = getattr(antes, campo), getattr(despues, campo)
         if a != d:
-            verbo = "se activó" if d else "se desactivó"
-            articulo = "el guardado de " if campo != "video" else ""
-            cosa = nombre.replace("los ", "").replace("el ", "") if campo != "video" else nombre
             cambios.append(
-                Cambio(
-                    f"Desde esta PC: {verbo} {articulo}{cosa}",
+                cambio(
+                    i18n.frase(f"actividad.guardado.{'on' if d else 'off'}.{campo}"),
                     objeto,
                     si_no[a] + (f", {texto_dias(getattr(antes, dias))}" if a else ""),
                     si_no[d] + (f", {texto_dias(getattr(despues, dias))}" if d else ""),
@@ -604,9 +628,8 @@ def _cambios(antes: AjustesAlmacen, despues: AjustesAlmacen) -> list[Cambio]:
         a_d, d_d = getattr(antes, dias), getattr(despues, dias)
         if a_d != d_d:
             cambios.append(
-                Cambio(
-                    f"Desde esta PC: {nombre} {'pasó' if campo == 'video' else 'pasaron'} de "
-                    f"{texto_dias(a_d)} a {texto_dias(d_d)}",
+                cambio(
+                    _frase_plazo(campo, a_d, d_d),
                     objeto,
                     texto_dias(a_d),
                     texto_dias(d_d),
@@ -615,17 +638,15 @@ def _cambios(antes: AjustesAlmacen, despues: AjustesAlmacen) -> list[Cambio]:
     if antes.limite_gb != despues.limite_gb:
         a_t, d_t = f"{antes.limite_gb:g} GB", f"{despues.limite_gb:g} GB"
         cambios.append(
-            Cambio(
-                f"Desde esta PC: el límite de espacio pasó de {a_t} a {d_t}",
+            cambio(
+                i18n.frase("actividad.limite", antes=a_t, despues=d_t),
                 "Límite de espacio",
                 a_t,
                 d_t,
             )
         )
     if antes.carpeta != despues.carpeta:
-        cambios.append(
-            Cambio("Desde esta PC: se cambió la carpeta de los datos", "Carpeta", "", "")
-        )
+        cambios.append(cambio(i18n.frase("actividad.carpeta"), "Carpeta", "", ""))
     return cambios
 
 

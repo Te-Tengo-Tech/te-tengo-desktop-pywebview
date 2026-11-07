@@ -110,6 +110,6 @@ def test_ventana_de_arranque(monkeypatch: pytest.MonkeyPatch) -> None:
     ventana.events.loaded.disparar()
     assert inicio.esperar_carga(0)
     inicio.mostrar(54, 1)
-    assert ventana.scripts == ['window.ttg && window.ttg.arranque(54, 1, "1.0.0")']
+    assert ventana.scripts == ['window.ttg && window.ttg.arranque(54, 1, "1.0.0", "es")']
     inicio.cerrar(esperar=lambda s: None)
     assert ventana.destruida

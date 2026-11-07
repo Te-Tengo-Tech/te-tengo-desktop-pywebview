@@ -10,6 +10,7 @@ from te_tengo_captura import (
     __version__,
     autoinicio,
     config,
+    i18n,
     registro,
     restablecer,
     rutas,
@@ -22,7 +23,7 @@ from te_tengo_captura.backend.falso import URL_API, BackendFalso
 from te_tengo_captura.captura.dispositivos import FuenteWebcamPorId
 from te_tengo_captura.captura.fuentes import FuenteArchivo, FuenteVideo, FuenteWebcam
 from te_tengo_captura.captura.pose import EstimadorMediaPipe, ruta_modelo_predeterminada
-from te_tengo_captura.coordinador import Coordinador
+from te_tengo_captura.coordinador import Coordinador, idioma_elegido
 from te_tengo_captura.diario import Diario, ManejadorDiario
 from te_tengo_captura.instancia import Instancia
 from te_tengo_captura.salida import Salida
@@ -223,6 +224,18 @@ def construir(
     )
 
 
+def elegir_idioma(
+    args: argparse.Namespace, configuracion: config.Configuracion | config.AjustesPc
+) -> str:
+    """The language of the window, the tray and the notices: the one chosen in the window, else
+    ``[interfaz] idioma``, else the system's (English if it starts with «en», else Spanish)."""
+    elegido = i18n.elegir(
+        idioma_elegido(args.datos or rutas.datos()), configuracion.interfaz.idioma
+    )
+    logger.info("Idioma de la interfaz: %s", elegido)
+    return i18n.establecer(elegido)
+
+
 def ejecutar_aplicacion(
     agente: Coordinador,
     instancia_abrir: dict[str, Callable[[], None]],
@@ -297,6 +310,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if isinstance(configuracion, config.Configuracion):
             credencial = configuracion.credencial_instalacion.get_secret_value()
             secretos.append(lambda: [credencial])
+        elegir_idioma(args, configuracion)
         agente = construir(args, configuracion, diario)
         secretos.append(agente.secretos)
     except (config.ConfiguracionInvalidaError, FileNotFoundError) as error:

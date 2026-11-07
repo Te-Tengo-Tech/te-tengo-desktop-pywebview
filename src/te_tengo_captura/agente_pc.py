@@ -35,6 +35,7 @@ from typing import Any
 import httpx
 from pydantic import ValidationError
 
+from te_tengo_captura import i18n
 from te_tengo_captura.actividad import RegistroActividad
 from te_tengo_captura.agente import Agente, AjustesCamara
 from te_tengo_captura.almacen.gestor import AlmacenLocal
@@ -233,7 +234,7 @@ class AgentePc:
         sesion.al_renovar.append(self._renovar_camaras)
         if actividad is not None:
 
-            def anotar(texto: str, quien: str) -> None:
+            def anotar(texto: i18n.Texto, quien: str) -> None:
                 actividad.anotar(texto, quien=quien)
 
             self.camaras.al_actividad = anotar
@@ -368,7 +369,7 @@ class AgentePc:
             programa=f"Te Tengo Captura {self.version}",
             vinculada_por=(pc.vinculada_por or "") if pc is not None else None,
             vinculada_el=(
-                pc.vinculada_en.astimezone(self._zona).strftime("%d/%m/%Y")
+                i18n.fecha(pc.vinculada_en.astimezone(self._zona).date())
                 if pc is not None
                 else None
             ),
