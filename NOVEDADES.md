@@ -8,6 +8,8 @@
 
 ## [Unreleased]
 
+## [0.8.0]
+
 - Ahora la aplicación también está en inglés: elige el idioma en «Avanzado», en «Acerca de».
 
 ## [0.7.1]
