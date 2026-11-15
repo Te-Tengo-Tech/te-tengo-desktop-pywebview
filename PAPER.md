@@ -5,7 +5,7 @@ This branch is the code and the evaluation scripts behind the paper (household c
 | Paper | Where |
 |---|---|
 | Kinematic parameters and state machine (Sections 3.2, 3.3) | `src/te_tengo_deteccion/clasificacion/` (`parametros.py`, `medicion.py`, `estados.py`, `umbrales.py`); specification in `docs/classification-spec.md` |
-| Capture agent, persistent event queue with retries (Section 3.1, Table 2) | `src/te_tengo_captura/` (`envios/cola.py`); tests in `tests/captura/envios/test_cola.py` |
+| Capture agent, persistent event queue with retries (Section 3.1, Table 2) | `src/te_tengo_captura/` (`envios/cola.py`); tests in `tests/captura/envios/test_cola.py`; queuing an event or a clip does not wait for a send in progress (`test_encolar_no_espera_a_un_envio_colgado`, `test_cerrar_espera_a_la_pasada_en_curso`) |
 | Development results, leave-one-group-out (Table 3) | `scripts/evaluar.py evaluar --barrer 0.01 1.0 0.01`; protocol in `docs/validation.md` |
 | Hold-out tests (Fig. 6) | `scripts/evaluar_holdout.py`, `scripts/evaluar_multicamara.py`; results in `resultados/holdout-*.md` |
 | Upright precondition, post hoc (Section 5) | `scripts/evaluar_lodo.py`, `scripts/evaluar_especificidad.py`; results in `resultados/lodo-f1-f2-8fps.md` and `resultados/especificidad/`; pre-registration in `docs/adr/0011-*.md` and `docs/adr/0012-*.md` |
