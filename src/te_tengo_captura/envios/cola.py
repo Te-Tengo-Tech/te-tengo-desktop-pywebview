@@ -24,6 +24,11 @@ Events are written here first and sent afterwards, so none is lost (AGENTS.md). 
   is kept as ``rechazado`` for diagnosis and not retried. A clip is discarded after
   ``MAX_INTENTOS_CLIP`` failed uploads or when its event was rejected (CA-18.2: the event is
   still sent without the clip).
+* **Locks:** ``_candado`` guards the database and the lanes' backoff and is only held for local
+  work (a database statement, a lane's bookkeeping), never across a request; ``_envio`` lets one
+  pass run at a time and is the one held while a request waits on the network. So queuing an
+  event or a clip from the capture thread never waits for a send, even during an outage, when a
+  request can take the HTTP client's whole timeout.
 * **Privacy:** the clip file is deleted after a successful upload or when it is discarded, and
   clip files the database does not know are deleted at startup. A clip's landmarks
   (``<eventoId>.puntos.parquet``, and the same rows in the light replay format the app draws,
@@ -182,7 +187,8 @@ class ColaEnvios:
         self._directorio_clips.mkdir(parents=True, exist_ok=True)
         self._reloj = reloj
         self._aleatorio = aleatorio
-        self._candado = threading.RLock()
+        self._candado = threading.RLock()  # database and backoff state: local work only
+        self._envio = threading.Lock()  # one pass at a time, held across requests
         self._db = sqlite3.connect(
             directorio / "envios.sqlite3", check_same_thread=False, isolation_level=None
         )
@@ -300,39 +306,56 @@ class ColaEnvios:
     # ------------------------------------------------------------------ sending
 
     def reintentar_ahora(self) -> None:
-        for espera in (self._urgentes, self._otros, self._clips, self._movimientos):
-            espera.ya()
+        with self._candado:
+            for espera in (self._urgentes, self._otros, self._clips, self._movimientos):
+                espera.ya()
 
     def enviar(self, remitente: Remitente) -> Resumen:
-        """Sends what is due in each lane, in order; a lane stops at its first temporary failure."""
-        with self._candado:
+        """Sends what is due in each lane, in order; a lane stops at its first temporary failure.
+
+        Requests run without ``_candado`` (see «Locks»): what is queued meanwhile goes out in the
+        next pass, which the sender starts at once when notified."""
+        with self._envio:
             enviados = subidos = 0
             errores: list[ErrorBackendError] = []
-            urgentes, otros = self._eventos_por_carril()
-            for espera, filas in ((self._urgentes, urgentes), (self._otros, otros)):
-                if not filas or espera.restante() > 0:
-                    continue
+            with self._candado:
+                urgentes, otros = self._eventos_por_carril()
+                carriles = [
+                    (espera, filas)
+                    for espera, filas in ((self._urgentes, urgentes), (self._otros, otros))
+                    if filas and espera.restante() == 0
+                ]
+            for espera, filas in carriles:
                 try:
                     for evento_id, cuerpo in filas:
                         if self._enviar_evento(remitente, evento_id, cuerpo):
                             enviados += 1
                 except ErrorBackendError as error:
-                    espera.fallo()
+                    with self._candado:
+                        espera.fallo()
                     errores.append(error)
                 else:
-                    espera.exito()
-            if self._clips.restante() == 0:
+                    with self._candado:
+                        espera.exito()
+            with self._candado:  # after the events: a clip goes out once its event was accepted
+                clips_toca = self._clips.restante() == 0
+                clips = self._db.execute(_CLIPS_LISTOS).fetchall() if clips_toca else []
+            if clips_toca:
                 try:
-                    for evento_id, archivo, intentos in self._db.execute(_CLIPS_LISTOS).fetchall():
+                    for evento_id, archivo, intentos in clips:
                         if self._subir_clip(remitente, evento_id, archivo, intentos):
                             subidos += 1
-                    for evento_id, archivo, intentos in self._db.execute(_PUNTOS_LISTOS).fetchall():
+                    with self._candado:  # after the clips: their landmarks follow them
+                        puntos = self._db.execute(_PUNTOS_LISTOS).fetchall()
+                    for evento_id, archivo, intentos in puntos:
                         self._subir_puntos(remitente, evento_id, archivo, intentos)
                 except ErrorBackendError as error:
-                    self._clips.fallo()
+                    with self._candado:
+                        self._clips.fallo()
                     errores.append(error)
                 else:
-                    self._clips.exito()
+                    with self._candado:
+                        self._clips.exito()
             pendientes = self.pendientes
             movimientos = self._enviar_movimientos(remitente, errores, pendientes)
             if errores:
@@ -347,7 +370,7 @@ class ColaEnvios:
             )
 
     def cerrar(self) -> None:
-        with self._candado:
+        with self._envio, self._candado:  # after a pass that is under way
             self._db.close()
 
     def _enviar_movimientos(
@@ -355,15 +378,19 @@ class ColaEnvios:
     ) -> int:
         """The lowest lane: only when nothing else is waiting (CA-37.2)."""
         carril = self.carril_movimientos
-        if carril is None or pendientes or self._movimientos.restante() > 0:
+        with self._candado:
+            espera = self._movimientos.restante()
+        if carril is None or pendientes or espera > 0:
             return 0
         try:
             subidos = carril.subir(cast("RemitenteMovimientos", remitente))
         except ErrorBackendError as error:
-            self._movimientos.fallo()
+            with self._candado:
+                self._movimientos.fallo()
             errores.append(error)
             return 0
-        self._movimientos.exito()
+        with self._candado:
+            self._movimientos.exito()
         if subidos:
             self._exito()
         return subidos
@@ -383,22 +410,21 @@ class ColaEnvios:
 
     def _enviar_evento(self, remitente: Remitente, evento_id: str, cuerpo: str) -> bool:
         evento = EventoAgente.model_validate(json.loads(cuerpo))
-        self._db.execute(
-            "UPDATE eventos SET intentos = intentos + 1 WHERE evento_id = ?", (evento_id,)
-        )
+        self._sql("UPDATE eventos SET intentos = intentos + 1 WHERE evento_id = ?", evento_id)
         try:
             _, duplicado = remitente.publicar_evento(evento)
         except ErrorBackendError as error:
             if error.reintentable:
                 raise
             logger.error("El backend rechazó el evento %s: %s", evento_id, error)
-            self._db.execute(
+            self._sql(
                 "UPDATE eventos SET estado = 'rechazado', ultimo_error = ? WHERE evento_id = ?",
-                (str(error), evento_id),
+                str(error),
+                evento_id,
             )
             return False
         # Delivered (a duplicate means an earlier attempt already arrived): the row goes away.
-        self._db.execute("DELETE FROM eventos WHERE evento_id = ?", (evento_id,))
+        self._sql("DELETE FROM eventos WHERE evento_id = ?", evento_id)
         self._exito()
         logger.info("Evento %s enviado%s", evento_id, " (ya estaba)" if duplicado else "")
         return True
@@ -415,9 +441,7 @@ class ColaEnvios:
         except OSError:
             self._descartar_clip(evento_id, ruta, "no se encontró el archivo")
             return False
-        self._db.execute(
-            "UPDATE clips SET intentos = intentos + 1 WHERE evento_id = ?", (evento_id,)
-        )
+        self._sql("UPDATE clips SET intentos = intentos + 1 WHERE evento_id = ?", evento_id)
         try:
             subida = remitente.solicitar_subida_clip(evento_id, len(mp4))
             remitente.subir_clip(subida, mp4)
@@ -442,9 +466,7 @@ class ColaEnvios:
         except OSError:
             self._descartar_puntos(evento_id, ruta, "no se encontró el archivo")
             return
-        self._db.execute(
-            "UPDATE puntos SET intentos = intentos + 1 WHERE evento_id = ?", (evento_id,)
-        )
+        self._sql("UPDATE puntos SET intentos = intentos + 1 WHERE evento_id = ?", evento_id)
         try:
             subida = remitente.solicitar_subida_puntos_clip(evento_id)
             remitente.subir_archivo(
@@ -482,7 +504,7 @@ class ColaEnvios:
     def _descartar_puntos(self, evento_id: str, ruta: Path, motivo: str | None) -> None:
         ruta.unlink(missing_ok=True)
         _ligero(ruta).unlink(missing_ok=True)
-        self._db.execute("DELETE FROM puntos WHERE evento_id = ?", (evento_id,))
+        self._sql("DELETE FROM puntos WHERE evento_id = ?", evento_id)
         if motivo is None:
             logger.info("Puntos del clip del evento %s subidos", evento_id)
         else:
@@ -490,19 +512,25 @@ class ColaEnvios:
 
     def _descartar_clip(self, evento_id: str, ruta: Path, motivo: str | None) -> None:
         ruta.unlink(missing_ok=True)
-        self._db.execute("DELETE FROM clips WHERE evento_id = ?", (evento_id,))
+        self._sql("DELETE FROM clips WHERE evento_id = ?", evento_id)
         if motivo is None:
             logger.info("Clip del evento %s subido", evento_id)
         else:
             logger.error("Clip del evento %s descartado: %s", evento_id, motivo)
+
+    def _sql(self, sentencia: str, *parametros: object) -> None:
+        """One write of the sending pass, under ``_candado`` (never held across a request)."""
+        with self._candado:
+            self._db.execute(sentencia, parametros)
 
     def _exito(self) -> None:
         self.ultimo_envio = self._reloj()
 
     def aplazar(self) -> None:
         """One more failure in a row in every lane (an unexpected error of a whole pass)."""
-        for espera in (self._urgentes, self._otros, self._clips, self._movimientos):
-            espera.fallo()
+        with self._candado:
+            for espera in (self._urgentes, self._otros, self._clips, self._movimientos):
+                espera.fallo()
 
     def _limpiar_huerfanos(self) -> None:
         conocidos: set[str] = set()
