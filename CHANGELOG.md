@@ -4,6 +4,9 @@ Format based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); 
 
 ## [Unreleased]
 
+### Fixed
+- **Queuing an event or a clip no longer waits for a send in progress.** The outbox held one lock for a whole sending pass, requests included, so during an outage (each request waiting up to the HTTP client's 10 s timeout) the capture thread blocked when it queued an event, a clip or its landmarks: frames reached the classifier up to several seconds late. Now `ColaEnvios` holds its database lock only for local work and a separate lock lets one pass run at a time across requests; what is queued during a pass goes out in the next one, which the sender starts at once. Lanes, order, idempotency and backoff are unchanged; `cerrar()` still waits for a pass under way. Tests: queuing while an event's or a clip's request hangs takes well under 0.5 s, and closing waits for the pass.
+
 ## [0.8.0] - 2026-11-07
 
 ### Added
