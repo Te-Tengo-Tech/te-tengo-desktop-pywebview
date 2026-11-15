@@ -25,6 +25,10 @@ class Parametros:
     razon_ancho_alto: float
     cabeza_bajo_pies: bool
     puntos_visibles: bool
+    # S3 (proposal, ADR 0012): the upper body, used only when the ankles are hidden.
+    tronco_visible: bool = False
+    angulo_tronco_grados: float | None = None
+    largo_estimado: float = 0.0
 
 
 # Landmarks used by the formulas: nose, hips and ankles.
@@ -45,6 +49,20 @@ def puntos_clave_visibles(pose: Pose, visibilidad_min: float) -> bool:
     are standing. That is why such poses cannot declare that the person got up.
     """
     return all(pose.landmarks[i].visibilidad >= visibilidad_min for i in PUNTOS_CLAVE)
+
+
+# Landmarks of the ankle-free path (S3): nose, shoulders and hips.
+PUNTOS_TRONCO = (
+    Indice.NARIZ,
+    Indice.HOMBRO_IZQUIERDO,
+    Indice.HOMBRO_DERECHO,
+    Indice.CADERA_IZQUIERDA,
+    Indice.CADERA_DERECHA,
+)
+
+# Nose-to-ankle over nose-to-hip height of a standing adult: about 0.90 H / 0.41 H (Drillis and
+# Contini's segment table, in Winter, 2009). Scales the nose-hip distance to a center-line length.
+FACTOR_LARGO_TRONCO = 2.2
 
 
 def punto_medio(a: Punto, b: Punto) -> Punto:
@@ -119,6 +137,32 @@ def razon_ancho_alto(pose: Pose, visibilidad_min: float) -> float:
     return math.inf if alto == 0 else ancho / alto
 
 
+def tronco_visible(pose: Pose, visibilidad_min: float) -> bool:
+    """Tells whether the nose, both shoulders and both hips are clearly visible (S3)."""
+    return all(pose.landmarks[i].visibilidad >= visibilidad_min for i in PUNTOS_TRONCO)
+
+
+def angulo_tronco(pose: Pose) -> float | None:
+    """Angle of the torso (shoulder midpoint to hip midpoint) with the floor, in degrees (S3).
+
+    It does not use the ankles, so it stays reliable when the feet are hidden. ``None`` if the
+    shoulders and the hips coincide.
+    """
+    hombros = punto_medio(
+        pose.en_pixeles(Indice.HOMBRO_DERECHO), pose.en_pixeles(Indice.HOMBRO_IZQUIERDO)
+    )
+    cadera = centro_cadera(pose)
+    if hombros == cadera:
+        return None
+    return math.degrees(math.atan2(abs(hombros.y - cadera.y), abs(hombros.x - cadera.x)))
+
+
+def largo_estimado(pose: Pose) -> float:
+    """Center-line length estimated from the nose and the hip center (S3)."""
+    cabeza, cadera = pose.en_pixeles(Indice.NARIZ), centro_cadera(pose)
+    return FACTOR_LARGO_TRONCO * math.hypot(cabeza.x - cadera.x, cabeza.y - cadera.y)
+
+
 def velocidad_descenso(y1: float, y2: float, dt: float, escala: float) -> float:
     """Speed at which the hip center drops between two instants (R1).
 
@@ -143,4 +187,7 @@ def calcular(pose: Pose, visibilidad_min: float) -> Parametros:
         razon_ancho_alto=razon_ancho_alto(pose, visibilidad_min),
         cabeza_bajo_pies=cabeza_bajo_pies(pose),
         puntos_visibles=puntos_clave_visibles(pose, visibilidad_min),
+        tronco_visible=tronco_visible(pose, visibilidad_min),
+        angulo_tronco_grados=angulo_tronco(pose),
+        largo_estimado=largo_estimado(pose),
     )
