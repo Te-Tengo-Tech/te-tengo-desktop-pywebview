@@ -1,4 +1,5 @@
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -372,3 +373,78 @@ def test_enviador_sobrevive_a_errores_inesperados(cola: ColaEnvios) -> None:
     enviador.reintentar_ahora()
     enviador.detener()
     assert cola.eventos_pendientes() == [evento(1).evento_id]
+
+
+class Colgado:
+    """Delegates to the real client, but the chosen request hangs until ``soltar`` is set, like a
+    request that waits for the HTTP client's timeout during an outage."""
+
+    def __init__(self, cliente: ClienteBackend, metodo: str) -> None:
+        self._cliente = cliente
+        self._metodo = metodo
+        self.dentro = threading.Event()
+        self.soltar = threading.Event()
+
+    def __getattr__(self, nombre: str) -> object:
+        real = getattr(self._cliente, nombre)
+        if nombre != self._metodo:
+            return real
+
+        def colgado(*args: object) -> object:
+            self.dentro.set()
+            assert self.soltar.wait(10)
+            return real(*args)
+
+        return colgado
+
+
+@pytest.mark.parametrize("metodo", ["publicar_evento", "solicitar_subida_clip"])
+def test_encolar_no_espera_a_un_envio_colgado(
+    cola: ColaEnvios, cliente: ClienteBackend, backend: BackendFalso, metodo: str
+) -> None:
+    """The capture thread queues events and clips while a request hangs (an event's or a clip's,
+    the lowest lane that blocked it before): it must not wait for the network."""
+    cola.agregar_evento(evento(1))
+    if metodo == "solicitar_subida_clip":
+        cola.enviar(cliente)  # the event is accepted, so its clip is due
+        cola.agregar_clip(evento(1).evento_id, b"mp4")
+    remitente = Colgado(cliente, metodo)
+    pasada = threading.Thread(target=cola.enviar, args=(remitente,))
+    pasada.start()
+    assert remitente.dentro.wait(5)
+
+    inicio = time.monotonic()
+    cola.agregar_evento(evento(2))
+    cola.agregar_clip(evento(2).evento_id, b"mp4")
+    cola.agregar_puntos_clip(evento(2).evento_id, b"parquet")
+    pendientes, espera = cola.pendientes, cola.espera()
+    assert time.monotonic() - inicio < 0.5
+    assert pendientes >= 3
+    assert espera == 0.0
+
+    remitente.soltar.set()
+    pasada.join(5)
+    assert not pasada.is_alive()
+    resumen = cola.enviar(cliente)  # what was queued meanwhile goes out in the next pass
+    assert resumen.error is None
+    assert list(backend.eventos) == [evento(1).evento_id, evento(2).evento_id]
+    assert cola.pendientes == 0
+
+
+def test_cerrar_espera_a_la_pasada_en_curso(
+    cola: ColaEnvios, cliente: ClienteBackend, backend: BackendFalso
+) -> None:
+    cola.agregar_evento(evento(1))
+    remitente = Colgado(cliente, "publicar_evento")
+    pasada = threading.Thread(target=cola.enviar, args=(remitente,))
+    pasada.start()
+    assert remitente.dentro.wait(5)
+    cierre = threading.Thread(target=cola.cerrar)
+    cierre.start()
+    cierre.join(0.2)
+    assert cierre.is_alive()  # the database stays open while the pass needs it
+    remitente.soltar.set()
+    pasada.join(5)
+    cierre.join(5)
+    assert not cierre.is_alive()
+    assert list(backend.eventos) == [evento(1).evento_id]
